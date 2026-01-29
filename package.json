@@ -1,0 +1,32 @@
+{
+  "name": "jarvis-kernel-architect",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "hardware": "node server/hardware-monitor.cjs",
+    "proxy": "node server/proxy.js",
+    "start": "concurrently \"npm run hardware\" \"npm run proxy\" \"npm run dev\"",
+    "start:dev": "start cmd /k npm run hardware && timeout /t 2 && npm run proxy && timeout /t 2 && npm run dev"
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "lucide-react": "^0.563.0",
+    "@google/genai": "^1.38.0",
+    "uuid": "^13.0.0",
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^2.0.6",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

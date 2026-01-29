@@ -1,0 +1,8 @@
+{
+  "name": "JARVIS Kernel Architect",
+  "description": "A dashboard to visualize and interact with the J.A.R.V.I.S. Core Kernel architecture, demonstrating intent parsing, provider routing, and modular orchestration using Gemini 3.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

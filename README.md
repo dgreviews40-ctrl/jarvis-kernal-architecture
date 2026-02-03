@@ -32,6 +32,10 @@ cd jarvis-kernel-architect
 # Install dependencies
 npm install
 
+# IMPORTANT: Download Piper TTS and JARVIS Voice
+# Run this batch file to download the required voice files
+Install-JARVIS-Voice.bat
+
 # Set up environment
 cp .env.example .env.local
 # Edit .env.local with your API keys
@@ -39,6 +43,8 @@ cp .env.example .env.local
 # Start development
 npm run dev
 ```
+
+> **⚠️ IMPORTANT:** The JARVIS voice model (`jarvis.onnx`) is **NOT included** in the GitHub repository due to file size limits (115MB > 100MB GitHub limit). You **MUST** run `Install-JARVIS-Voice.bat` to download Piper and the JARVIS voice before using voice features.
 
 ## Available Scripts
 
@@ -205,6 +211,37 @@ jarvis-kernel-architect/
 | vendor-zustand | 0.4 KB | Zustand |
 
 **Total initial load:** ~92 KB (down from 214 KB)
+
+## Voice Setup (Piper TTS)
+
+To use the JARVIS voice feature, you need to download the voice model separately:
+
+### Option 1: Automatic Installation (Recommended)
+```bash
+# Run the installer batch file
+Install-JARVIS-Voice.bat
+```
+This will download and set up:
+- Piper TTS engine
+- JARVIS voice model (jarvis.onnx)
+- All required dependencies
+
+### Option 2: Manual Installation
+1. Download Piper from [huggingface.co/rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
+2. Download the JARVIS voice model (`jarvis.onnx`)
+3. Place files in the `Piper/` directory
+4. Run `start-jarvis-server.bat` to start the Piper server
+
+### Starting the Voice Server
+```bash
+# Start Piper TTS server
+Piper/start-jarvis-server.bat
+
+# Or use the simple launcher
+JARVIS_SIMPLE.bat
+```
+
+> **Note:** The `jarvis.onnx` voice model (~115MB) is excluded from GitHub due to size limits. It will be downloaded automatically when you run `Install-JARVIS-Voice.bat`.
 
 ## Home Assistant Integration
 

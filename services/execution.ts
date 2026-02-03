@@ -1,6 +1,6 @@
-import { CircuitState, CircuitConfig, BreakerStatus, KernelAction, HealthEventType, ImpactLevel } from "../types";
+import { BreakerStatus, KernelAction, CircuitState, CircuitConfig, HealthEventType, ImpactLevel } from "../types";
 import { registry } from "./registry";
-import { haService } from "./home_assistant";
+import { CircuitBreaker } from "./circuitBreaker";
 import { cortex } from "./cortex";
 
 const DEFAULT_CONFIG: CircuitConfig = {
@@ -70,7 +70,7 @@ export class CircuitBreaker {
 
       this.onSuccess(latency);
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       this.onFailure(error.message);
       throw error;
     }
@@ -174,10 +174,8 @@ export class ExecutionEngine {
 
     return breaker.execute(async () => {
       // --- HARDWARE ROUTING LOGIC ---
-      if (action.pluginId === 'system.home_assistant') {
-        const entities = action.params.entities || [];
-        return await haService.executeSmartCommand(entities);
-      }
+      // NOTE: Home Assistant routing is now handled via the plugin capability system
+      // to avoid circular dependency between execution.ts and home_assistant.ts
       
       // Fallback / Mock implementations for other plugins
       if (action.pluginId === 'media.spotify') {

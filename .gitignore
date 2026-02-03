@@ -58,3 +58,14 @@ secrets/
 credentials.json
 *.pem
 *.key
+.qwen/
+gha-creds-*.json
+
+# Large binary files
+*.onnx
+Piper/voices/*.onnx
+Piper/*.dll
+Piper/*.exe
+Piper/*.zip
+Piper/piper/*.dll
+Piper/piper/*.exe

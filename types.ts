@@ -23,7 +23,8 @@ export enum IntentType {
   COMMAND = 'COMMAND',       
   MEMORY_READ = 'MEMORY_READ', 
   MEMORY_WRITE = 'MEMORY_WRITE', 
-  VISION_ANALYSIS = 'VISION_ANALYSIS', 
+  VISION_ANALYSIS = 'VISION_ANALYSIS',
+  TIMER_REMINDER = 'TIMER_REMINDER',
   UNKNOWN = 'UNKNOWN'
 }
 
@@ -70,9 +71,9 @@ export interface KernelAction {
 export interface LogEntry {
   id: string;
   timestamp: Date;
-  source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION';
+  source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION' | 'HOME_ASSISTANT';
   message: string;
-  details?: any;
+  details?: Record<string, unknown> | string | number | boolean | object;
   type: 'info' | 'success' | 'warning' | 'error';
 }
 
@@ -182,14 +183,17 @@ export enum VoiceState {
   ERROR = 'ERROR'
 }
 
-export type VoiceType = 'SYSTEM' | 'NEURAL';
+export type VoiceType = 'SYSTEM' | 'NEURAL' | 'PIPER';
+
+export type STTProvider = 'WHISPER' | 'BROWSER' | 'AUTO';
 
 export interface VoiceConfig {
   wakeWord: string;
   voiceType: VoiceType;
   voiceName: string; // Browser voice name OR Gemini prebuilt voice name
   rate: number;     
-  pitch: number;    
+  pitch: number;
+  sttProvider: STTProvider; // Speech-to-text provider preference
 }
 
 export interface ConversationTurn {
@@ -288,11 +292,11 @@ export interface ReliabilityScore {
 export interface AdaptivePolicy {
   policyId: string;
   targetSourceId: string;
-  parameterKey: string; 
-  overrideValue: any;
+  parameterKey: string;
+  overrideValue: unknown;
   reason: string;
   createdAt: number;
-  expiresAt: number | null; 
+  expiresAt: number | null;
 }
 
 export interface DevContext {
@@ -307,7 +311,25 @@ export interface IPCMessage {
   id: string;
   timestamp: number;
   direction: 'INBOUND' | 'OUTBOUND';
-  channel: string; 
-  payload: any;
+  channel: string;
+  payload: unknown;
   status: 'OK' | 'BLOCKED' | 'ERROR';
+}
+
+// Extend global window interface for speech recognition and audio context
+declare global {
+  interface Window {
+    SpeechRecognition: {
+      new(): SpeechRecognition;
+    };
+    webkitSpeechRecognition: {
+      new(): SpeechRecognition;
+    };
+    AudioContext: {
+      new(options?: AudioContextOptions): AudioContext;
+    };
+    webkitAudioContext: {
+      new(options?: AudioContextOptions): AudioContext;
+    };
+  }
 }

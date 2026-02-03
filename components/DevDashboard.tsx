@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   Terminal, Play, Pause, RefreshCw, Save, 
   Database, ShieldAlert, Activity, Bug, ArrowRightLeft,
-  Cpu, Trash2
+  Cpu, Trash2, X, ArrowLeft, Layers
 } from 'lucide-react';
 import { mockAI, mockMemory, mockHardware } from '../services/dev/mocks';
 import { IPCMessage, LogEntry } from '../types';
+import { WorkerPoolDashboard } from './WorkerPoolDashboard';
 
 // Utility for fake IPC generation
 const generateMockIPC = (): IPCMessage => ({
@@ -17,11 +18,16 @@ const generateMockIPC = (): IPCMessage => ({
   status: 'OK'
 });
 
-export const DevDashboard: React.FC = () => {
+interface DevDashboardProps {
+  onClose?: () => void;
+}
+
+export const DevDashboard: React.FC<DevDashboardProps> = ({ onClose }) => {
   const [ipcLogs, setIpcLogs] = useState<IPCMessage[]>([]);
   const [isRunning, setIsRunning] = useState(true);
   const [memories, setMemories] = useState(mockMemory.getAll());
   const [hwMetrics, setHwMetrics] = useState(mockHardware.getMetrics());
+  const [activeTab, setActiveTab] = useState<'sandbox' | 'workers'>('sandbox');
 
   // Simulate IPC Traffic
   useEffect(() => {
@@ -86,9 +92,47 @@ export const DevDashboard: React.FC = () => {
              <Activity size={14} className="text-blue-500" />
              <span>MOCKS: ACTIVE</span>
           </div>
+          <div className="h-6 w-[1px] bg-[#333]"></div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('sandbox')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-colors ${
+                activeTab === 'sandbox' 
+                  ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-700' 
+                  : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+              }`}
+            >
+              <Bug size={14} />
+              SANDBOX
+            </button>
+            <button
+              onClick={() => setActiveTab('workers')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-colors ${
+                activeTab === 'workers' 
+                  ? 'bg-cyan-900/50 text-cyan-400 border border-cyan-700' 
+                  : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+              }`}
+            >
+              <Layers size={14} />
+              WORKER POOL
+            </button>
+          </div>
+          
+          <div className="h-6 w-[1px] bg-[#333]" />
+          
+          <button 
+            onClick={onClose}
+            className="flex items-center gap-2 px-3 py-1.5 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded text-xs font-bold transition-colors"
+          >
+            <ArrowLeft size={14} />
+            EXIT
+          </button>
         </div>
       </div>
 
+      {activeTab === 'workers' ? (
+        <WorkerPoolDashboard />
+      ) : (
       <div className="flex-1 flex overflow-hidden">
         
         {/* LEFT: MOCK HARDWARE & CONTROLS */}
@@ -221,6 +265,9 @@ export const DevDashboard: React.FC = () => {
         </div>
 
       </div>
+      )}
     </div>
   );
 };
+
+export default DevDashboard;

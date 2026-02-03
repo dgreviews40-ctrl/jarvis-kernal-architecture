@@ -58,7 +58,7 @@ export const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({ state,
       <div className="flex items-center justify-between mb-8 z-10">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <Activity className="text-cyan-500" />
-          KERNEL ARCHITECTURE v1.1
+          KERNEL ARCHITECTURE v1.2
         </h2>
         <div className="flex items-center gap-2 text-xs font-mono">
            <span className="text-gray-500">STATE:</span>
@@ -147,3 +147,5 @@ export const ArchitectureDiagram: React.FC<ArchitectureDiagramProps> = ({ state,
     </div>
   );
 };
+
+export default ArchitectureDiagram;

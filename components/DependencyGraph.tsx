@@ -208,3 +208,5 @@ const Inspector: React.FC<{ pluginId: string, plugins: RuntimePlugin[], edges: G
         </div>
     );
 };
+
+export default DependencyGraph;

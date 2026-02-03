@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS Test Runner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #050505;
+            color: #e0e0e0;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #00bcd4;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .status.ready { background: #1a3a1a; color: #4caf50; border: 1px solid #2e7d32; }
+        .status.running { background: #3a3a1a; color: #ffc107; border: 1px solid #f57f17; }
+        .status.complete { background: #1a1a3a; color: #2196f3; border: 1px solid #1976d2; }
+        button {
+            background: #00bcd4;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        button:hover { background: #00acc1; }
+        button:disabled { background: #333; color: #666; cursor: not-allowed; }
+        .results {
+            background: #0a0a0a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .test-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .test-item.pass {
+            background: rgba(76, 175, 80, 0.1);
+            border-left: 3px solid #4caf50;
+        }
+        .test-item.fail {
+            background: rgba(244, 67, 54, 0.1);
+            border-left: 3px solid #f44336;
+        }
+        .test-name { flex: 1; }
+        .test-time { color: #666; margin-left: 10px; }
+        .test-error { 
+            color: #f44336; 
+            font-size: 11px; 
+            margin-top: 5px;
+            padding-left: 15px;
+        }
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #111;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .summary.success { border: 1px solid #4caf50; }
+        .summary.warning { border: 1px solid #ffc107; }
+        .summary.error { border: 1px solid #f44336; }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 10px;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .stat-value.pass { color: #4caf50; }
+        .stat-value.fail { color: #f44336; }
+        .stat-value.total { color: #00bcd4; }
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        #console-output {
+            margin-top: 20px;
+            padding: 15px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+        }
+        .log-info { color: #00bcd4; }
+        .log-error { color: #f44336; }
+        .log-success { color: #4caf50; }
+    </style>
+</head>
+<body>
+    <h1>🧪 JARVIS System Test Runner</h1>
+    
+    <div id="status" class="status ready">Ready to run tests</div>
+    
+    <button id="run-btn" onclick="runTests()">Run All Tests</button>
+    
+    <div class="results">
+        <h3>Test Results</h3>
+        <div id="test-list">
+            <p style="color: #666; font-style: italic;">Click "Run All Tests" to begin...</p>
+        </div>
+    </div>
+
+    <div id="summary" class="summary" style="display: none;">
+        <h3>Test Summary</h3>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value total" id="stat-total">0</div>
+                <div class="stat-label">Total</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value pass" id="stat-pass">0</div>
+                <div class="stat-label">Passed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value fail" id="stat-fail">0</div>
+                <div class="stat-label">Failed</div>
+            </div>
+        </div>
+        <div id="success-rate" style="margin-top: 15px; font-size: 18px;"></div>
+    </div>
+
+    <div id="console-output" style="display: none;">
+        <h3>Console Output</h3>
+        <div id="console-logs"></div>
+    </div>
+
+    <script type="module">
+        // Import the test suite
+        import { systemTests } from './systemTest.ts';
+        
+        window.runTests = async () => {
+            const btn = document.getElementById('run-btn');
+            const status = document.getElementById('status');
+            const testList = document.getElementById('test-list');
+            const summary = document.getElementById('summary');
+            const consoleOutput = document.getElementById('console-output');
+            
+            btn.disabled = true;
+            status.className = 'status running';
+            status.textContent = 'Running tests...';
+            testList.innerHTML = '';
+            summary.style.display = 'none';
+            consoleOutput.style.display = 'block';
+            
+            const logs = [];
+            const originalLog = console.log;
+            const originalError = console.error;
+            
+            console.log = (...args) => {
+                logs.push({ type: 'info', message: args.join(' ') });
+                originalLog.apply(console, args);
+                updateConsole();
+            };
+            
+            console.error = (...args) => {
+                logs.push({ type: 'error', message: args.join(' ') });
+                originalError.apply(console, args);
+                updateConsole();
+            };
+            
+            function updateConsole() {
+                const consoleLogs = document.getElementById('console-logs');
+                consoleLogs.innerHTML = logs.map(log => 
+                    `<div class="log-entry log-${log.type}">${escapeHtml(log.message)}</div>`
+                ).join('');
+                consoleLogs.scrollTop = consoleLogs.scrollHeight;
+            }
+            
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+            
+            try {
+                const results = await systemTests.runAll();
+                
+                // Display results
+                testList.innerHTML = results.map(r => `
+                    <div class="test-item ${r.passed ? 'pass' : 'fail'}">
+                        <span class="test-name">${r.passed ? '✅' : '❌'} ${r.name}</span>
+                        <span class="test-time">${r.duration.toFixed(2)}ms</span>
+                    </div>
+                    ${!r.passed ? `<div class="test-error">${escapeHtml(r.message)}</div>` : ''}
+                `).join('');
+                
+                // Update summary
+                const passed = results.filter(r => r.passed).length;
+                const failed = results.filter(r => !r.passed).length;
+                const total = results.length;
+                const rate = ((passed / total) * 100).toFixed(1);
+                
+                document.getElementById('stat-total').textContent = total;
+                document.getElementById('stat-pass').textContent = passed;
+                document.getElementById('stat-fail').textContent = failed;
+                document.getElementById('success-rate').textContent = `Success Rate: ${rate}%`;
+                
+                summary.style.display = 'block';
+                summary.className = 'summary ' + (failed === 0 ? 'success' : passed > failed ? 'warning' : 'error');
+                
+                status.className = 'status complete';
+                status.textContent = `Tests complete: ${passed}/${total} passed`;
+                
+            } catch (error) {
+                status.className = 'status error';
+                status.textContent = 'Test runner failed: ' + error.message;
+                testList.innerHTML = `<p style="color: #f44336;">Error: ${escapeHtml(error.message)}</p>`;
+            }
+            
+            btn.disabled = false;
+            
+            // Restore console
+            console.log = originalLog;
+            console.error = originalError;
+        };
+    </script>
+</body>
+</html>

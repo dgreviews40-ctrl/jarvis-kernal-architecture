@@ -1,4 +1,4 @@
-import { CircuitBreaker } from "./execution";
+import { CircuitBreaker } from "./circuitBreaker";
 
 export interface HAEntity {
   entity_id: string;
@@ -37,17 +37,26 @@ class HomeAssistantService {
   }
 
   private async updateProxyConfig(url: string, token: string): Promise<void> {
+    let timeoutId: NodeJS.Timeout | null = null;
     try {
       // Wait a bit to ensure proxy is running
       await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Create an AbortController for timeout
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
       const response = await fetch(`${this.proxyUrl}/config`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ url, token })
+        body: JSON.stringify({ url, token }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
       if (!response.ok) {
         console.error('Failed to update proxy configuration:', response.statusText);
@@ -55,6 +64,11 @@ class HomeAssistantService {
         console.log('[HOME_ASSISTANT] Proxy configuration updated successfully');
       }
     } catch (error) {
+      // Clear timeout if fetch completes before timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
       console.error('Error updating proxy configuration:', error);
       console.log('[HOME_ASSISTANT] Proxy server may not be running. Please ensure "npm run proxy" is started.');
     }
@@ -65,6 +79,12 @@ class HomeAssistantService {
       throw new Error("Home Assistant service not configured. Please set URL and token.");
     }
 
+    // Prevent multiple initializations
+    if (this._initialized) {
+      console.log("[HOME_ASSISTANT] Service already initialized, skipping initialization");
+      return;
+    }
+
     try {
       // First ensure proxy is configured
       await this.updateProxyConfig(this.baseUrl, this.token);
@@ -72,6 +92,7 @@ class HomeAssistantService {
       await new Promise(resolve => setTimeout(resolve, 1000));
       await this.fetchEntities();
       this._initialized = true;
+      console.log("[HOME_ASSISTANT] Service initialized successfully");
     } catch (error) {
       console.error("Failed to initialize Home Assistant service:", error);
       throw error;

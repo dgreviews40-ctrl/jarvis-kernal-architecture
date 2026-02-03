@@ -4,15 +4,17 @@ import { providerManager } from "./providers";
 import { voice } from "./voice";
 import { registry } from "./registry";
 
+import { AIConfig, OllamaConfig, VoiceConfig, MemoryNode, RuntimePlugin } from "../types";
+
 export interface SystemBackup {
   version: string;
   timestamp: number;
   data: {
-    aiConfig: any;
-    ollamaConfig: any;
-    voiceConfig: any;
-    memoryNodes: any[];
-    pluginStates: Record<string, any>;
+    aiConfig: AIConfig;
+    ollamaConfig: OllamaConfig;
+    voiceConfig: VoiceConfig;
+    memoryNodes: MemoryNode[];
+    pluginStates: Record<string, RuntimePlugin['status']>;
   };
 }
 
@@ -37,7 +39,7 @@ class BackupService {
   }
 
   private getPluginStates() {
-    const states: Record<string, any> = {};
+    const states: Record<string, RuntimePlugin['status']> = {};
     registry.getAll().forEach(p => {
       states[p.manifest.id] = p.status;
     });

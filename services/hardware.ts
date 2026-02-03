@@ -29,9 +29,29 @@ class HardwareMonitor {
   private observers: ((metrics: SystemMetrics) => void)[] = [];
   private intervalId: number | null = null;
   private backendAvailable: boolean = false;
+  private isPageVisible: boolean = true;
+  private visibilityHandler: (() => void) | null = null;
 
   constructor() {
+    this.setupVisibilityHandler();
     this.checkBackendAndStart();
+  }
+
+  private setupVisibilityHandler() {
+    // Pause polling when tab is hidden to save resources
+    this.visibilityHandler = () => {
+      this.isPageVisible = !document.hidden;
+      if (this.isPageVisible) {
+        // Tab became visible - fetch immediately and resume polling
+        this.fetchStats();
+        this.startMonitoring();
+      } else {
+        // Tab hidden - stop polling
+        this.stopMonitoring();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', this.visibilityHandler);
   }
 
   private async checkBackendAndStart() {
@@ -70,13 +90,25 @@ class HardwareMonitor {
   }
 
   private startMonitoring() {
+    // Don't start if already running or page is hidden
+    if (this.intervalId || !this.isPageVisible) return;
+    
     // Initial fetch
     this.fetchStats();
     
-    // Poll every second
+    // Poll every second (only when visible)
     this.intervalId = window.setInterval(() => {
-      this.fetchStats();
+      if (this.isPageVisible) {
+        this.fetchStats();
+      }
     }, 1000);
+  }
+
+  private stopMonitoring() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
   }
 
   private async fetchStats() {
@@ -143,6 +175,16 @@ class HardwareMonitor {
 
   private notify() {
     this.observers.forEach(cb => cb(this.metrics));
+  }
+
+  public destroy() {
+    this.stopMonitoring();
+    
+    // Remove visibility listener
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
   }
 }
 

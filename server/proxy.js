@@ -52,16 +52,88 @@ let haConfig = {
   token: null
 };
 
+// Enhanced URL validation with better security
+// Note: Local IP addresses are allowed for Home Assistant integration
+function isValidUrl(string) {
+  try {
+    const url = new URL(string);
+    // Allow only http/https protocols
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    
+    // Validate IP format if it's an IP address
+    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (ipRegex.test(hostname)) {
+      const octets = hostname.split('.').map(Number);
+      // Validate octet values
+      if (octets.some(octet => isNaN(octet) || octet < 0 || octet > 255)) {
+        return false;
+      }
+      // Note: We allow private/local IP ranges for Home Assistant
+      // (10.x.x.x, 172.16-31.x.x, 192.168.x.x, 127.x.x.x)
+    }
+
+    // Check for obviously malicious patterns in the URL
+    const urlString = url.toString();
+    if (
+      urlString.includes('../') ||
+      urlString.includes('..\\') ||
+      urlString.includes('%2e%2e%2f') ||  // URL encoded ../
+      urlString.includes('%2e%2e%5c') ||  // URL encoded ..\
+      urlString.includes('127.0.0.1') && urlString.includes('etc/passwd') ||
+      urlString.includes('file://') ||
+      urlString.includes('ftp://') ||
+      urlString.includes('javascript:') ||
+      urlString.includes('data:')
+    ) {
+      return false;
+    }
+
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Helper function to validate token format (basic validation)
+function isValidToken(token) {
+  // Home Assistant tokens can vary widely in format
+  // Just ensure it's a reasonable length and doesn't contain obviously malicious patterns
+  if (typeof token !== 'string' || token.length < 10) {
+    return false;
+  }
+  // Check for obvious injection patterns but allow typical token characters
+  return !/\.\.|\$\(|`|<script/i.test(token);
+}
+
 // Update Home Assistant configuration
 app.post('/config', (req, res) => {
   const { url, token } = req.body;
-  if (url && token) {
-    haConfig = { url, token };
-    console.log(`[PROXY] Configuration updated: ${url}`);
-    res.json({ success: true, message: 'Configuration updated' });
-  } else {
-    res.status(400).json({ success: false, message: 'URL and token required' });
+  console.log(`[PROXY] Received config request with URL: ${url ? url.substring(0, 50) : 'undefined'}, token length: ${token ? token.length : 'undefined'}`);
+
+  if (!url || !token) {
+    console.log(`[PROXY] Missing URL or token: url=${!!url}, token=${!!token}`);
+    return res.status(400).json({ success: false, message: 'URL and token required' });
   }
+
+  // Validate URL to prevent SSRF attacks
+  if (!isValidUrl(url)) {
+    console.log(`[PROXY] Invalid URL: ${url}`);
+    return res.status(400).json({ success: false, message: 'Invalid URL format or blocked IP range' });
+  }
+
+  // Validate token format
+  if (!isValidToken(token)) {
+    console.log(`[PROXY] Invalid token format: token length=${token.length}, first 20 chars=${token.substring(0, 20)}`);
+    return res.status(400).json({ success: false, message: 'Invalid token format' });
+  }
+
+  haConfig = { url, token };
+  console.log(`[PROXY] Configuration updated: ${url}`);
+  res.json({ success: true, message: 'Configuration updated' });
 });
 
 // Get current configuration status
@@ -77,6 +149,17 @@ app.get('/status', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Home Assistant Proxy', timestamp: new Date().toISOString() });
 });
+
+// Helper function to sanitize path
+function sanitizePath(path) {
+  // Remove any directory traversal attempts - multiple iterations to handle cases like ....//
+  let sanitized = path.replace(/(\.\.\/|\.\.\\)+/g, '');
+  // Also normalize the path to remove any remaining traversal patterns
+  sanitized = sanitized.replace(/\.\.\/?/g, '').replace(/\.\.\\/g, '');
+  // Remove leading slashes
+  sanitized = sanitized.replace(/^\/+/, '');
+  return sanitized;
+}
 
 // Create a custom proxy handler that uses the current configuration
 app.use('/ha-api', async (req, res, next) => {
@@ -100,13 +183,27 @@ app.use('/ha-api', async (req, res, next) => {
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
       targetUrl = 'http://' + targetUrl;
     }
+    // Remove trailing slash to avoid double slashes when appending API path
+    targetUrl = targetUrl.replace(/\/$/, '');
+
+    // Sanitize the request URL to prevent path traversal
+    // Remove leading /ha-api and any leading slashes to avoid double slashes
+    const sanitizedPath = sanitizePath(req.url.replace('/ha-api', '').replace(/^\/+/, ''));
 
     // Append the API path
-    const apiUrl = targetUrl + '/api' + req.url.replace('/ha-api', '');
+    const apiUrl = targetUrl + '/api/' + sanitizedPath;
+
+    // Check if this is a camera proxy request (which may need special handling)
+    const isCameraRequest = apiUrl.includes('/camera_proxy/');
+    const isStreamRequest = apiUrl.includes('/camera_proxy_stream/');
+
+    console.log(`[PROXY] Forwarding request to: ${apiUrl}, isCamera: ${isCameraRequest}, isStream: ${isStreamRequest}`);
 
     // Prepare headers
     const headers = {
       'Authorization': `Bearer ${haConfig.token}`,
+      // For camera requests, we need to accept image content types
+      'Accept': (isCameraRequest || isStreamRequest) ? 'image/*,multipart/x-mixed-replace,*/*' : 'application/json',
       'Content-Type': 'application/json'
     };
 
@@ -133,18 +230,105 @@ app.use('/ha-api', async (req, res, next) => {
 
     const response = await fetch(apiUrl, options);
 
+    console.log(`[PROXY] Response status: ${response.status}, isCamera: ${isCameraRequest}, isStream: ${isStreamRequest}`);
+
     // Set response headers
     res.status(response.status);
+
+    // Handle MJPEG stream (multipart/x-mixed-replace)
+    if (isStreamRequest) {
+      const contentType = response.headers.get('content-type') || 'multipart/x-mixed-replace';
+      console.log(`[PROXY] Streaming response with content-type: ${contentType}`);
+
+      res.set({
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Connection': 'keep-alive'
+      });
+
+      // Pipe the stream directly to the response
+      const reader = response.body.getReader();
+      const pump = async () => {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(Buffer.from(value));
+          }
+        } catch (err) {
+          console.error('[PROXY] Stream error:', err);
+        } finally {
+          // Ensure the reader is released and response is ended
+          try {
+            reader.releaseLock();
+          } catch (releaseErr) {
+            console.error('[PROXY] Error releasing reader lock:', releaseErr);
+          }
+          res.end();
+        }
+      };
+      pump();
+      return;
+    }
+
+    // Set response headers
+    res.status(response.status);
+
+    // For camera requests, we need to preserve the original content type
+    const contentType = response.headers.get('content-type') || (isCameraRequest ? 'image/jpeg' : 'application/json');
+
     res.set({
-      'Content-Type': response.headers.get('content-type') || 'application/json',
+      'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
     });
 
-    // Stream the response
-    const responseBody = await response.text();
-    res.send(responseBody);
+    // For camera images, we need to handle binary data properly
+    if (isCameraRequest) {
+      // Check if response is ok before processing
+      if (!response.ok) {
+        console.error(`[PROXY] Camera request failed with status: ${response.status}`);
+        const errorText = await response.text().catch(() => 'Unable to read error response');
+        console.error(`[PROXY] Error response: ${errorText}`);
+        return res.status(response.status).send(errorText);
+      }
+
+      try {
+        // Get the original content type from the response
+        const originalContentType = response.headers.get('content-type');
+        console.log(`[PROXY] Original content-type: ${originalContentType}`);
+
+        // Convert the response to ArrayBuffer and then to Buffer
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Set the content type for images, removing any charset specification
+        let imageContentType = 'image/jpeg'; // default
+        if (originalContentType) {
+          // Remove charset specification if present
+          imageContentType = originalContentType.split(';')[0].trim();
+        }
+
+        console.log(`[PROXY] Setting content-type to: ${imageContentType}`);
+        res.set('Content-Type', imageContentType);
+        res.send(buffer);
+      } catch (bufferError) {
+        console.error('[PROXY] Error processing camera image buffer:', bufferError);
+        res.status(500).send('Error processing image');
+      }
+    } else {
+      // For non-camera requests
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unable to read error response');
+        console.error(`[PROXY] API request failed with status: ${response.status}, response: ${errorText}`);
+        return res.status(response.status).send(errorText);
+      }
+
+      const responseBody = await response.text();
+      res.send(responseBody);
+    }
   } catch (error) {
     console.error('[PROXY] Error forwarding request:', error);
     res.status(500).json({

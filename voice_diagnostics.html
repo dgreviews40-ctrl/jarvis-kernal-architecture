@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS Voice Diagnostics</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #4fc3f7; }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            border: 1px solid #0f3460;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .status.ok { background: #4caf50; color: white; }
+        .status.error { background: #f44336; color: white; }
+        .status.warning { background: #ff9800; color: black; }
+        .meter {
+            width: 100%;
+            height: 30px;
+            background: #0f3460;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #ff9800, #f44336);
+            transition: width 0.1s;
+        }
+        button {
+            background: #4fc3f7;
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #29b6f6; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .transcript {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            min-height: 60px;
+            font-family: monospace;
+            font-size: 16px;
+        }
+        .transcript .final { color: #4caf50; }
+        .transcript .interim { color: #888; font-style: italic; }
+        .tip {
+            background: #2d4a6f;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #4fc3f7;
+        }
+        .log {
+            background: #0a0a0a;
+            padding: 10px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .log-entry { margin: 2px 0; }
+        .log-entry.info { color: #4fc3f7; }
+        .log-entry.success { color: #4caf50; }
+        .log-entry.error { color: #f44336; }
+        .log-entry.warn { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <h1>🎙️ JARVIS Voice Diagnostics</h1>
+    
+    <div class="card">
+        <h2>🔌 Server Status</h2>
+        <div id="whisper-status" class="status warning">Checking...</div>
+        <p>Whisper Server: <span id="whisper-url">http://localhost:5001</span></p>
+    </div>
+
+    <div class="card">
+        <h2>🎤 Microphone Test</h2>
+        <p>Speak to see your audio level:</p>
+        <div class="meter">
+            <div id="audio-meter" class="meter-fill" style="width: 0%"></div>
+        </div>
+        <button id="start-mic">Start Microphone</button>
+        <button id="stop-mic" disabled>Stop Microphone</button>
+    </div>
+
+    <div class="card">
+        <h2>🗣️ Wake Word Test</h2>
+        <p>Say "Jarvis" or any variation. The system will detect it.</p>
+        <button id="start-wake-test">Start Wake Word Test</button>
+        <button id="stop-wake-test" disabled>Stop Test</button>
+        <div id="wake-detections" style="margin-top: 10px;"></div>
+    </div>
+
+    <div class="card">
+        <h2>📝 Live Transcription</h2>
+        <div id="transcript" class="transcript">
+            <span class="interim">Click "Start Recording" to begin...</span>
+        </div>
+        <button id="start-recording">Start Recording</button>
+        <button id="stop-recording" disabled>Stop Recording</button>
+    </div>
+
+    <div class="card">
+        <h2>📊 Detection Log</h2>
+        <div id="log" class="log"></div>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div class="card">
+        <h2>💡 Tips for Better Recognition</h2>
+        <div class="tip">
+            <strong>1. Speak clearly and at moderate volume</strong><br>
+            Whisper works best with clear speech. Don't whisper or shout.
+        </div>
+        <div class="tip">
+            <strong>2. Reduce background noise</strong><br>
+            Close windows, turn off fans, and minimize other sounds.
+        </div>
+        <div class="tip">
+            <strong>3. Position your microphone correctly</strong><br>
+            Keep the mic 6-12 inches from your mouth, not too close or too far.
+        </div>
+        <div class="tip">
+            <strong>4. Use a consistent wake word pronunciation</strong><br>
+            Say "JAR-vis" clearly. The system now detects variations like "Jarves", "Jarvice", etc.
+        </div>
+        <div class="tip">
+            <strong>5. Wait for the beep</strong><br>
+            After saying "Jarvis", wait for the acknowledgment before giving your command.
+        </div>
+    </div>
+
+    <script>
+        const logEl = document.getElementById('log');
+        
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function clearLog() {
+            logEl.innerHTML = '';
+        }
+
+        // Check Whisper server
+        async function checkWhisperServer() {
+            try {
+                const response = await fetch('http://localhost:5001/health', { 
+                    signal: AbortSignal.timeout(3000) 
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('whisper-status').className = 'status ok';
+                    document.getElementById('whisper-status').textContent = 'Connected';
+                    log(`Whisper server connected: ${data.model} on ${data.device}`, 'success');
+                    return true;
+                }
+            } catch (e) {
+                document.getElementById('whisper-status').className = 'status error';
+                document.getElementById('whisper-status').textContent = 'Not Connected';
+                log('Whisper server not available. Run: python whisper_server.py', 'error');
+            }
+            return false;
+        }
+
+        // Audio level meter
+        let audioContext = null;
+        let analyser = null;
+        let micStream = null;
+        let meterInterval = null;
+
+        document.getElementById('start-mic').onclick = async () => {
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000
+                    }
+                });
+                
+                audioContext = new AudioContext({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(micStream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                analyser.smoothingTimeConstant = 0.8;
+                source.connect(analyser);
+                
+                document.getElementById('start-mic').disabled = true;
+                document.getElementById('stop-mic').disabled = false;
+                log('Microphone started', 'success');
+                
+                meterInterval = setInterval(() => {
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(dataArray);
+                    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                    const percentage = Math.min(100, (average / 128) * 100);
+                    document.getElementById('audio-meter').style.width = percentage + '%';
+                }, 50);
+                
+            } catch (e) {
+                log('Failed to access microphone: ' + e.message, 'error');
+            }
+        };
+
+        document.getElementById('stop-mic').onclick = () => {
+            if (meterInterval) clearInterval(meterInterval);
+            if (micStream) micStream.getTracks().forEach(t => t.stop());
+            if (audioContext) audioContext.close();
+            document.getElementById('audio-meter').style.width = '0%';
+            document.getElementById('start-mic').disabled = false;
+            document.getElementById('stop-mic').disabled = true;
+            log('Microphone stopped', 'info');
+        };
+
+        // Wake word detection test
+        let wakeRecognition = null;
+        const wakeVariations = ['jarvis', 'jarves', 'jarvice', 'jarviz', 'jarvus', 'jervis', 'garvis'];
+        
+        function detectWakeWord(text) {
+            const lower = text.toLowerCase();
+            for (const v of wakeVariations) {
+                if (lower.includes(v)) return v;
+            }
+            return null;
+        }
+
+        document.getElementById('start-wake-test').onclick = () => {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                log('Speech Recognition not supported in this browser', 'error');
+                return;
+            }
+            
+            wakeRecognition = new SpeechRecognition();
+            wakeRecognition.continuous = true;
+            wakeRecognition.interimResults = true;
+            wakeRecognition.lang = 'en-US';
+            
+            wakeRecognition.onresult = (event) => {
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript.toLowerCase();
+                    const detected = detectWakeWord(transcript);
+                    if (detected) {
+                        log(`🎯 Wake word detected! Heard: "${detected}" in "${transcript}"`, 'success');
+                        const div = document.getElementById('wake-detections');
+                        div.innerHTML += `<div style="color: #4caf50; margin: 5px 0;">✓ "${detected}" detected!</div>`;
+                    }
+                }
+            };
+            
+            wakeRecognition.onerror = (e) => log('Recognition error: ' + e.error, 'error');
+            wakeRecognition.start();
+            
+            document.getElementById('start-wake-test').disabled = true;
+            document.getElementById('stop-wake-test').disabled = false;
+            log('Wake word test started. Say "Jarvis"...', 'info');
+        };
+
+        document.getElementById('stop-wake-test').onclick = () => {
+            if (wakeRecognition) wakeRecognition.stop();
+            document.getElementById('start-wake-test').disabled = false;
+            document.getElementById('stop-wake-test').disabled = true;
+            log('Wake word test stopped', 'info');
+        };
+
+        // Whisper transcription test
+        let mediaRecorder = null;
+        let recordingInterval = null;
+        
+        document.getElementById('start-recording').onclick = async () => {
+            const whisperAvailable = await checkWhisperServer();
+            if (!whisperAvailable) return;
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 16000,
+                        channelCount: 1
+                    }
+                });
+                
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus',
+                    audioBitsPerSecond: 32000
+                });
+                
+                let audioChunks = [];
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) audioChunks.push(e.data);
+                };
+                
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    if (blob.size > 500) {
+                        const formData = new FormData();
+                        formData.append('audio', blob, 'test.webm');
+                        formData.append('language', 'en');
+                        
+                        try {
+                            const response = await fetch('http://localhost:5001/transcribe', {
+                                method: 'POST',
+                                body: formData,
+                                signal: AbortSignal.timeout(10000)
+                            });
+                            const result = await response.json();
+                            
+                            const transcriptEl = document.getElementById('transcript');
+                            if (result.text) {
+                                transcriptEl.innerHTML = `<span class="final">${result.text}</span>`;
+                                log(`Transcribed: "${result.text}" (${result.processing_time?.toFixed(2) || '?'}s)`, 'success');
+                                
+                                // Check for wake word
+                                const detected = detectWakeWord(result.text);
+                                if (detected) {
+                                    log(`🎯 Wake word "${detected}" found in transcription!`, 'success');
+                                }
+                            } else {
+                                transcriptEl.innerHTML = '<span class="interim">(no speech detected)</span>';
+                                log('No speech detected in audio', 'warn');
+                            }
+                        } catch (e) {
+                            log('Transcription failed: ' + e.message, 'error');
+                        }
+                    }
+                    audioChunks = [];
+                };
+                
+                mediaRecorder.start();
+                
+                // Record in 2-second chunks
+                recordingInterval = setInterval(() => {
+                    if (mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                        setTimeout(() => {
+                            if (mediaRecorder && document.getElementById('stop-recording').disabled === false) {
+                                mediaRecorder.start();
+                            }
+                        }, 100);
+                    }
+                }, 2000);
+                
+                document.getElementById('start-recording').disabled = true;
+                document.getElementById('stop-recording').disabled = false;
+                document.getElementById('transcript').innerHTML = '<span class="interim">Listening...</span>';
+                log('Recording started (2s chunks)', 'info');
+                
+            } catch (e) {
+                log('Failed to start recording: ' + e.message, 'error');
+            }
+        };
+
+        document.getElementById('stop-recording').onclick = () => {
+            if (recordingInterval) clearInterval(recordingInterval);
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(t => t.stop());
+            }
+            document.getElementById('start-recording').disabled = false;
+            document.getElementById('stop-recording').disabled = true;
+            log('Recording stopped', 'info');
+        };
+
+        // Initial check
+        checkWhisperServer();
+    </script>
+</body>
+</html>

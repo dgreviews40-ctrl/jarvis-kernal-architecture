@@ -3,21 +3,139 @@ import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_INSTRUCTION_KERNEL } from "../constants";
 import { providerManager } from "./providers";
 import { AIProvider } from "../types";
+import { localIntentClassifier } from "./localIntent";
+import { geminiRateLimiter } from "./rateLimiter";
 
-export const hasApiKey = (): boolean => {
-  // Only check localStorage in the browser environment
-  const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
-  return !!storedKey;
+// LRU Cache for intent analysis results
+const INTENT_CACHE_SIZE = 50;
+const INTENT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+interface CachedIntent {
+  result: ParsedIntent;
+  timestamp: number;
+}
+
+class IntentCache {
+  private cache: Map<string, CachedIntent> = new Map();
+  
+  private normalizeKey(input: string): string {
+    return input.trim().toLowerCase();
+  }
+  
+  get(input: string): ParsedIntent | null {
+    const key = this.normalizeKey(input);
+    const cached = this.cache.get(key);
+    
+    if (!cached) return null;
+    
+    // Check if expired
+    if (Date.now() - cached.timestamp > INTENT_CACHE_TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return cached.result;
+  }
+  
+  set(input: string, result: ParsedIntent): void {
+    const key = this.normalizeKey(input);
+    
+    // Enforce LRU size limit
+    if (this.cache.size >= INTENT_CACHE_SIZE) {
+      // Delete oldest entry
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+    
+    this.cache.set(key, { result, timestamp: Date.now() });
+  }
+  
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+const intentCache = new IntentCache();
+
+// Export stats from shared rate limiter
+export const getGeminiStats = () => {
+  const stats = geminiRateLimiter.getStats();
+  return {
+    used: stats.daily.used,
+    remaining: stats.daily.remaining,
+    limit: stats.daily.limit,
+    perMinuteUsed: stats.perMinute.used,
+    perMinuteRemaining: stats.perMinute.remaining,
+    isRateLimited: stats.isRateLimited,
+  };
 };
 
-const createClient = () => {
-  // Only use localStorage in the browser environment
+// Export for testing/debugging
+export const clearIntentCache = () => intentCache.clear();
+export const hasApiKey = (): boolean => {
+  // Check environment variables first (VITE_ prefixed), then localStorage
+  const envKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
+  // Only check localStorage in the browser environment
   const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
+  return !!(envKey || storedKey);
+};
 
-  if (!storedKey) {
-    throw new Error("API Key missing");
+const createClient = async () => {
+  // Priority: encrypted storage > legacy storage > env vars
+  // This ensures security while maintaining backward compatibility
+  let apiKey: string | null = null;
+
+  // Check encrypted storage first
+  if (typeof localStorage !== 'undefined') {
+    const encryptedStoredKey = localStorage.getItem('jarvis_gemini_api_key_encrypted');
+    if (encryptedStoredKey) {
+      try {
+        apiKey = decodeURIComponent(atob(encryptedStoredKey));
+        console.log('[GEMINI] Using API key from encrypted localStorage');
+      } catch (e) {
+        console.warn("Failed to decode encrypted API key, trying legacy format:", e);
+        // Try legacy format as fallback
+        const legacyStoredKey = localStorage.getItem('GEMINI_API_KEY');
+        if (legacyStoredKey) {
+          try {
+            apiKey = atob(legacyStoredKey);
+            console.log('[GEMINI] Using API key from legacy localStorage');
+          } catch (legacyError) {
+            console.error("Failed to decode legacy API key:", legacyError);
+          }
+        }
+      }
+    }
   }
-  return new GoogleGenAI({ apiKey: storedKey });
+
+  // Fallback to environment variables
+  if (!apiKey && typeof process !== 'undefined') {
+    apiKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || null;
+    if (apiKey) {
+      console.log('[GEMINI] Using API key from environment');
+    }
+  }
+
+  if (!apiKey) {
+    throw new Error("API Key missing. Please set your Gemini API key in Settings > API & Security.");
+  }
+
+  // Trim whitespace and validate key format
+  apiKey = apiKey.trim();
+
+  if (apiKey.length < 10) {
+    throw new Error("API Key appears to be invalid (too short)");
+  }
+
+  // Validate key format (Google API keys typically start with "AI" followed by letters and numbers)
+  if (!/^AIza[a-zA-Z0-9_-]{30,}$/.test(apiKey)) {
+    console.warn("API key format appears unusual - verify it's correct");
+  }
+
+  // Log key prefix for debugging (don't log full key)
+  console.log(`[GEMINI] API key: ${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)} (${apiKey.length} chars)`);
+
+  return new GoogleGenAI({ apiKey });
 };
 
 export interface ParsedIntent {
@@ -30,8 +148,36 @@ export interface ParsedIntent {
 }
 
 export const analyzeIntent = async (input: string): Promise<ParsedIntent> => {
+  // Check cache first
+  const cached = intentCache.get(input);
+  if (cached) {
+    console.log('[INTENT] Cache hit for:', input.substring(0, 30) + '...');
+    return cached;
+  }
+
   const currentMode = providerManager.getMode();
   const hasValidApiKey = hasApiKey();
+  
+  // === LOCAL INTENT CLASSIFICATION (FREE) ===
+  // Try local classification first to reduce API calls
+  const localResult = localIntentClassifier.classify(input);
+  
+  // If local classifier has high confidence, use it directly
+  if (localResult.confidence >= 0.85) {
+    console.log('[INTENT] Local classification (free):', localResult.type, '- confidence:', localResult.confidence.toFixed(2));
+    intentCache.set(input, localResult);
+    return localResult;
+  }
+  
+  // If local suggests simple command/memory, still use local (no need for API)
+  if ((localResult.type === 'COMMAND' || localResult.type === 'MEMORY_READ' || localResult.type === 'MEMORY_WRITE') 
+      && localResult.confidence >= 0.75) {
+    console.log('[INTENT] Local classification (free) - simple operation:', localResult.type);
+    intentCache.set(input, localResult);
+    return localResult;
+  }
+  
+  console.log('[INTENT] Local confidence low (' + localResult.confidence.toFixed(2) + '), checking if Gemini needed...');
 
   // If forced to OLLAMA mode, use Ollama for intent analysis too
   if (currentMode === AIProvider.OLLAMA) {
@@ -211,9 +357,22 @@ Rules:
     }
   }
 
+  // === CHECK RATE LIMITS BEFORE USING GEMINI ===
+  const rateLimitCheck = geminiRateLimiter.canMakeRequest(500);
+  if (!rateLimitCheck.allowed) {
+    console.log(`[INTENT] Gemini rate limited: ${rateLimitCheck.reason}. Using local classification.`);
+    // Enhance local result with a note about rate limiting
+    const enhancedLocal = {
+      ...localResult,
+      reasoning: `${localResult.reasoning} (Gemini rate limited: ${rateLimitCheck.reason})`
+    };
+    intentCache.set(input, enhancedLocal);
+    return enhancedLocal;
+  }
+
   // Use Gemini when available and not forced to Ollama
   try {
-    const ai = createClient();
+    const ai = await createClient(); // Updated to await the async function
     const config = providerManager.getAIConfig();
 
     const response = await ai.models.generateContent({
@@ -226,33 +385,56 @@ Rules:
       }
     });
 
+    // Track this API call
+    geminiRateLimiter.trackRequest(500);
+
     const text = response.text;
     if (!text) throw new Error("No response from Gemini");
     const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanText) as ParsedIntent;
-  } catch (error: any) {
+    const result = JSON.parse(cleanText) as ParsedIntent;
+
+    // Cache successful result
+    intentCache.set(input, result);
+    return result;
+  } catch (error: unknown) {
     console.error("Gemini Intent Parsing Error:", error);
 
-    // Check if it's an invalid API key error
-    if (error?.error?.message?.includes("API key not valid") || error?.error?.code === 400) {
-      throw new Error("INVALID_API_KEY: Please check your Gemini API key in Settings > API & Security. Get a key at https://aistudio.google.com/app/apikey");
+    // Check if it's an invalid API key error - log but still fallback
+    const errorMessage = error?.error?.message || error?.message || '';
+    if (errorMessage.includes("API key not valid") || (error as any)?.error?.code === 400) {
+      console.warn("[INTENT] Invalid API key, falling back to local heuristics");
     }
 
-    return {
-      type: 'UNKNOWN',
-      confidence: 0,
-      complexity: 0,
-      suggestedProvider: 'SYSTEM',
-      entities: [],
-      reasoning: "Analysis failed due to API error."
-    };
+    // Graceful degradation: Use local heuristics when API fails
+    console.warn("[INTENT] Gemini failed, falling back to local heuristics");
+    const result = analyzeIntentWithHeuristics(input);
+
+    // Cache the heuristic result too (but with lower confidence)
+    intentCache.set(input, result);
+    return result;
   }
 };
 
 /**
+ * Local heuristic-based intent analysis (no API required)
+ * Used as fallback when Gemini is unavailable
+ * Now delegates to the more sophisticated LocalIntentClassifier
+ */
+function analyzeIntentWithHeuristics(input: string): ParsedIntent {
+  // Use the new local classifier for consistent results
+  const result = localIntentClassifier.classify(input);
+  
+  // Add note that this was a fallback
+  return {
+    ...result,
+    reasoning: `${result.reasoning} (fallback from Gemini failure)`
+  };
+}
+
+/**
  * Validates if the parsed object has the correct structure for ParsedIntent
  */
-function isValidParsedIntent(obj: any): obj is ParsedIntent {
+function isValidParsedIntent(obj: unknown): obj is ParsedIntent {
   return (
     typeof obj === 'object' &&
     obj !== null &&

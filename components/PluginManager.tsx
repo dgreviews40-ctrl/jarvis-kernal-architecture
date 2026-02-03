@@ -1,6 +1,7 @@
 import React from 'react';
 import { RuntimePlugin } from '../types';
-import { Box, ToggleLeft, ToggleRight, Shield, Zap } from 'lucide-react';
+import { Box, ToggleLeft, ToggleRight, Shield, Zap, Store } from 'lucide-react';
+import { useUIStore } from '../stores';
 
 interface PluginManagerProps {
   plugins: RuntimePlugin[];
@@ -8,6 +9,7 @@ interface PluginManagerProps {
 }
 
 export const PluginManager: React.FC<PluginManagerProps> = ({ plugins, onToggle }) => {
+  const { setMainView } = useUIStore();
   return (
     <div className="bg-[#0a0a0a] border border-[#333] rounded-lg p-4 flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between mb-4">
@@ -15,7 +17,16 @@ export const PluginManager: React.FC<PluginManagerProps> = ({ plugins, onToggle 
           <Box size={16} className="text-cyan-500" />
           PLUGIN REGISTRY
         </h3>
-        <span className="text-xs text-gray-600 font-mono">INSTALLED MODULES: {plugins.length}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMainView('MARKETPLACE')}
+            className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 rounded border border-purple-600/30 transition-colors"
+          >
+            <Store size={12} />
+            Marketplace
+          </button>
+          <span className="text-xs text-gray-600 font-mono">INSTALLED: {plugins.length}</span>
+        </div>
       </div>
 
       <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1">

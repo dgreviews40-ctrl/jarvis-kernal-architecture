@@ -135,3 +135,5 @@ export const HealthDashboard: React.FC = () => {
     </div>
   );
 };
+
+export default HealthDashboard;

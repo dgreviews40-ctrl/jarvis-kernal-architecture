@@ -1,13 +1,19 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Settings, Camera, Shield, Cpu, Key, Save, FileText, Mic, Activity, Power, Video, Brain, Volume2, Sparkles, Server, Globe, CheckCircle2, XCircle, Info, Zap, Settings2, Database, Download, Upload, Share2, HardDrive, Network, Loader2, Monitor, Box, Terminal, ExternalLink, ShieldCheck, ShieldAlert as AlertIcon, Laptop, MousePointer2, Link, AlertTriangle, Code2 } from 'lucide-react';
+import { Settings, Camera, Shield, Cpu, Key, Save, FileText, Mic, Activity, Power, Video, Brain, Volume2, Sparkles, Server, Globe, CheckCircle2, XCircle, Info, Zap, Settings2, Database, Download, Upload, Share2, HardDrive, Network, Loader2, Monitor, Box, Terminal, ExternalLink, ShieldCheck, ShieldAlert as AlertIcon, Laptop, MousePointer2, Link, AlertTriangle, Code2, Play } from 'lucide-react';
 import { vision } from '../services/vision';
 import { voice } from '../services/voice';
+import { piperTTS, RECOMMENDED_PIPER_VOICES, PIPER_SETUP_INSTRUCTIONS } from '../services/piperTTS';
+import { piperLauncher, PiperLauncherState } from '../services/piperLauncher';
 import { providerManager } from '../services/providers';
 import { registry } from '../services/registry';
 import { backupService, SystemBackup } from '../services/backup';
 import { haService } from '../services/home_assistant';
+import { getGeminiStats } from '../services/gemini';
 import { RuntimePlugin, VisionState, AIConfig, VoiceConfig, VoiceType, OllamaConfig } from '../types';
 import { SystemDocs } from './SystemDocs';
+import { EncryptionSetup } from './EncryptionSetup';
+import { SettingsBackup } from './SettingsBackup';
+import { apiKeyManager } from '../services/apiKeyManager';
 
 interface SettingsInterfaceProps {
   onClose: () => void;
@@ -38,7 +44,7 @@ const AudioTestVisualizer: React.FC<{ active: boolean }> = ({ active }) => {
       const source = audioCtx.createMediaStreamSource(stream);
       source.connect(analyzer);
       draw();
-    } catch (e) {}
+    } catch (e) { console.warn('[SETTINGS] Failed to setup audio analyzer:', e); }
   };
 
   const cleanup = () => {
@@ -78,10 +84,10 @@ const AudioTestVisualizer: React.FC<{ active: boolean }> = ({ active }) => {
 };
 
 export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose }) => {
-  const [activeTab, setActiveTab] = useState<'GENERAL' | 'AI' | 'DEVICES' | 'PLUGINS' | 'ARCHIVE' | 'DISTRIBUTION' | 'DOCS'>('GENERAL');
+  const [activeTab, setActiveTab] = useState<'GENERAL' | 'AI' | 'DEVICES' | 'PLUGINS' | 'ARCHIVE' | 'DISTRIBUTION' | 'DOCS' | 'SECURITY' | 'BACKUP'>('GENERAL');
   
   // States
-  const [apiKey, setApiKey] = useState<string>(localStorage.getItem('GEMINI_API_KEY') || process.env.API_KEY || '');
+  const [apiKey, setApiKey] = useState<string>(localStorage.getItem('GEMINI_API_KEY') || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || '');
   const [aiConfig, setAiConfig] = useState<AIConfig>(providerManager.getAIConfig());
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>(providerManager.getOllamaConfig());
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>(voice.getConfig());
@@ -105,11 +111,32 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const [isTestingAudio, setIsTestingAudio] = useState(false);
   const [isTestingVideo, setIsTestingVideo] = useState(false);
   const [ollamaStatus, setOllamaStatus] = useState<'IDLE' | 'PENDING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [encryptionEnabled, setEncryptionEnabled] = useState(false);
+  const [showEncryptionSetup, setShowEncryptionSetup] = useState(false);
   const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [geminiStats, setGeminiStats] = useState({ 
+    used: 0, 
+    remaining: 1400, 
+    limit: 1400,
+    perMinuteUsed: 0,
+    perMinuteRemaining: 14,
+    isRateLimited: false 
+  });
   const videoRef = useRef<HTMLVideoElement>(null);
+  
+  // Update Gemini stats periodically
+  useEffect(() => {
+    const updateStats = () => setGeminiStats(getGeminiStats());
+    updateStats();
+    const interval = setInterval(updateStats, 5000); // Update every 5 seconds
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
+    // Check encryption status
+    setEncryptionEnabled(apiKeyManager.isEncryptionEnabled());
+    
     // Detect environment
     if (typeof window !== 'undefined') {
         const current = window.location.href;
@@ -160,7 +187,8 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const handleSave = () => {
     if (selectedCam) vision.setDeviceId(selectedCam);
     if (apiKey.trim()) {
-      localStorage.setItem('GEMINI_API_KEY', apiKey.trim());
+      // Store API key in localStorage (in a real application, this should be encrypted)
+      localStorage.setItem('GEMINI_API_KEY', btoa(apiKey.trim())); // Base64 encode as minimal obfuscation
       // Also update the process.env for immediate use
       (process.env as any).API_KEY = apiKey.trim();
     }
@@ -176,6 +204,99 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
     const ok = await providerManager.pingOllama();
     setOllamaStatus(ok ? 'SUCCESS' : 'ERROR');
     setTimeout(() => setOllamaStatus('IDLE'), 3000);
+  };
+
+  const [isTestingVoice, setIsTestingVoice] = useState(false);
+  const [voiceTestError, setVoiceTestError] = useState<string | null>(null);
+
+  const testVoice = async () => {
+    setIsTestingVoice(true);
+    setVoiceTestError(null);
+    
+    // If Piper is selected, check if server is available first
+    if (voiceConfig.voiceType === 'PIPER') {
+      if (piperLauncherStatus !== 'RUNNING') {
+        setVoiceTestError('Piper server is not running. Click "Start Piper" to start it.');
+        setIsTestingVoice(false);
+        return;
+      }
+    }
+    
+    // Temporarily apply the config and test
+    const originalConfig = voice.getConfig();
+    voice.setConfig(voiceConfig);
+    
+    try {
+      await voice.speak("Hello, I am JARVIS. Your personal AI assistant. How may I help you today?");
+    } catch (error) {
+      setVoiceTestError('Voice test failed. Check console for details.');
+      console.error('[VOICE TEST] Error:', error);
+    }
+    
+    // Restore original after a delay (voice will use the new config for this utterance)
+    setTimeout(() => {
+      voice.setConfig(originalConfig);
+      setIsTestingVoice(false);
+    }, 100);
+  };
+
+  const [sttStatus, setSttStatus] = useState<'IDLE' | 'SWITCHING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [sttStatusMessage, setSttStatusMessage] = useState('');
+
+  const handleSTTProviderChange = async (provider: 'AUTO' | 'WHISPER' | 'BROWSER') => {
+    // Update config state
+    setVoiceConfig({...voiceConfig, sttProvider: provider});
+    
+    // Apply immediately if voice is active
+    const currentState = voice.getState();
+    if (currentState !== 'MUTED' && currentState !== 'ERROR') {
+      setSttStatus('SWITCHING');
+      setSttStatusMessage(`Switching to ${provider} STT...`);
+      
+      try {
+        const success = await voice.switchSTTProvider(provider);
+        if (success) {
+          setSttStatus('SUCCESS');
+          setSttStatusMessage(`✓ Now using ${provider} STT`);
+        } else {
+          setSttStatus('ERROR');
+          setSttStatusMessage(`✗ Failed to switch to ${provider}. Server may not be available.`);
+        }
+      } catch (error) {
+        setSttStatus('ERROR');
+        setSttStatusMessage(`✗ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+      
+      // Clear status after 3 seconds
+      setTimeout(() => {
+        setSttStatus('IDLE');
+        setSttStatusMessage('');
+      }, 3000);
+    }
+  };
+
+  const [piperLauncherStatus, setPiperLauncherStatus] = useState<PiperLauncherState>('CHECKING');
+  const [piperLauncherMessage, setPiperLauncherMessage] = useState('Checking Piper status...');
+
+  // Subscribe to Piper launcher status
+  useEffect(() => {
+    const unsubscribe = piperLauncher.subscribe((status) => {
+      setPiperLauncherStatus(status.state);
+      setPiperLauncherMessage(status.message);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleStartPiper = async () => {
+    const success = await piperLauncher.startServer();
+    if (!success) {
+      // Show manual instructions if auto-start failed
+      alert(piperLauncher.getManualInstructions());
+    }
+  };
+
+  const checkPiperStatus = async () => {
+    await piperLauncher.checkStatus();
   };
 
   const refreshOllamaModels = async () => {
@@ -294,7 +415,39 @@ exit
     setInstallPrompt(null);
   };
 
-  const neuralVoices = ['Kore', 'Puck', 'Charon', 'Fenrir', 'Zephyr'];
+  // All 30 Gemini TTS voices with their characteristics
+const neuralVoices = [
+  { name: 'Kore', style: 'Firm - Authoritative, commanding' },
+  { name: 'Puck', style: 'Upbeat - Energetic, positive' },
+  { name: 'Charon', style: 'Informative - Clear, educational' },
+  { name: 'Fenrir', style: 'Excitable - Animated, enthusiastic' },
+  { name: 'Zephyr', style: 'Bright - Light, airy' },
+  { name: 'Leda', style: 'Youthful - Young, fresh' },
+  { name: 'Orus', style: 'Firm - Strong, steady' },
+  { name: 'Aoede', style: 'Breezy - Casual, relaxed' },
+  { name: 'Callirrhoe', style: 'Easy-going - Laid back' },
+  { name: 'Autonoe', style: 'Bright - Cheerful, sunny' },
+  { name: 'Enceladus', style: 'Breathy - Soft, whispery' },
+  { name: 'Iapetus', style: 'Clear - Precise, articulate' },
+  { name: 'Umbriel', style: 'Easy-going - Relaxed' },
+  { name: 'Algieba', style: 'Smooth - Polished, refined' },
+  { name: 'Despina', style: 'Smooth - Elegant' },
+  { name: 'Erinome', style: 'Clear - Distinct' },
+  { name: 'Algenib', style: 'Gravelly - Raspy, textured' },
+  { name: 'Rasalgethi', style: 'Informative - Knowledgeable' },
+  { name: 'Laomedeia', style: 'Upbeat - Positive' },
+  { name: 'Achernar', style: 'Soft - Gentle, quiet' },
+  { name: 'Alnilam', style: 'Firm - Resolute' },
+  { name: 'Schedar', style: 'Even - Balanced, steady' },
+  { name: 'Gacrux', style: 'Mature - Adult, seasoned' },
+  { name: 'Pulcherrima', style: 'Forward - Direct, bold' },
+  { name: 'Achird', style: 'Friendly - Warm, welcoming' },
+  { name: 'Zubenelgenubi', style: 'Casual - Informal' },
+  { name: 'Vindemiatrix', style: 'Gentle - Soft, kind' },
+  { name: 'Sadachbia', style: 'Lively - Animated' },
+  { name: 'Sadaltager', style: 'Knowledgeable - Wise' },
+  { name: 'Sulafat', style: 'Warm - Friendly, cozy' }
+];
 
   return (
     <div className="flex flex-col h-full text-gray-300">
@@ -321,7 +474,9 @@ exit
             { id: 'PLUGINS', label: 'MODULES', icon: <Cpu size={16}/> },
             { id: 'ARCHIVE', label: 'DATA ARCHIVE', icon: <Database size={16}/> },
             { id: 'DISTRIBUTION', label: 'DISTRIBUTION', icon: <Monitor size={16}/> },
-            { id: 'DOCS', label: 'DOCUMENTATION', icon: <FileText size={16}/> }
+            { id: 'DOCS', label: 'DOCUMENTATION', icon: <FileText size={16}/> },
+            { id: 'SECURITY', label: 'ENCRYPTION', icon: <Shield size={16}/> },
+            { id: 'BACKUP', label: 'BACKUP & RESTORE', icon: <Save size={16}/> }
           ].map(tab => (
             <button 
               key={tab.id}
@@ -504,6 +659,20 @@ exit
                           />
                         )}
                       </div>
+                      {/* Vision Models Info */}
+                      <div className="bg-purple-950/10 p-4 rounded border border-purple-900/30">
+                        <div className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                          <Camera size={12} /> Vision-Capable Models
+                        </div>
+                        <div className="text-[9px] text-gray-500 font-mono space-y-1">
+                          <p>For image analysis, install a vision model:</p>
+                          <code className="block bg-black p-2 rounded text-purple-400 mt-2">
+                            ollama pull llava
+                          </code>
+                          <p className="mt-2">Other options: bakllava, moondream</p>
+                        </div>
+                      </div>
+                      
                       <div className="bg-red-950/5 p-4 rounded border border-red-900/10 mt-auto">
                         <div className="flex justify-between items-center mb-3">
                             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Local Temperature</label>
@@ -516,6 +685,118 @@ exit
                             className="w-full accent-red-500 h-1.5 bg-red-900/20 rounded-lg appearance-none cursor-pointer"
                         />
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* GEMINI USAGE STATS - FREE TIER TRACKING */}
+                <div className={`p-6 border rounded-lg bg-[#0a0a0a] flex flex-col gap-6 ${geminiStats.isRateLimited ? 'border-red-900/50 bg-red-950/10' : 'border-yellow-900/30'}`}>
+                  <div className="flex items-center justify-between border-b border-yellow-900/20 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded border ${geminiStats.isRateLimited ? 'bg-red-950/40 border-red-800/50' : 'bg-yellow-950/40 border-yellow-800/50'}`}>
+                        <Zap size={18} className={geminiStats.isRateLimited ? 'text-red-400' : 'text-yellow-400'} />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-white uppercase tracking-widest">Free Tier Usage</h3>
+                        <div className={`text-[10px] font-mono ${geminiStats.isRateLimited ? 'text-red-700' : 'text-yellow-700'}`}>Gemini API Quota</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] text-gray-500 uppercase tracking-wider">Status</div>
+                      <div className={`text-xs font-bold ${
+                        geminiStats.isRateLimited ? 'text-red-400' :
+                        geminiStats.remaining > 100 ? 'text-green-400' : 
+                        geminiStats.remaining > 20 ? 'text-yellow-400' : 'text-red-400'
+                      }`}>
+                        {geminiStats.isRateLimited ? 'RATE LIMITED' :
+                         geminiStats.remaining > 0 ? 'ACTIVE' : 'LIMIT REACHED'}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {/* Daily Progress bar */}
+                    <div>
+                      <div className="flex justify-between text-[10px] text-gray-500 uppercase tracking-wider mb-1">
+                        <span>Daily Usage</span>
+                        <span>{geminiStats.used} / {geminiStats.limit}</span>
+                      </div>
+                      <div className="relative h-3 bg-black rounded-full overflow-hidden border border-yellow-900/30">
+                        <div 
+                          className={`absolute top-0 left-0 h-full transition-all duration-500 ${
+                            geminiStats.remaining > 100 ? 'bg-green-500' : 
+                            geminiStats.remaining > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(100, (geminiStats.used / geminiStats.limit) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Per-minute Progress bar */}
+                    <div>
+                      <div className="flex justify-between text-[10px] text-gray-500 uppercase tracking-wider mb-1">
+                        <span>Per-Minute (prevents 429 errors)</span>
+                        <span>{geminiStats.perMinuteUsed} / 14</span>
+                      </div>
+                      <div className="relative h-2 bg-black rounded-full overflow-hidden border border-yellow-900/30">
+                        <div 
+                          className={`absolute top-0 left-0 h-full transition-all duration-500 ${
+                            geminiStats.perMinuteRemaining > 5 ? 'bg-green-500' : 
+                            geminiStats.perMinuteRemaining > 1 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(100, (geminiStats.perMinuteUsed / 14) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Stats grid */}
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="bg-black/40 p-2 rounded border border-yellow-900/20 text-center">
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Daily Used</div>
+                        <div className="text-lg font-mono font-bold text-yellow-400">{geminiStats.used}</div>
+                      </div>
+                      <div className="bg-black/40 p-2 rounded border border-yellow-900/20 text-center">
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Daily Left</div>
+                        <div className={`text-lg font-mono font-bold ${
+                          geminiStats.remaining > 100 ? 'text-green-400' : 
+                          geminiStats.remaining > 20 ? 'text-yellow-400' : 'text-red-400'
+                        }`}>
+                          {geminiStats.remaining}
+                        </div>
+                      </div>
+                      <div className="bg-black/40 p-2 rounded border border-yellow-900/20 text-center">
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">This Minute</div>
+                        <div className={`text-lg font-mono font-bold ${
+                          geminiStats.perMinuteRemaining > 5 ? 'text-green-400' : 
+                          geminiStats.perMinuteRemaining > 1 ? 'text-yellow-400' : 'text-red-400'
+                        }`}>
+                          {geminiStats.perMinuteUsed}
+                        </div>
+                      </div>
+                      <div className="bg-black/40 p-2 rounded border border-yellow-900/20 text-center">
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wider mb-1">Min Left</div>
+                        <div className={`text-lg font-mono font-bold ${
+                          geminiStats.perMinuteRemaining > 5 ? 'text-green-400' : 
+                          geminiStats.perMinuteRemaining > 1 ? 'text-yellow-400' : 'text-red-400'
+                        }`}>
+                          {geminiStats.perMinuteRemaining}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Warning if rate limited */}
+                    {geminiStats.isRateLimited && (
+                      <div className="text-[9px] text-red-400 font-mono bg-red-950/20 p-3 rounded border border-red-900/50">
+                        <span className="text-red-500">⚠</span> <strong>RATE LIMITED:</strong> Too many requests. 
+                        JARVIS is using local processing only. Wait 60 seconds or switch to Ollama mode.
+                      </div>
+                    )}
+                    
+                    {/* Info text */}
+                    <div className="text-[9px] text-gray-500 font-mono bg-yellow-950/10 p-3 rounded border border-yellow-900/20">
+                      <span className="text-yellow-500">ℹ</span> Local intent classifier handles most commands for free. 
+                      Gemini is only used for complex queries. Per-minute limits prevent 429 errors.
+                      Resets daily at midnight.
                     </div>
                   </div>
                 </div>
@@ -535,23 +816,80 @@ exit
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="flex flex-col gap-4">
                       <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Engine Mode</label>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <button 
                           onClick={() => setVoiceConfig({...voiceConfig, voiceType: 'SYSTEM'})}
-                          className={`flex-1 p-3 border rounded flex flex-col items-center gap-2 transition-all ${voiceConfig.voiceType === 'SYSTEM' ? 'border-cyan-500 bg-cyan-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-cyan-950/10'}`}
+                          className={`flex-1 min-w-[100px] p-3 border rounded flex flex-col items-center gap-2 transition-all ${voiceConfig.voiceType === 'SYSTEM' ? 'border-cyan-500 bg-cyan-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-cyan-950/10'}`}
                         >
                           <Activity size={16}/>
                           <span className="text-[10px] font-bold uppercase">Native Browser</span>
                         </button>
                         <button 
                           onClick={() => setVoiceConfig({...voiceConfig, voiceType: 'NEURAL'})}
-                          className={`flex-1 p-3 border rounded flex flex-col items-center gap-2 transition-all ${voiceConfig.voiceType === 'NEURAL' ? 'border-indigo-500 bg-indigo-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-indigo-950/10'}`}
+                          className={`flex-1 min-w-[100px] p-3 border rounded flex flex-col items-center gap-2 transition-all ${voiceConfig.voiceType === 'NEURAL' ? 'border-indigo-500 bg-indigo-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-indigo-950/10'}`}
                         >
                           <Sparkles size={16}/>
                           <span className="text-[10px] font-bold uppercase">Gemini Neural</span>
                         </button>
+                        <button 
+                          onClick={() => setVoiceConfig({...voiceConfig, voiceType: 'PIPER'})}
+                          className={`flex-1 min-w-[100px] p-3 border rounded flex flex-col items-center gap-2 transition-all ${voiceConfig.voiceType === 'PIPER' ? 'border-green-500 bg-green-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-green-950/10'}`}
+                        >
+                          <Server size={16}/>
+                          <span className="text-[10px] font-bold uppercase">Piper Local</span>
+                          <span className="text-[8px] text-green-500">⭐ JARVIS Voice!</span>
+                        </button>
                       </div>
                     </div>
+                    <div className="flex flex-col gap-4">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Speech Recognition (STT)</label>
+                      <div className="flex flex-wrap gap-2">
+                        <button 
+                          onClick={() => handleSTTProviderChange('AUTO')}
+                          disabled={sttStatus === 'SWITCHING'}
+                          className={`flex-1 min-w-[100px] p-3 border rounded flex flex-col items-center gap-2 transition-all disabled:opacity-50 ${voiceConfig.sttProvider === 'AUTO' || !voiceConfig.sttProvider ? 'border-cyan-500 bg-cyan-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-cyan-950/10'}`}
+                        >
+                          <Zap size={16}/>
+                          <span className="text-[10px] font-bold uppercase">Auto</span>
+                          <span className="text-[8px] text-cyan-500">Whisper → Browser</span>
+                        </button>
+                        <button 
+                          onClick={() => handleSTTProviderChange('WHISPER')}
+                          disabled={sttStatus === 'SWITCHING'}
+                          className={`flex-1 min-w-[100px] p-3 border rounded flex flex-col items-center gap-2 transition-all disabled:opacity-50 ${voiceConfig.sttProvider === 'WHISPER' ? 'border-green-500 bg-green-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-green-950/10'}`}
+                        >
+                          <Mic size={16}/>
+                          <span className="text-[10px] font-bold uppercase">Whisper</span>
+                          <span className="text-[8px] text-green-500">Local & Offline</span>
+                        </button>
+                        <button 
+                          onClick={() => handleSTTProviderChange('BROWSER')}
+                          disabled={sttStatus === 'SWITCHING'}
+                          className={`flex-1 min-w-[100px] p-3 border rounded flex flex-col items-center gap-2 transition-all disabled:opacity-50 ${voiceConfig.sttProvider === 'BROWSER' ? 'border-indigo-500 bg-indigo-950/20 text-white' : 'border-[#222] text-gray-600 bg-black hover:bg-indigo-950/10'}`}
+                        >
+                          <Globe size={16}/>
+                          <span className="text-[10px] font-bold uppercase">Browser</span>
+                          <span className="text-[8px] text-indigo-500">Google STT</span>
+                        </button>
+                      </div>
+                      <div className="text-[9px] text-gray-500">
+                        {sttStatus === 'SWITCHING' ? (
+                          <span className="text-yellow-400">⏳ {sttStatusMessage}</span>
+                        ) : sttStatus === 'SUCCESS' ? (
+                          <span className="text-green-400">{sttStatusMessage}</span>
+                        ) : sttStatus === 'ERROR' ? (
+                          <span className="text-red-400">{sttStatusMessage}</span>
+                        ) : voiceConfig.sttProvider === 'WHISPER' ? (
+                          <span className="text-green-400">⚡ Whisper runs locally - requires Python server running</span>
+                        ) : voiceConfig.sttProvider === 'BROWSER' ? (
+                          <span className="text-indigo-400">🌐 Browser STT uses Google&apos;s servers - requires internet</span>
+                        ) : (
+                          <span className="text-cyan-400">🔄 Auto mode tries Whisper first, falls back to Browser if unavailable</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="flex flex-col gap-4">
                       <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Identity Profile</label>
                       {voiceConfig.voiceType === 'SYSTEM' ? (
@@ -566,17 +904,142 @@ exit
                             ))}
                           </select>
                         </div>
+                      ) : voiceConfig.voiceType === 'PIPER' ? (
+                        <div className="flex flex-col gap-3">
+                          <div className="p-3 bg-green-900/20 border border-green-500/30 rounded text-[10px] text-green-400">
+                            <strong>🎭 JARVIS Voice Available!</strong><br/>
+                            Piper runs locally - completely free & offline!
+                          </div>
+                          
+                          {/* Piper Status & Test */}
+                          <div className="flex gap-2">
+                            {/* Status Button - Shows current state and allows check */}
+                            <button
+                              onClick={checkPiperStatus}
+                              disabled={piperLauncherStatus === 'CHECKING' || piperLauncherStatus === 'STARTING'}
+                              className={`flex-1 p-2 border rounded text-[10px] text-white transition-colors disabled:opacity-50 flex items-center justify-center gap-2
+                                ${piperLauncherStatus === 'RUNNING' ? 'bg-green-800 hover:bg-green-700 border-green-600' : 
+                                  piperLauncherStatus === 'ERROR' ? 'bg-red-800 hover:bg-red-700 border-red-600' :
+                                  piperLauncherStatus === 'STARTING' ? 'bg-yellow-800 hover:bg-yellow-700 border-yellow-600' :
+                                  'bg-gray-800 hover:bg-gray-700 border-gray-600'}`}
+                            >
+                              {piperLauncherStatus === 'CHECKING' && <Loader2 size={12} className="animate-spin" />}
+                              {piperLauncherStatus === 'RUNNING' && <CheckCircle2 size={12} />}
+                              {piperLauncherStatus === 'ERROR' && <XCircle size={12} />}
+                              {piperLauncherStatus === 'NOT_INSTALLED' && <AlertTriangle size={12} />}
+                              {piperLauncherStatus === 'STARTING' && <Loader2 size={12} className="animate-spin" />}
+                              {piperLauncherStatus === 'CHECKING' ? 'Checking...' : 
+                               piperLauncherStatus === 'RUNNING' ? '✓ Piper Online' :
+                               piperLauncherStatus === 'NOT_INSTALLED' ? '✗ Not Installed' :
+                               piperLauncherStatus === 'NOT_RUNNING' ? '✗ Not Running' :
+                               piperLauncherStatus === 'STARTING' ? 'Starting...' :
+                               piperLauncherStatus === 'ERROR' ? 'Error' : 'Check Status'}
+                            </button>
+                            
+                            {/* Start Button - Only show when not running */}
+                            {piperLauncherStatus === 'NOT_RUNNING' && (
+                              <button
+                                onClick={handleStartPiper}
+                                className="flex-1 p-2 bg-green-800 hover:bg-green-700 border border-green-600 rounded text-[10px] text-white transition-colors flex items-center justify-center gap-2"
+                              >
+                                <Power size={12} />
+                                Start Piper
+                              </button>
+                            )}
+                            
+                            {/* Test Voice Button - Only when running */}
+                            {piperLauncherStatus === 'RUNNING' && (
+                              <button
+                                onClick={testVoice}
+                                disabled={isTestingVoice}
+                                className="flex-1 p-2 bg-cyan-800 hover:bg-cyan-700 border border-cyan-600 rounded text-[10px] text-white transition-colors disabled:opacity-50"
+                              >
+                                {isTestingVoice ? 'Testing...' : '🎙️ Test Voice'}
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Status Message */}
+                          {piperLauncherMessage && (
+                            <div className={`p-2 border rounded text-[9px] 
+                              ${piperLauncherStatus === 'RUNNING' ? 'bg-green-900/20 border-green-500/30 text-green-400' :
+                                piperLauncherStatus === 'ERROR' ? 'bg-red-900/20 border-red-500/30 text-red-400' :
+                                piperLauncherStatus === 'STARTING' ? 'bg-yellow-900/20 border-yellow-500/30 text-yellow-400' :
+                                'bg-gray-900/20 border-gray-500/30 text-gray-400'}`}>
+                              {piperLauncherStatus === 'RUNNING' ? '✓ ' : 
+                               piperLauncherStatus === 'ERROR' ? '⚠️ ' : 
+                               piperLauncherStatus === 'STARTING' ? '⏳ ' : 'ℹ️ '}
+                              {piperLauncherMessage}
+                            </div>
+                          )}
+                          
+                          {/* Voice Test Error */}
+                          {voiceTestError && (
+                            <div className="p-2 bg-red-900/30 border border-red-500/50 rounded text-[9px] text-red-400">
+                              ⚠️ {voiceTestError}
+                            </div>
+                          )}
+                          
+                          {/* Not Installed Warning */}
+                          {piperLauncherStatus === 'NOT_INSTALLED' && (
+                            <div className="p-3 bg-red-900/20 border border-red-500/30 rounded text-[10px] text-red-400">
+                              <strong>Piper not found.</strong><br/>
+                              Run <code className="bg-black px-1 rounded">Install-JARVIS-Voice.bat</code> to install Piper and the JARVIS voice.
+                            </div>
+                          )}
+                          
+                          {/* Not Running - Show manual instructions */}
+                          {piperLauncherStatus === 'NOT_RUNNING' && (
+                            <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded text-[10px] text-yellow-400">
+                              <strong>Piper is installed but not running.</strong><br/>
+                              Click <strong>"Start Piper"</strong> above to start the server automatically, or run <code className="bg-black px-1 rounded">start-jarvis-server.bat</code> manually.
+                            </div>
+                          )}
+                          
+                          <div className="p-3 border border-green-500/50 bg-green-950/20 rounded">
+                            <div className="flex items-center justify-between">
+                              <div className="font-bold text-[11px] text-white flex items-center gap-2">
+                                <span>jarvis</span>
+                                <span className="text-[9px] text-green-400">✓ INSTALLED</span>
+                              </div>
+                              <span className="text-[9px] text-green-500">⭐ ACTIVE</span>
+                            </div>
+                            <div className="text-[9px] text-gray-400 mt-1">JARVIS from Iron Man - British, professional, calm</div>
+                            <div className="text-[9px] text-gray-500 mt-2">
+                              This voice is ready to use. Click "🎙️ Test Voice" above to hear it!
+                            </div>
+                          </div>
+                          
+                          <div className="text-[10px] text-gray-500 border-t border-[#222] pt-3">
+                            <strong>More voices available:</strong> alan, joe, kristin
+                            <div className="text-[9px] text-gray-600 mt-1">
+                              Download from <a href="https://huggingface.co/rhasspy/piper-voices" target="_blank" rel="noopener" className="text-cyan-500 hover:underline">huggingface.co/rhasspy/piper-voices</a> and place .onnx files in the Piper/voices/ folder
+                            </div>
+                          </div>
+                          <details className="text-[10px]">
+                            <summary className="cursor-pointer text-gray-400 hover:text-white">Setup Instructions</summary>
+                            <pre className="mt-2 p-2 bg-black border border-[#222] rounded text-[9px] text-gray-500 whitespace-pre-wrap">
+                              {PIPER_SETUP_INSTRUCTIONS}
+                            </pre>
+                          </details>
+                        </div>
                       ) : (
-                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
-                           {neuralVoices.map(name => (
+                        <div className="flex flex-col gap-3">
+                          <div className="text-[10px] text-gray-500">
+                            💡 For a JARVIS-like voice, try: <strong>Kore</strong> (Firm), <strong>Orus</strong> (Firm), or <strong>Alnilam</strong> (Firm)
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                           {neuralVoices.map((voice) => (
                              <button 
-                               key={name}
-                               onClick={() => setVoiceConfig({...voiceConfig, voiceName: name})}
-                               className={`p-2 border text-[10px] font-bold rounded text-center transition-all ${voiceConfig.voiceName === name ? 'border-indigo-500 bg-indigo-950/40 text-white' : 'border-[#222] text-gray-600 bg-black hover:border-gray-500'}`}
+                               key={voice.name}
+                               onClick={() => setVoiceConfig({...voiceConfig, voiceName: voice.name})}
+                               className={`p-3 border text-left rounded transition-all ${voiceConfig.voiceName === voice.name ? 'border-indigo-500 bg-indigo-950/40 text-white' : 'border-[#222] text-gray-600 bg-black hover:border-gray-500'}`}
                              >
-                               {name.toUpperCase()}
+                               <div className="font-bold text-[11px]">{voice.name}</div>
+                               <div className="text-[9px] opacity-75 mt-1">{voice.style}</div>
                              </button>
                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -871,6 +1334,7 @@ exit
                                     localStorage.setItem('HA_URL', e.target.value);
                                 }}
                             />
+                            <div className="text-[8px] text-gray-600 mt-1">Must use http/https. Local addresses like localhost, 127.0.0.1 are allowed.</div>
                         </div>
 
                         <div>
@@ -884,6 +1348,7 @@ exit
                                     localStorage.setItem('HA_TOKEN', e.target.value);
                                 }}
                             />
+                            <div className="text-[8px] text-gray-600 mt-1">Min 20 characters. Get from Home Assistant → Profile → Long-Lived Access Tokens</div>
                         </div>
 
                         <div className="flex gap-2 pt-2">
@@ -939,8 +1404,97 @@ exit
           )}
           
           {activeTab === 'DOCS' && <SystemDocs />}
+          
+          {activeTab === 'SECURITY' && (
+            <div className="flex-1 overflow-y-auto pr-2">
+              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <Shield className="text-green-500" />
+                Encryption Settings
+              </h2>
+              
+              {showEncryptionSetup ? (
+                <EncryptionSetup 
+                  onComplete={() => {
+                    setShowEncryptionSetup(false);
+                    setEncryptionEnabled(true);
+                  }}
+                  onSkip={() => setShowEncryptionSetup(false)}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-[#111] border border-[#333] rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-white">API Key Encryption</h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {encryptionEnabled 
+                            ? 'Your API keys are encrypted with AES-256-GCM'
+                            : 'Your API keys are stored with basic encoding'}
+                        </p>
+                      </div>
+                      <div className={`px-3 py-1 rounded text-xs font-bold ${
+                        encryptionEnabled 
+                          ? 'bg-green-900/30 text-green-400 border border-green-500/30' 
+                          : 'bg-yellow-900/30 text-yellow-400 border border-yellow-500/30'
+                      }`}>
+                        {encryptionEnabled ? 'ENABLED' : 'DISABLED'}
+                      </div>
+                    </div>
+                    
+                    {!encryptionEnabled && (
+                      <button
+                        onClick={() => setShowEncryptionSetup(true)}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Shield size={14} />
+                        Enable Encryption
+                      </button>
+                    )}
+                    
+                    {encryptionEnabled && (
+                      <div className="bg-green-950/20 border border-green-900/30 rounded-lg p-3">
+                        <p className="text-xs text-green-400 flex items-center gap-2">
+                          <CheckCircle2 size={14} />
+                          Your API keys are protected with password-based encryption
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="bg-[#111] border border-[#333] rounded-lg p-4">
+                    <h3 className="text-sm font-bold text-white mb-2">Security Status</h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">Encryption</span>
+                        <span className={encryptionEnabled ? 'text-green-400' : 'text-yellow-400'}>
+                          {encryptionEnabled ? 'AES-256-GCM' : 'Base64'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">Key Storage</span>
+                        <span className="text-gray-300">localStorage</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-gray-400">In-Memory Cache</span>
+                        <span className="text-green-400">Cleared on logout</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* BACKUP TAB */}
+          {activeTab === 'BACKUP' && (
+            <div className="flex-1 overflow-y-auto pr-2">
+              <SettingsBackup onClose={() => setActiveTab('GENERAL')} />
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
+
+export default SettingsInterface;

@@ -4,16 +4,14 @@ import { voice } from '../services/voice';
 import { vision } from '../services/vision';
 import { providerManager } from '../services/providers';
 import { registry } from '../services/registry';
+import { useKernelStore, useLogsStore } from '../stores';
 import { SystemMetrics, VoiceState, ProcessorState, AIProvider, LogEntry, VisionState, RuntimePlugin } from '../types';
 import { 
   Activity, Zap, Mic, Camera, Command, Cpu
 } from 'lucide-react';
 
 interface MainDashboardProps {
-  processorState: ProcessorState;
-  logs: LogEntry[];
   onCommand: (cmd: string) => void;
-  onClearLogs: () => void;
   onNavigate: (tab: 'ARCH' | 'MEMORY' | 'VISION' | 'HEALTH' | 'GRAPH' | 'HOME_ASSISTANT') => void;
 }
 
@@ -215,21 +213,22 @@ const ConstellationCanvas: React.FC<ConstellationProps> = ({ state, voiceState }
 
 // --- MAIN COMPONENT ---
 
-export const MainDashboard: React.FC<MainDashboardProps> = ({ processorState, logs, onCommand, onClearLogs, onNavigate }) => {
+export const MainDashboard: React.FC<MainDashboardProps> = ({ onCommand, onNavigate }) => {
+  // Get state from stores
+  const processorState = useKernelStore((s) => s.processorState);
+  const vState = useKernelStore((s) => s.voiceState);
+  const viState = useKernelStore((s) => s.visionState);
+  const plugins = useKernelStore((s) => s.plugins);
+  const logs = useLogsStore((s) => s.filteredLogs);
+  const clearLogs = useLogsStore((s) => s.clearLogs);
+  
   const [metrics, setMetrics] = useState<SystemMetrics>({ cpuLoad: 0, gpuLoad: 0, memoryUsage: 0, temperature: 0, uptime: 0 });
-  const [vState, setVState] = useState<VoiceState>(VoiceState.MUTED);
-  const [viState, setViState] = useState<VisionState>(VisionState.OFF);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [plugins, setPlugins] = useState<RuntimePlugin[]>([]);
   const [atmosphere, setAtmosphere] = useState({ humidity: 42, pressure: 1013 });
 
   useEffect(() => {
     const unsubHw = hardware.subscribe(setMetrics);
-    const unsubVoice = voice.subscribe(setVState);
-    const unsubVision = vision.subscribe(setViState);
-    setPlugins(registry.getAll());
-    const unsubRegistry = registry.subscribe(() => setPlugins(registry.getAll()));
-
+    
     const atmoInterval = setInterval(() => {
        setAtmosphere(prev => ({
            humidity: Math.min(60, Math.max(30, prev.humidity + (Math.random() - 0.5))),
@@ -239,9 +238,6 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ processorState, lo
     
     return () => {
         unsubHw();
-        unsubVoice();
-        unsubVision();
-        unsubRegistry();
         clearInterval(atmoInterval);
     };
   }, []);
@@ -265,7 +261,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ processorState, lo
   };
 
   const isExecuting = processorState === ProcessorState.EXECUTING || processorState === ProcessorState.ANALYZING;
-  const lastOp = logs.slice().reverse().find(l => l.source === 'KERNEL' || l.source === 'GEMINI' || l.source === 'OLLAMA');
+  const lastOp = logs?.slice().reverse().find(l => l.source === 'KERNEL' || l.source === 'GEMINI' || l.source === 'OLLAMA');
   const isMicActive = vState !== VoiceState.MUTED && vState !== VoiceState.ERROR;
   const isCamActive = viState === VisionState.ACTIVE || viState === VisionState.CAPTURING;
 
@@ -349,7 +345,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ processorState, lo
 
               {/* NEURAL TRANSCRIPT */}
               <HUDFrame title="NEURAL_TRANSCRIPT" className="h-64 shrink-0" action={
-                  <button onClick={onClearLogs} className="text-[10px] cursor-pointer hover:text-white hover:bg-red-900/50 px-2 py-0.5 rounded transition-colors uppercase font-bold">Purge</button>
+                  <button onClick={clearLogs} className="text-[10px] cursor-pointer hover:text-white hover:bg-red-900/50 px-2 py-0.5 rounded transition-colors uppercase font-bold">Purge</button>
               }>
                   <div ref={scrollRef} className="absolute inset-0 p-3 overflow-y-auto overflow-x-hidden custom-scrollbar flex flex-col gap-2">
                       {logs.slice(-30).map(log => (

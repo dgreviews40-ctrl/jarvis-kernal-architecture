@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
     import { BootPhase, BootState } from '../types';
     import { bootLoader, BOOT_PHASES } from '../services/boot';
+    import { KERNEL_VERSION } from '../stores/kernelStore';
     import { Terminal, CheckCircle, AlertTriangle, Cpu } from 'lucide-react';
     
     interface BootSequenceProps {
@@ -52,7 +53,7 @@ import React, { useEffect, useState, useRef } from 'react';
                   <h1 className="text-2xl font-bold tracking-widest flex items-center gap-2">
                     <Cpu className="animate-pulse" /> JARVIS KERNEL
                   </h1>
-                  <div className="text-xs text-cyan-700">STARK INDUSTRIES • BIOS v4.2.1</div>
+                  <div className="text-xs text-cyan-700">STARK INDUSTRIES • KERNEL v{KERNEL_VERSION.major}.{KERNEL_VERSION.minor}.{KERNEL_VERSION.patch}</div>
                </div>
                <div className="text-right">
                   <div className="text-xl font-bold">{Math.min(100, Math.round(progress))}%</div>

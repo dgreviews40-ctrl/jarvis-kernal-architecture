@@ -1,17 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useKernelStore } from '../stores';
 import { VisionState } from '../types';
 import {
   Eye, EyeOff, Camera, RefreshCw, Power, ShieldAlert,
-  ZoomIn, ZoomOut, Circle, Square, Download, Settings2, Sliders, Maximize2, Minimize2, Monitor, Home
+  ZoomIn, ZoomOut, Circle, Square, Download, Settings2, Sliders, Maximize2, Minimize2, Monitor, Home,
+  ArrowLeft, Video
 } from 'lucide-react';
 import { vision } from '../services/vision';
 import { visionHACamera, HACamera } from '../services/vision_ha_camera';
 
-interface VisionWindowProps {
-  state: VisionState;
-}
-
-export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
+export const VisionWindow: React.FC = () => {
+  // Get vision state from kernel store
+  const state = useKernelStore((s) => s.visionState);
+  const setVisionState = useKernelStore((s) => s.setVisionState);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [zoom, setZoom] = useState(1);
   const [fps, setFps] = useState(30);
@@ -24,33 +25,62 @@ export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
   const [haCameraImage, setHaCameraImage] = useState<string | null>(null);
   const [isLoadingCameras, setIsLoadingCameras] = useState(false);
 
-  // Subscribe to visionHACamera state changes
+  // Subscribe to visionHACamera state changes and load cameras
   useEffect(() => {
+    let isMounted = true;
+    
     const unsubscribe = visionHACamera.subscribe((cameraState) => {
-      // Update UI based on camera state
+      if (!isMounted) return;
+      // Update UI based on camera state - image updates happen via selected camera effect
     });
 
     // Load HA cameras when component mounts
     const loadCameras = async () => {
       setIsLoadingCameras(true);
-      const cams = await visionHACamera.loadHACameras();
-      setHACameras(cams);
-      setIsLoadingCameras(false);
+      try {
+        const cams = await visionHACamera.loadHACameras();
+        if (isMounted) {
+          setHACameras(cams);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCameras(false);
+        }
+      }
     };
 
     loadCameras();
 
-    return unsubscribe;
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
-  // Update when HA camera image changes
+  // Update when HA camera image changes - poll for updates when a camera is selected
   useEffect(() => {
-    if (selectedHACamera) {
+    if (!selectedHACamera) return;
+    
+    let isMounted = true;
+    
+    const updateImage = () => {
+      if (!isMounted || !selectedHACamera) return;
       const img = visionHACamera.getHACameraImage(selectedHACamera);
       if (img) {
         setHaCameraImage(`data:image/jpeg;base64,${img}`);
       }
-    }
+    };
+    
+    // Initial load
+    updateImage();
+    
+    // Poll for updates every 2 seconds when camera is selected
+    const interval = setInterval(updateImage, 2000);
+    
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [selectedHACamera]);
 
   useEffect(() => {
@@ -87,6 +117,8 @@ export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
           await visionHACamera.switchToHACamera(selectedHACamera);
           // Start refreshing the HA camera image
           await visionHACamera.startHACameraRefresh(selectedHACamera, 5000); // Refresh every 5 seconds
+          // Set vision state to ACTIVE so the UI shows the camera feed
+          setVisionState(VisionState.ACTIVE);
         } catch (e) {
           console.error("Failed to start HA camera feed");
         }
@@ -96,6 +128,8 @@ export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
         vision.stopCamera();
       } else if (feedType === 'home_assistant') {
         visionHACamera.stopHACameraRefresh();
+        // Set vision state back to OFF
+        setVisionState(VisionState.OFF);
       }
       setIsRecording(false);
     }
@@ -281,6 +315,33 @@ export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
             </div>
 
             <div className="flex flex-col items-end gap-2 pointer-events-auto">
+              {/* Camera Control Buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    // Stop current feed and go back to camera selection
+                    if (feedType === 'local') {
+                      vision.stopCamera();
+                    } else if (feedType === 'home_assistant') {
+                      visionHACamera.stopHACameraRefresh();
+                    }
+                    // Reset vision state to OFF to show camera selection screen
+                    setVisionState(VisionState.OFF);
+                    setIsRecording(false);
+                  }}
+                  className="bg-cyan-900/70 border border-cyan-500/50 text-cyan-400 hover:bg-cyan-600 hover:text-white px-3 py-1.5 rounded transition-all font-bold uppercase text-[10px] flex items-center gap-1.5 backdrop-blur-sm"
+                >
+                  <ArrowLeft size={12} />
+                  Change Cam
+                </button>
+                <button
+                  onClick={handleToggle}
+                  className="bg-red-900/70 border border-red-500/50 text-red-400 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded transition-all font-bold uppercase text-[10px] backdrop-blur-sm"
+                >
+                  Stop Camera
+                </button>
+              </div>
+
               <div className="flex gap-2 bg-black/70 p-1.5 border border-cyan-500/20 rounded backdrop-blur-sm">
                 <button
                   onClick={() => setIsFitMode(!isFitMode)}
@@ -333,12 +394,6 @@ export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
                   )}
                </div>
             </div>
-            <button
-              onClick={handleToggle}
-              className="pointer-events-auto bg-red-900/20 border border-red-500/40 text-red-500 hover:bg-red-600 hover:text-white text-[9px] px-3 py-1 rounded transition-all font-bold uppercase cursor-pointer"
-            >
-              Offline Array
-            </button>
           </div>
         </div>
       </div>
@@ -435,3 +490,5 @@ export const VisionWindow: React.FC<VisionWindowProps> = ({ state }) => {
     </div>
   );
 };
+
+export default VisionWindow;

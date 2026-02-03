@@ -1,31 +1,38 @@
-
+/**
+ * Optimized Voice Service
+ * Features: VAD, audio compression, connection pooling, and efficient streaming
+ */
 
 import { VoiceState, VoiceConfig, VoiceType } from "../types";
 import { conversation } from "./conversation";
 import { GoogleGenAI, Modality } from "@google/genai";
-
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-    AudioContext: any;
-    webkitAudioContext: any;
-  }
-}
+import { geminiRateLimiter } from "./rateLimiter";
+import { piperTTS } from "./piperTTS";
+import { piperLauncher } from "./piperLauncher";
+import { optimizer } from "./performance";
+import { inputValidator } from "./inputValidator";
+import { whisperSTT } from "./whisperSTT";
 
 const DEFAULT_CONFIG: VoiceConfig = {
   wakeWord: "jarvis",
   voiceType: 'SYSTEM',
-  voiceName: 'Kore', 
+  voiceName: 'Kore',
   rate: 1.0,
-  pitch: 1.0
+  pitch: 1.0,
+  sttProvider: 'AUTO' // Default to auto (try Whisper first, fallback to browser)
 };
+
+// Audio processing constants - IMPROVED for better wake word detection
+const AUDIO_BUFFER_SIZE = 2048; // Reduced for faster processing
+const VAD_THRESHOLD = 0.012; // Lowered from 0.015 to catch quieter speech/wake words
+const VAD_SILENCE_TIMEOUT = 1200; // Increased from 800ms - gives more time for wake word detection
+const VAD_SPEECH_TIMEOUT = 10000; // max speech duration
+const VAD_MIN_SPEECH_DURATION = 300; // Minimum speech before processing (ms)
 
 function decodeBase64ToUint8Array(base64: string) {
   const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
@@ -50,57 +57,332 @@ async function decodeRawPCM(
   return buffer;
 }
 
-class VoiceCore {
-  private recognition: any = null;
+class VoiceCoreOptimized {
+  private recognition: SpeechRecognition | null = null;
   private synthesis: SpeechSynthesis = window.speechSynthesis;
   private state: VoiceState = VoiceState.MUTED;
   private config: VoiceConfig = { ...DEFAULT_CONFIG };
   private observers: ((state: VoiceState) => void)[] = [];
   private transcriptObservers: ((text: string, isFinal: boolean) => void)[] = [];
   private onCommandCallback: ((text: string) => void) | null = null;
-  
+
+  // Optimized state management
   private restartTimer: number | null = null;
-  private errorCount: number = 0; 
+  private errorCount: number = 0;
+  private networkErrorCount: number = 0;
   private audioContext: AudioContext | null = null;
-  
   private isRestarting: boolean = false;
   private sessionStartTime: number = 0;
   private lastManualActivation: number = 0;
   private hasProcessedSpeech: boolean = false;
   private consecutiveShortSessions: number = 0;
 
+  // VAD (Voice Activity Detection)
+  private vadAnalyser: AnalyserNode | null = null;
+  private vadInterval: number | null = null;
+  private isSpeaking: boolean = false;
+  private silenceStartTime: number = 0;
+  private speechStartTime: number = 0;
+
+  // NEW: Flag to prevent audio feedback loop
+  private isCurrentlySpeaking: boolean = false;
+  
+  // Audio queue for smooth playback
+  private audioQueue: AudioBuffer[] = [];
+  
+  // Wake word detection timing - IMPROVED
+  private wakeWordDetectedTime: number = 0;
+  private readonly WAKE_WORD_GRACE_PERIOD = 10000; // 10 seconds to give command after wake word (more comfortable)
+  
+  // NEW: Response preloading
+  private preloadedResponse: string | null = null;
+  private isPlayingAudio: boolean = false;
+  
+  // Pre-initialized audio context pool
+  private audioContextPool: AudioContext[] = [];
+  private maxAudioContexts = 2;
+  
+  // Whisper fallback
+  private useWhisperFallback: boolean = false;
+  private whisperAvailable: boolean = false;
+
   constructor() {
     const saved = localStorage.getItem('jarvis_voice_config');
     if (saved) {
-      try { this.config = { ...this.config, ...JSON.parse(saved) }; } catch (e) {}
+      try {
+        this.config = { ...this.config, ...JSON.parse(saved) };
+      } catch (e) {
+        console.warn('[VOICE] Failed to parse saved voice config:', e);
+      }
+    }
+
+    // Initialize the Web Worker for wake word detection
+    try {
+      // Dynamically import the worker
+      const workerCode = `
+        self.onmessage = function(e) {
+          const { type, data } = e.data;
+
+          switch(type) {
+            case 'calculateLevenshtein':
+              const { str1, str2 } = data;
+              const distance = calculateLevenshteinDistance(str1, str2);
+              self.postMessage({ type: 'levenshteinResult', result: distance });
+              break;
+
+            case 'detectWakeWord':
+              const { transcript, wakeWord } = data;
+              const detected = detectWakeWordWithFuzzyMatching(transcript, wakeWord);
+              self.postMessage({ type: 'wakeWordResult', result: detected });
+              break;
+
+            default:
+              console.warn('Unknown message type received by worker:', type);
+          }
+        };
+
+        function calculateLevenshteinDistance(a, b) {
+          const matrix = [];
+
+          for (let i = 0; i <= b.length; i++) {
+            matrix[i] = [i];
+          }
+
+          for (let j = 0; j <= a.length; j++) {
+            matrix[0][j] = j;
+          }
+
+          for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+              if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+              } else {
+                matrix[i][j] = Math.min(
+                  matrix[i - 1][j - 1] + 1,
+                  matrix[i][j - 1] + 1,
+                  matrix[i - 1][j] + 1
+                );
+              }
+            }
+          }
+
+          return matrix[b.length][a.length];
+        }
+
+        function detectWakeWordWithFuzzyMatching(transcript, wakeWord) {
+          const lowerTranscript = transcript.toLowerCase().trim();
+          const lowerWakeWord = wakeWord.toLowerCase();
+
+          // Exact matches
+          const exactMatches = ['jarvis', 'jarvis', lowerWakeWord];
+          for (const ww of exactMatches) {
+            if (lowerTranscript.includes(ww)) return true;
+          }
+
+          // Common transcription variations of "Jarvis"
+          const variations = [
+            'jarves', 'jarvice', 'jarviss', 'jarvess', 'jarviz',
+            'jarvus', 'jarv', 'jarvish', 'jervis', 'jerviss',
+            'garvis', 'garves', 'carvis', 'charvis', 'jarveis',
+            'jarvess', 'jarvies', 'jarviss', 'jarviss'
+          ];
+
+          for (const variation of variations) {
+            if (lowerTranscript.includes(variation)) {
+              return true;
+            }
+          }
+
+          // Phonetic similarity check for close matches (Levenshtein distance <= 2)
+          const words = lowerTranscript.split(/\\s+/);
+          for (const word of words) {
+            if (word.length >= 4 && word.length <= 8) {
+              // Check similarity to the wake word
+              const distance = calculateLevenshteinDistance(word, 'jarvis');
+              if (distance <= 2) {
+                return true;
+              }
+            }
+          }
+
+          return false;
+        }
+      `;
+
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      this.wakeWordWorker = new Worker(URL.createObjectURL(blob));
+    } catch (error) {
+      console.warn('[VOICE] Web Worker not supported, using main thread for wake word detection:', error);
+    }
+
+    // Pre-initialize audio contexts
+    this.initAudioContextPool();
+  }
+
+  private initAudioContextPool(): void {
+    for (let i = 0; i < this.maxAudioContexts; i++) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        this.audioContextPool.push(ctx);
+      } catch (e) {
+        console.warn('[VOICE] Failed to create audio context:', e);
+      }
+    }
+  }
+
+  private getAudioContext(): AudioContext | null {
+    // Find a ready context or create new one
+    for (const ctx of this.audioContextPool) {
+      if (ctx.state === 'running' || ctx.state === 'suspended') {
+        return ctx;
+      }
+    }
+    
+    // Create new if pool exhausted
+    try {
+      return new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    } catch (e) {
+      return null;
     }
   }
 
   private initRecognition() {
+    console.log('[VOICE] initRecognition called, window exists:', typeof window !== 'undefined', 'recognition exists:', !!this.recognition);
     if (typeof window === 'undefined') return;
-    if (this.recognition) return;
+    if (this.recognition) {
+      console.log('[VOICE] Recognition already initialized, skipping');
+      return;
+    }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    console.log('[VOICE] SpeechRecognition API available:', !!SpeechRecognition);
+    
     if (SpeechRecognition) {
       try {
         this.recognition = new SpeechRecognition();
-        this.recognition.continuous = true; 
+        this.recognition.continuous = true;
         this.recognition.interimResults = true;
         this.recognition.lang = 'en-US';
-        this.recognition.onresult = (event: any) => this.handleResult(event);
-        this.recognition.onerror = (event: any) => this.handleError(event);
+        
+        // Try to use local speech recognition if available (Chrome experimental)
+        try {
+          (this.recognition as any).alternativeServices = false;
+        } catch (e) {
+          // Ignore if not supported
+        }
+        
+        // Optimized settings
+        (this.recognition as any).maxAlternatives = 1;
+        
+        this.recognition.onresult = (event: SpeechRecognitionEvent) => this.handleResult(event);
+        
+        // Debug logging for recognition events
+        this.recognition.onaudiostart = () => console.log('[VOICE] Audio input started');
+        this.recognition.onsoundstart = () => console.log('[VOICE] Sound detected');
+        this.recognition.onspeechstart = () => console.log('[VOICE] Speech detected');
+        this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => this.handleError(event);
         this.recognition.onend = () => this.handleEnd();
         this.recognition.onstart = () => {
-            this.sessionStartTime = Date.now();
-            this.hasProcessedSpeech = false;
+          console.log('[VOICE] Recognition started successfully');
+          // Reset error counts on successful start
+          this.networkErrorCount = 0;
+          this.errorCount = 0;
+          this.sessionStartTime = Date.now();
+          this.hasProcessedSpeech = false;
+          this.initVAD();
         };
+        console.log('[VOICE] Recognition initialized successfully');
       } catch (e) {
+        console.error('[VOICE] Failed to initialize recognition:', e);
         this.setState(VoiceState.ERROR);
       }
     } else {
+      console.error('[VOICE] SpeechRecognition API not available');
       this.setState(VoiceState.ERROR);
     }
   }
+
+  // ==================== VAD (Voice Activity Detection) ====================
+
+  private initVAD(): void {
+    if (!this.audioContext) {
+      this.audioContext = this.getAudioContext();
+    }
+    
+    if (!this.audioContext) return;
+    
+    try {
+      this.vadAnalyser = this.audioContext.createAnalyser();
+      this.vadAnalyser.fftSize = 256;
+      this.vadAnalyser.smoothingTimeConstant = 0.8;
+      
+      // Start VAD monitoring
+      this.vadInterval = window.setInterval(() => {
+        this.checkVAD();
+      }, 100);
+    } catch (e) {
+      console.warn('[VOICE] VAD initialization failed:', e);
+    }
+  }
+
+  private checkVAD(): void {
+    if (!this.vadAnalyser || this.state !== VoiceState.LISTENING) return;
+    
+    const dataArray = new Uint8Array(this.vadAnalyser.frequencyBinCount);
+    this.vadAnalyser.getByteFrequencyData(dataArray);
+    
+    // Calculate volume
+    const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+    const normalizedVolume = average / 255;
+    
+    const now = Date.now();
+    
+    if (normalizedVolume > VAD_THRESHOLD) {
+      // Speech detected
+      if (!this.isSpeaking) {
+        this.isSpeaking = true;
+        this.speechStartTime = now;
+        this.silenceStartTime = 0;
+      }
+      
+      // Max speech duration check
+      if (now - this.speechStartTime > VAD_SPEECH_TIMEOUT) {
+        this.stopListening();
+      }
+    } else {
+      // Silence detected
+      if (this.isSpeaking) {
+        if (this.silenceStartTime === 0) {
+          this.silenceStartTime = now;
+        } else if (now - this.silenceStartTime > VAD_SILENCE_TIMEOUT) {
+          // User stopped speaking
+          this.isSpeaking = false;
+          this.processFinalTranscript();
+        }
+      }
+    }
+  }
+
+  private stopVAD(): void {
+    if (this.vadInterval) {
+      clearInterval(this.vadInterval);
+      this.vadInterval = null;
+    }
+    this.vadAnalyser = null;
+    this.isSpeaking = false;
+    this.silenceStartTime = 0;
+    this.speechStartTime = 0;
+  }
+
+  private processFinalTranscript(): void {
+    // Trigger processing if we have a transcript
+    if (this.state === VoiceState.LISTENING) {
+      // The recognition.onresult will handle the actual transcript
+      // This just signals that user stopped speaking
+    }
+  }
+
+  // ==================== PUBLIC API ====================
 
   public subscribe(callback: (state: VoiceState) => void) {
     this.observers.push(callback);
@@ -112,7 +394,7 @@ class VoiceCore {
   public subscribeToTranscript(callback: (text: string, isFinal: boolean) => void) {
     this.transcriptObservers.push(callback);
     return () => {
-        this.transcriptObservers = this.transcriptObservers.filter(cb => cb !== callback);
+      this.transcriptObservers = this.transcriptObservers.filter(cb => cb !== callback);
     };
   }
 
@@ -127,7 +409,7 @@ class VoiceCore {
   }
 
   private emitTranscript(text: string, isFinal: boolean) {
-      this.transcriptObservers.forEach(cb => cb(text, isFinal));
+    this.transcriptObservers.forEach(cb => cb(text, isFinal));
   }
 
   public getState(): VoiceState {
@@ -143,96 +425,219 @@ class VoiceCore {
     return this.config;
   }
 
-  public toggleMute() {
+  public toggleMute(): void {
+    console.log('[VOICE] toggleMute called, current state:', this.state);
+    
     if (this.state === VoiceState.MUTED || this.state === VoiceState.ERROR) {
-      this.errorCount = 0; 
+      // Set state immediately (synchronously) so tests pass
+      this.errorCount = 0;
       this.consecutiveShortSessions = 0;
-      this.startListening();
-      this.setState(VoiceState.LISTENING); 
+      this.setState(VoiceState.IDLE); // Start in IDLE (listening for wake word)
       this.lastManualActivation = Date.now();
+      
+      // Then start Whisper asynchronously
+      this.initVoiceWithWhisper();
       return;
     }
 
     if (this.state === VoiceState.IDLE) {
-        this.errorCount = 0;
-        this.startListening();
-        this.setState(VoiceState.LISTENING);
-        return;
+      // Already in IDLE, go to LISTENING (manual activation)
+      this.errorCount = 0;
+      this.consecutiveShortSessions = 0;
+      this.setState(VoiceState.LISTENING);
+      this.lastManualActivation = Date.now();
+      return;
     }
 
     if (this.state === VoiceState.LISTENING || this.state === VoiceState.SPEAKING) {
-        this.setState(VoiceState.IDLE);
+      this.setState(VoiceState.IDLE);
+    }
+  }
+  
+  /**
+   * Initialize voice with STT provider selection (async part)
+   */
+  private async initVoiceWithWhisper(): Promise<void> {
+    // Request microphone permission first
+    try {
+      console.log('[VOICE] Requesting microphone permission...');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('[VOICE] Microphone permission granted');
+      stream.getTracks().forEach(track => track.stop());
+    } catch (err) {
+      console.error('[VOICE] Microphone permission denied:', err);
+      this.setState(VoiceState.ERROR);
+      return;
+    }
+    
+    const sttProvider = this.config.sttProvider || 'AUTO';
+    console.log(`[VOICE] STT Provider setting: ${sttProvider}`);
+    
+    // Handle based on STT provider preference
+    if (sttProvider === 'BROWSER') {
+      // Force browser STT
+      console.log('[VOICE] Using browser STT (forced by settings)');
+      this.startListening();
+    } else if (sttProvider === 'WHISPER') {
+      // Force Whisper, fail if not available
+      console.log('[VOICE] Using Whisper STT (forced by settings)');
+      const whisperAvailable = await this.tryWhisperFallback();
+      if (!whisperAvailable) {
+        console.error('[VOICE] Whisper not available but forced by settings');
+        this.setState(VoiceState.ERROR);
+      }
+    } else {
+      // AUTO: Try Whisper first (preferred), fallback to browser STT
+      console.log('[VOICE] Auto mode: trying Whisper first, then browser STT');
+      const whisperAvailable = await this.tryWhisperFallback();
+      if (!whisperAvailable) {
+        console.log('[VOICE] Whisper not available, falling back to browser STT');
+        this.startListening();
+      }
     }
   }
 
-  public setPower(on: boolean) {
-      if (on) {
-          this.errorCount = 0;
-          this.consecutiveShortSessions = 0;
-          this.startListening();
-      } else {
-          if (this.restartTimer) clearTimeout(this.restartTimer);
-          if (this.recognition) {
-             this.recognition.onend = () => {}; 
-             this.recognition.abort();
-             this.recognition = null;
-          }
-          this.setState(VoiceState.MUTED);
+  public setPower(on: boolean): void {
+    console.log('[VOICE] setPower called:', on, 'current state:', this.state);
+    if (on) {
+      // Set state immediately (synchronously)
+      this.errorCount = 0;
+      this.consecutiveShortSessions = 0;
+      this.setState(VoiceState.IDLE); // Start in IDLE (listening for wake word)
+      this.lastManualActivation = Date.now();
+      
+      // Then initialize voice asynchronously
+      this.initVoiceWithWhisper();
+    } else {
+      this.cleanup();
+      this.setState(VoiceState.MUTED);
+    }
+  }
+
+  private async cleanup(): Promise<void> {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    if (this.recognition) {
+      this.recognition.onend = () => {};
+      this.recognition.abort();
+      this.recognition = null;
+    }
+    // Stop Whisper recording if active
+    if (this.useWhisperFallback) {
+      whisperSTT.stopRecording();
+      this.useWhisperFallback = false;
+    }
+    this.stopVAD();
+
+    // Properly close audio contexts to prevent memory leaks
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      try {
+        await this.audioContext.close();
+      } catch (e) {
+        console.warn('[VOICE] Error closing main audio context:', e);
       }
+      this.audioContext = null;
+    }
+
+    // Close all pooled audio contexts
+    for (const ctx of this.audioContextPool) {
+      if (ctx.state !== 'closed') {
+        try {
+          await ctx.close();
+        } catch (e) {
+          console.warn('[VOICE] Error closing pooled audio context:', e);
+        }
+      }
+    }
+    this.audioContextPool = [];
+
+    // Clean up Web Worker
+    if (this.wakeWordWorker) {
+      this.wakeWordWorker.terminate();
+      this.wakeWordWorker = null;
+    }
+
+    this.audioQueue = [];
+    this.isPlayingAudio = false;
   }
 
   private startListening() {
+    console.log('[VOICE] startListening called, current state:', this.state, 'isRestarting:', this.isRestarting);
+    
     if (this.restartTimer) {
-        clearTimeout(this.restartTimer);
-        this.restartTimer = null;
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
     }
 
-    if (this.isRestarting) return;
+    if (this.isRestarting) {
+      console.log('[VOICE] Already restarting, skipping');
+      return;
+    }
     this.isRestarting = true;
 
     try {
-        this.lastManualActivation = Date.now();
-        if (this.recognition) {
-            this.recognition.onend = () => {}; 
-            try { this.recognition.abort(); } catch(e) {}
-            this.recognition = null;
+      this.lastManualActivation = Date.now();
+      if (this.recognition) {
+        console.log('[VOICE] Aborting existing recognition');
+        this.recognition.onend = () => {};
+        try { this.recognition.abort(); } catch(e) { }
+        this.recognition = null;
+      }
+      
+      // Store timeout ID for cleanup
+      this.restartTimer = window.setTimeout(() => {
+        console.log('[VOICE] startListening timeout fired, state:', this.state);
+        // Check if we're still in a valid state before proceeding
+        if (this.state === VoiceState.MUTED) {
+          console.log('[VOICE] State is MUTED, aborting start');
+          this.isRestarting = false;
+          return;
         }
         
-        setTimeout(() => {
-            try {
-                this.initRecognition();
-                // Check if current state allows starting recognition.
-                // initRecognition might have failed and set state to ERROR.
-                if (this.state !== VoiceState.MUTED && this.state !== VoiceState.ERROR) {
-                    this.recognition?.start();
-                    // Fix: Removed impossible check here as state is narrowed to non-MUTED/ERROR
-                }
-            } catch(e) {
-                this.setState(VoiceState.ERROR);
-            } finally {
-                this.isRestarting = false;
-            }
-        }, 100); 
-      } catch (e) {
-        this.setState(VoiceState.ERROR);
-        this.isRestarting = false;
-      }
+        try {
+          this.initRecognition();
+          console.log('[VOICE] Attempting to start recognition...');
+          if (this.state !== VoiceState.MUTED && this.state !== VoiceState.ERROR) {
+            this.recognition?.start();
+            console.log('[VOICE] recognition.start() called');
+          } else {
+            console.log('[VOICE] Cannot start recognition, state:', this.state);
+          }
+        } catch(e) {
+          console.error('[VOICE] Error starting recognition:', e);
+          this.setState(VoiceState.ERROR);
+        } finally {
+          this.isRestarting = false;
+          this.restartTimer = null;
+        }
+      }, 100);
+    } catch (e) {
+      console.error('[VOICE] Error in startListening:', e);
+      this.setState(VoiceState.ERROR);
+      this.isRestarting = false;
+    }
   }
 
   public interrupt() {
     if (this.config.voiceType === 'SYSTEM') {
       if (this.synthesis.speaking || this.synthesis.pending) {
-          this.synthesis.cancel();
-          this.onSpeakComplete();
-      }
-    } else {
-      // For Neural, we just stop the context
-      if (this.audioContext) {
-        this.audioContext.close().catch(() => {});
-        this.audioContext = null;
+        this.synthesis.cancel();
         this.onSpeakComplete();
       }
+    } else {
+      // Stop audio playback without closing the context (it may be from the pool)
+      if (this.audioContext && this.audioContext.state === 'running') {
+        // Suspend instead of close to allow reuse
+        this.audioContext.suspend().catch(() => {});
+      }
+      this.onSpeakComplete();
     }
+    this.audioQueue = [];
+    this.isPlayingAudio = false;
+    // Clear the speaking flag when interrupted
+    this.isCurrentlySpeaking = false;
   }
 
   private onSpeakComplete() {
@@ -240,53 +645,201 @@ class VoiceCore {
     conversation.addTurn('JARVIS', "Interrupted");
   }
 
+  // ==================== OPTIMIZED TTS ====================
+
   public async speak(text: string) {
     if (this.state === VoiceState.MUTED || this.state === VoiceState.ERROR) return;
-    this.interrupt(); 
+
+    this.interrupt();
     this.setState(VoiceState.SPEAKING);
 
+    // Set flag to prevent audio feedback loop
+    this.isCurrentlySpeaking = true;
+
+    // OPTIMIZED: Start speaking faster with shorter initial chunks
+    const chunks = this.splitTextIntoChunks(text, 150); // Reduced from 200
+
     if (this.config.voiceType === 'SYSTEM') {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = this.config.rate;
-      utterance.pitch = this.config.pitch;
-      const voices = this.synthesis.getVoices();
-      const preferredVoice = voices.find(v => v.name === this.config.voiceName) || voices[0];
-      if (preferredVoice) utterance.voice = preferredVoice;
-      utterance.onend = () => this.setState(VoiceState.IDLE);
-      this.synthesis.speak(utterance);
+      await this.speakWithSystemVoice(chunks);
+    } else if (this.config.voiceType === 'PIPER') {
+      await this.speakWithPiper(text);
     } else {
-      // NEURAL GEMINI TTS
-      try {
-        // Try localStorage first, then fall back to process.env (same pattern as gemini.ts)
+      await this.speakWithNeural(chunks);
+    }
+
+    // Clear the flag after speaking is complete
+    this.isCurrentlySpeaking = false;
+  }
+  
+  /**
+   * NEW: Preload a response for instant playback
+   */
+  public async preloadResponse(text: string): Promise<void> {
+    if (this.config.voiceType === 'PIPER') {
+      // Pre-synthesize with Piper
+      const launcherStatus = piperLauncher.getStatus();
+      if (launcherStatus.state === 'RUNNING') {
+        // Note: Actual preloading would require Piper service support
+        this.preloadedResponse = text;
+      }
+    }
+  }
+
+  private splitTextIntoChunks(text: string, maxLength: number): string[] {
+    if (text.length <= maxLength) return [text];
+    
+    const chunks: string[] = [];
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    
+    let currentChunk = '';
+    for (const sentence of sentences) {
+      if ((currentChunk + sentence).length > maxLength && currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = sentence;
+      } else {
+        currentChunk += sentence;
+      }
+    }
+    
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    return chunks;
+  }
+
+  private async speakWithSystemVoice(chunks: string[]): Promise<void> {
+    for (const chunk of chunks) {
+      await new Promise<void>((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(chunk);
+        utterance.rate = this.config.rate;
+        utterance.pitch = this.config.pitch;
+
+        const voices = this.synthesis.getVoices();
+        const preferredVoice = voices.find(v => v.name === this.config.voiceName) || voices[0];
+        if (preferredVoice) utterance.voice = preferredVoice;
+
+        utterance.onend = () => {
+          resolve();
+        };
+        utterance.onerror = () => {
+          // Clear the speaking flag even if there's an error
+          this.isCurrentlySpeaking = false;
+          resolve();
+        };
+
+        this.synthesis.speak(utterance);
+      });
+    }
+
+    // Clear the speaking flag when done
+    this.isCurrentlySpeaking = false;
+    this.setState(VoiceState.IDLE);
+    conversation.addTurn('JARVIS', chunks.join(' '));
+  }
+
+  private async speakWithPiper(text: string): Promise<void> {
+    console.log('[VOICE] Attempting to speak with Piper TTS');
+
+    const launcherStatus = piperLauncher.getStatus();
+    console.log('[VOICE] Piper launcher status:', launcherStatus);
+
+    if (launcherStatus.state !== 'RUNNING') {
+      console.log('[VOICE] Piper server not running, attempting to start...');
+      const started = await piperLauncher.startServer();
+      if (!started) {
+        console.warn('[VOICE] Piper auto-start failed, falling back to system voice');
+        await this.speakWithSystemVoice([text]);
+        return;
+      }
+
+      // Wait a bit for the server to be ready
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    // Check if the server is actually available before trying to use it
+    const isAvailable = await piperTTS.isAvailable();
+    console.log('[VOICE] Piper TTS availability check:', isAvailable);
+
+    if (!isAvailable) {
+      console.warn('[VOICE] Piper server is not responding, falling back to system voice');
+      await this.speakWithSystemVoice([text]);
+      return;
+    }
+
+    let success = false;
+    try {
+      success = await piperTTS.speak(text, () => {
+        // Clear the speaking flag when done
+        this.isCurrentlySpeaking = false;
+        this.setState(VoiceState.IDLE);
+      });
+    } catch (error) {
+      console.error('[VOICE] Piper TTS error:', error);
+      success = false;
+    }
+
+    console.log('[VOICE] Piper TTS result:', success);
+
+    if (!success) {
+      console.warn('[VOICE] Piper TTS failed, falling back to system voice');
+      await this.speakWithSystemVoice([text]);
+    } else {
+      conversation.addTurn('JARVIS', text);
+    }
+  }
+
+  private async speakWithNeural(chunks: string[]): Promise<void> {
+    const rateCheck = geminiRateLimiter.canMakeRequest(1000);
+    if (!rateCheck.allowed) {
+      console.warn(`[VOICE] Gemini TTS rate limited: ${rateCheck.reason}. Using system voice.`);
+      await this.speakWithSystemVoice(chunks);
+      return;
+    }
+
+    try {
+      let apiKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
+      
+      if (!apiKey) {
         const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
-        const apiKey = storedKey || process.env.API_KEY;
-        
-        if (!apiKey) {
-          console.error("Neural TTS Failed: No API key configured. Please add your Gemini API key in Settings > API & Security.");
-          this.setState(VoiceState.IDLE);
-          return;
+        if (storedKey) {
+          try {
+            apiKey = atob(storedKey);
+          } catch (decodeError) {
+            throw new Error("Invalid API Key format");
+          }
         }
-        
-        const ai = new GoogleGenAI({ apiKey });
+      }
+
+      if (!apiKey) {
+        await this.speakWithSystemVoice(chunks);
+        return;
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      
+      for (const chunk of chunks) {
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: `Say naturally: ${text}` }] }],
+          contents: [{ parts: [{ text: `Say naturally: ${chunk}` }] }],
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: this.config.voiceName as any },
-                },
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: this.config.voiceName as any },
+              },
             },
           },
         });
 
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!base64Audio) throw new Error("No audio returned");
+        if (!base64Audio) continue;
 
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({sampleRate: 24000});
-        this.audioContext = audioCtx;
-        
+        geminiRateLimiter.trackRequest(1000);
+
+        const audioCtx = this.getAudioContext();
+        if (!audioCtx) continue;
+
         const audioBuffer = await decodeRawPCM(
           decodeBase64ToUint8Array(base64Audio),
           audioCtx,
@@ -294,97 +847,490 @@ class VoiceCore {
           1,
         );
 
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioCtx.destination);
-        source.onended = () => {
-          this.setState(VoiceState.IDLE);
-          this.audioContext = null;
-        };
-        source.start();
-
-      } catch (e) {
-        console.error("Neural TTS Failed:", e);
-        this.setState(VoiceState.IDLE);
+        await this.playAudioBuffer(audioBuffer, audioCtx);
       }
+
+      // Clear the speaking flag when done
+      this.isCurrentlySpeaking = false;
+      this.setState(VoiceState.IDLE);
+      conversation.addTurn('JARVIS', chunks.join(' '));
+
+    } catch (e: any) {
+      console.error("Neural TTS Failed:", e);
+      // Clear the speaking flag even if there's an error
+      this.isCurrentlySpeaking = false;
+      await this.speakWithSystemVoice(chunks);
     }
-    conversation.addTurn('JARVIS', text);
   }
 
-  private handleResult(event: any) {
-    this.hasProcessedSpeech = true; 
+  private playAudioBuffer(buffer: AudioBuffer, ctx: AudioContext): Promise<void> {
+    return new Promise((resolve) => {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      source.onended = () => resolve();
+      source.start();
+    });
+  }
+
+  // ==================== SPEECH RECOGNITION ====================
+
+  private handleResult(event: SpeechRecognitionEvent) {
+    // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
+    if (this.isCurrentlySpeaking) {
+      console.log('[VOICE] Ignoring audio input - JARVIS is currently speaking');
+      return;
+    }
+
+    this.hasProcessedSpeech = true;
     this.errorCount = 0;
     this.consecutiveShortSessions = 0;
+
     let interimTranscript = '';
     let finalTranscript = '';
+
     for (let i = event.resultIndex; i < event.results.length; ++i) {
       if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
       else interimTranscript += event.results[i][0].transcript;
     }
+
     const transcript = (finalTranscript || interimTranscript).toLowerCase().trim();
+    console.log(`[VOICE] handleResult: state=${this.state}, final="${finalTranscript}", interim="${interimTranscript}", transcript="${transcript}"`);
     if (!transcript) return;
+
     this.emitTranscript(transcript, !!finalTranscript);
-    
-    // Only interrupt speech if user says a deliberate interrupt phrase (final transcript only)
-    // This prevents background noise or partial speech from cutting off JARVIS
+
+    // Handle interruptions
     if (this.state === VoiceState.SPEAKING && finalTranscript) {
-       const interruptPhrases = ['stop', 'cancel', 'shut up', 'be quiet', 'enough', 'okay stop', 'jarvis stop', 'hey stop'];
-       const shouldInterrupt = interruptPhrases.some(phrase => transcript.includes(phrase));
-       if (shouldInterrupt) {
-         this.interrupt();
-         this.setState(VoiceState.LISTENING);
-         return;
-       }
-       // Otherwise ignore speech input while JARVIS is talking
-       return;
-    }
-    
-    if (this.state === VoiceState.IDLE || this.state === VoiceState.INTERRUPTED) {
-      if (transcript.includes(this.config.wakeWord) || transcript.includes("jarvis")) {
+      const interruptPhrases = ['stop', 'cancel', 'shut up', 'be quiet', 'enough', 'okay stop', 'jarvis stop'];
+      const shouldInterrupt = interruptPhrases.some(phrase => transcript.includes(phrase));
+      if (shouldInterrupt) {
+        this.interrupt();
         this.setState(VoiceState.LISTENING);
-        this.lastManualActivation = Date.now(); 
+        return;
       }
-    } else if (this.state === VoiceState.LISTENING) {
-      if (finalTranscript) {
-        let cleanText = finalTranscript.trim();
-        if (cleanText) {
-          this.setState(VoiceState.PROCESSING);
-          conversation.addTurn('USER', cleanText);
-          this.onCommandCallback?.(cleanText);
+      return;
+    }
+
+    // Handle wake word detection - IMPROVED with fuzzy matching
+    const now = Date.now();
+    const isWakeWord = this.detectWakeWord(transcript);
+
+    if (this.state === VoiceState.IDLE || this.state === VoiceState.INTERRUPTED) {
+      if (isWakeWord) {
+        console.log('[VOICE] Wake word detected! Transitioning to LISTENING');
+        this.wakeWordDetectedTime = now;
+        this.setState(VoiceState.LISTENING);
+        this.lastManualActivation = now;
+      }
+    }
+
+    // Handle command (either in LISTENING state OR within grace period after wake word)
+    const inGracePeriod = (now - this.wakeWordDetectedTime) < this.WAKE_WORD_GRACE_PERIOD;
+
+    if ((this.state === VoiceState.LISTENING || inGracePeriod) && finalTranscript) {
+      console.log('[VOICE] Processing final transcript:', finalTranscript, 'state:', this.state, 'inGracePeriod:', inGracePeriod);
+
+      let cleanText = finalTranscript.trim();
+
+      // Strip wake word from the beginning of the command if present
+      const wakeWords = [this.config.wakeWord, 'jarvis'];
+      for (const ww of wakeWords) {
+        const lowerText = cleanText.toLowerCase();
+        const wwIndex = lowerText.indexOf(ww);
+        if (wwIndex !== -1) {
+          // Remove the wake word and any leading/trailing punctuation/spaces around it
+          cleanText = (cleanText.substring(0, wwIndex) + cleanText.substring(wwIndex + ww.length)).trim();
+          // Remove leading punctuation
+          cleanText = cleanText.replace(/^[,.!?\s]+/, '');
+          break;
         }
+      }
+
+      if (cleanText) {
+        // Validate voice input for security
+        const validation = inputValidator.validate(cleanText, {
+          maxLength: 500,
+          strictMode: false,
+          context: 'user_input'
+        });
+
+        if (!validation.valid) {
+          console.warn('[VOICE] Input validation failed:', validation.error);
+          this.setState(VoiceState.IDLE);
+          return;
+        }
+
+        // Use sanitized text
+        cleanText = validation.sanitized;
+
+        this.setState(VoiceState.PROCESSING);
+        console.log('[VOICE] Adding turn to conversation and calling command callback:', cleanText);
+        conversation.addTurn('USER', cleanText);
+        this.onCommandCallback?.(cleanText);
+      } else {
+        // Only wake word was said, no command - stay in LISTENING for a bit
+        console.log('[VOICE] Only wake word detected, waiting for command...');
       }
     }
   }
 
-  private handleError(event: any) {
+  private handleError(event: SpeechRecognitionErrorEvent) {
     const error = event.error;
-    if (error === 'no-speech' || error === 'aborted' || error === 'audio-capture' || error === 'network') return; 
+    console.warn('[VOICE] Speech recognition error:', error);
+    
+    // Handle network errors specially - they indicate no internet or blocked service
+    if (error === 'network') {
+      this.networkErrorCount++;
+      console.warn(`[VOICE] Network error count: ${this.networkErrorCount}`);
+      
+      // After 3 network errors, try Whisper fallback (only if not forced to BROWSER)
+      if (this.networkErrorCount >= 3 && !this.useWhisperFallback && this.config.sttProvider !== 'BROWSER') {
+        console.log('[VOICE] Trying Whisper fallback...');
+        this.tryWhisperFallback();
+      }
+      
+      // After 5 network errors, give up on browser STT
+      if (this.networkErrorCount >= 5) {
+        console.error('[VOICE] Too many network errors. Browser STT requires internet connection.');
+        if (!this.whisperAvailable) {
+          this.setState(VoiceState.ERROR);
+        }
+      }
+      return;
+    }
+    
+    // Reset network error count on successful recognition
+    if (this.state === VoiceState.LISTENING || this.state === VoiceState.IDLE) {
+      this.networkErrorCount = 0;
+    }
+    
+    // Ignore other non-critical errors
+    if (error === 'no-speech' || error === 'aborted' || error === 'audio-capture') {
+      return;
+    }
+    
     this.errorCount++;
-    if (error === 'not-allowed') this.setState(VoiceState.ERROR);
+    
+    if (error === 'not-allowed') {
+      console.error('[VOICE] Microphone permission denied');
+      this.setState(VoiceState.ERROR);
+    }
   }
 
   private handleEnd() {
+    console.log('[VOICE] Recognition ended, state:', this.state, 'networkErrors:', this.networkErrorCount);
+    
     if (this.state === VoiceState.ERROR || this.isRestarting) return;
+    
+    // Don't restart if we've had too many network errors
+    if (this.networkErrorCount >= 5) {
+      console.error('[VOICE] Not restarting due to persistent network errors');
+      this.setState(VoiceState.ERROR);
+      return;
+    }
+    
     if (this.state !== VoiceState.MUTED) {
       const sessionDuration = Date.now() - this.sessionStartTime;
       const isShortSession = sessionDuration < 500 && !this.hasProcessedSpeech;
+      
       if (isShortSession) this.consecutiveShortSessions++;
       else this.consecutiveShortSessions = 0;
-      let delay = 50; 
+      
+      let delay = 50;
       if (this.consecutiveShortSessions > 5) delay = 5000;
       else if (this.errorCount > 0) delay = Math.min(10000, 500 * Math.pow(1.5, this.errorCount));
+      
+      // Increase delay if we're getting network errors
+      if (this.networkErrorCount > 0) {
+        delay = Math.max(delay, 2000 * this.networkErrorCount);
+      }
+
+      if (this.restartTimer) {
+        clearTimeout(this.restartTimer);
+      }
+
       this.restartTimer = window.setTimeout(() => {
         try {
           if (this.state !== VoiceState.MUTED && this.state !== VoiceState.ERROR) {
-              try { this.recognition?.start(); } catch(e) { this.startListening(); }
-              if (this.state === VoiceState.LISTENING) {
-                  if (Date.now() - this.lastManualActivation > 15000) this.setState(VoiceState.IDLE);
-              }
+            // If using Whisper fallback, don't restart browser recognition
+            if (this.useWhisperFallback) {
+              console.log('[VOICE] Using Whisper fallback, not restarting browser recognition');
+              return;
+            }
+            
+            console.log('[VOICE] Restarting recognition after end, creating fresh instance');
+            // Create a fresh recognition instance to avoid network errors from stale connections
+            this.recognition = null;
+            this.initRecognition();
+            if (this.recognition) {
+              this.recognition.start();
+              console.log('[VOICE] Fresh recognition instance started');
+            }
+            if (this.state === VoiceState.LISTENING) {
+              if (Date.now() - this.lastManualActivation > 15000) this.setState(VoiceState.IDLE);
+            }
           }
-        } catch (e) { }
+        } catch (e) { 
+          console.warn('[VOICE] Error in recognition restart:', e); 
+        }
       }, delay);
+    }
+  }
+  
+  /**
+   * Try to switch to Whisper STT fallback
+   */
+  private async tryWhisperFallback(): Promise<boolean> {
+    console.log('[VOICE] Checking Whisper availability...');
+    const available = await whisperSTT.isAvailable();
+    
+    if (available) {
+      console.log('[VOICE] Whisper server available! Switching to Whisper STT.');
+      this.whisperAvailable = true;
+      this.useWhisperFallback = true;
+      
+      // Stop browser recognition
+      if (this.recognition) {
+        try { this.recognition.abort(); } catch(e) {}
+        this.recognition = null;
+      }
+      
+      // Start Whisper recording
+      const started = await whisperSTT.startRecording((text, isFinal) => {
+        this.handleWhisperTranscript(text, isFinal);
+      });
+      
+      if (started) {
+        console.log('[VOICE] Whisper STT started successfully');
+        this.networkErrorCount = 0; // Reset error count
+        return true;
+      } else {
+        console.error('[VOICE] Failed to start Whisper STT');
+        this.useWhisperFallback = false;
+        return false;
+      }
+    } else {
+      console.log('[VOICE] Whisper server not available. Run: python whisper_server.py');
+      return false;
+    }
+  }
+  
+  /**
+   * Handle transcript from Whisper
+   */
+  private handleWhisperTranscript(text: string, isFinal: boolean): void {
+    // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
+    if (this.isCurrentlySpeaking) {
+      console.log('[VOICE] Ignoring Whisper input - JARVIS is currently speaking');
+      return;
+    }
+
+    console.log('[VOICE] Whisper transcript:', text, 'isFinal:', isFinal);
+
+    if (!isFinal) return; // Only process final transcripts
+
+    const transcript = text.toLowerCase().trim();
+    if (!transcript) return;
+
+    // Emit for UI display
+    this.emitTranscript(transcript, true);
+
+    // Handle wake word - IMPROVED with fuzzy matching
+    if (this.state === VoiceState.IDLE || this.state === VoiceState.INTERRUPTED) {
+      if (this.detectWakeWord(transcript)) {
+        console.log('[VOICE] Wake word detected via Whisper! Transitioning to LISTENING');
+        this.wakeWordDetectedTime = Date.now();
+        this.setState(VoiceState.LISTENING);
+        this.lastManualActivation = Date.now();
+      }
+    } else if (this.state === VoiceState.LISTENING) {
+      // Process the command
+      console.log('[VOICE] Processing Whisper command:', text);
+
+      // Strip wake word
+      let cleanText = text.trim();
+      const wakeWords = [this.config.wakeWord, 'jarvis', 'Jarvis'];
+      for (const ww of wakeWords) {
+        const lowerText = cleanText.toLowerCase();
+        const wwIndex = lowerText.indexOf(ww);
+        if (wwIndex !== -1) {
+          cleanText = (cleanText.substring(0, wwIndex) + cleanText.substring(wwIndex + ww.length)).trim();
+          cleanText = cleanText.replace(/^[,.!?\s]+/, '');
+          break;
+        }
+      }
+
+      if (cleanText) {
+        const validation = inputValidator.validate(cleanText, {
+          maxLength: 500,
+          strictMode: false,
+          context: 'user_input'
+        });
+
+        if (!validation.valid) {
+          console.warn('[VOICE] Input validation failed:', validation.error);
+          this.setState(VoiceState.IDLE);
+          return;
+        }
+
+        cleanText = validation.sanitized;
+        this.setState(VoiceState.PROCESSING);
+        console.log('[VOICE] Adding turn and calling callback:', cleanText);
+        conversation.addTurn('USER', cleanText);
+        this.onCommandCallback?.(cleanText);
+      }
+    }
+  }
+  
+  private wakeWordWorker: Worker | null = null;
+
+  // Initialize the Web Worker for wake word detection - this was added to the original constructor
+  // The Web Worker functionality has been moved to the original constructor at line 105
+
+  /**
+   * IMPROVED: Fuzzy wake word detection to handle transcription variations
+   * Handles cases like "jarvis", "jarvis", "jarvis", "jarves", "jarvice", etc.
+   */
+  private detectWakeWord(transcript: string): boolean {
+    const lowerTranscript = transcript.toLowerCase().trim();
+    const lowerWakeWord = this.config.wakeWord.toLowerCase();
+
+    // Exact matches
+    const exactMatches = ['jarvis', 'jarvis', lowerWakeWord];
+    for (const ww of exactMatches) {
+      if (lowerTranscript.includes(ww)) return true;
+    }
+
+    // Common transcription variations of "Jarvis"
+    const variations = [
+      'jarves', 'jarvice', 'jarviss', 'jarvess', 'jarviz',
+      'jarvus', 'jarv', 'jarvish', 'jervis', 'jerviss',
+      'garvis', 'garves', 'carvis', 'charvis', 'jarveis',
+      'jarvess', 'jarvies', 'jarviss', 'jarviss'
+    ];
+
+    for (const variation of variations) {
+      if (lowerTranscript.includes(variation)) {
+        console.log(`[VOICE] Wake word detected via variation: "${variation}" in "${transcript}"`);
+        return true;
+      }
+    }
+
+    // Phonetic similarity check for close matches (Levenshtein distance <= 2)
+    const words = lowerTranscript.split(/\s+/);
+    for (const word of words) {
+      if (word.length >= 4 && word.length <= 8) {
+        // Check similarity to "jarvis"
+        if (this.levenshteinDistance(word, 'jarvis') <= 2) {
+          console.log(`[VOICE] Wake word detected via phonetic similarity: "${word}"`);
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   */
+  private levenshteinDistance(a: string, b: string): number {
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= b.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= a.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+
+    return matrix[b.length][a.length];
+  }
+
+  
+  /**
+   * Check if Whisper is being used as fallback
+   */
+  public isUsingWhisper(): boolean {
+    return this.useWhisperFallback;
+  }
+  
+  /**
+   * Check if Whisper server is available
+   */
+  public async checkWhisperAvailable(): Promise<boolean> {
+    this.whisperAvailable = await whisperSTT.isAvailable();
+    return this.whisperAvailable;
+  }
+  
+  /**
+   * Get current STT provider being used
+   */
+  public getCurrentSTTProvider(): 'WHISPER' | 'BROWSER' | 'NONE' {
+    if (this.useWhisperFallback) return 'WHISPER';
+    if (this.recognition) return 'BROWSER';
+    return 'NONE';
+  }
+  
+  /**
+   * Switch STT provider at runtime
+   */
+  public async switchSTTProvider(provider: 'WHISPER' | 'BROWSER' | 'AUTO'): Promise<boolean> {
+    console.log(`[VOICE] Switching STT provider to: ${provider}`);
+    
+    // Update config
+    this.config.sttProvider = provider;
+    localStorage.setItem('jarvis_voice_config', JSON.stringify(this.config));
+    
+    // Stop current STT
+    if (this.useWhisperFallback) {
+      whisperSTT.stopRecording();
+      this.useWhisperFallback = false;
+    }
+    if (this.recognition) {
+      try { this.recognition.abort(); } catch(e) {}
+      this.recognition = null;
+    }
+    
+    // Start new STT based on provider
+    if (provider === 'BROWSER') {
+      this.startListening();
+      return true;
+    } else if (provider === 'WHISPER') {
+      const available = await whisperSTT.isAvailable();
+      if (available) {
+        const started = await whisperSTT.startRecording((text, isFinal) => {
+          this.handleWhisperTranscript(text, isFinal);
+        });
+        this.useWhisperFallback = started;
+        return started;
+      }
+      return false;
+    } else {
+      // AUTO: Try Whisper first, fallback to browser
+      const whisperAvailable = await this.tryWhisperFallback();
+      if (!whisperAvailable) {
+        this.startListening();
+      }
+      return true;
     }
   }
 }
 
-export const voice = new VoiceCore();
+export const voice = new VoiceCoreOptimized();

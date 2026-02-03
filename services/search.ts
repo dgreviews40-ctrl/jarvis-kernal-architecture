@@ -10,14 +10,38 @@ export interface SearchResults {
 }
 
 export class SearchService {
+  private isBrowser: boolean;
+  
+  constructor() {
+    // Detect if we're running in a browser environment
+    this.isBrowser = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+  }
+
   /**
    * Perform a web search using DuckDuckGo's instant answer API
    * This is a free alternative that doesn't require an API key
+   * 
+   * NOTE: In browser environments, this may fail due to CORS restrictions.
+   * The search should ideally be proxied through a backend server.
    */
   public async search(query: string): Promise<SearchResults> {
     // Check if this is a weather query and handle it specially
     if (this.isWeatherQuery(query)) {
       return await this.searchWeather(query);
+    }
+
+    // In browser environments, DuckDuckGo API calls will likely fail due to CORS
+    // Return a graceful fallback instead of attempting the fetch
+    if (this.isBrowser) {
+      console.warn('[SEARCH] Browser environment detected. DuckDuckGo API has CORS restrictions. Consider using a proxy server.');
+      return {
+        query,
+        results: [{
+          title: 'Search Unavailable in Browser',
+          url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+          snippet: `Web search is not available in browser mode due to CORS restrictions. Please visit the link to search manually, or configure a proxy server for search functionality.`
+        }]
+      };
     }
 
     try {

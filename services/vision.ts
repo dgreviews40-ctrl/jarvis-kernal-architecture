@@ -5,6 +5,7 @@ class VisionCore {
   private videoElement: HTMLVideoElement | null = null;
   private canvasElement: HTMLCanvasElement | null = null;
   private state: VisionState = VisionState.OFF;
+  private captureTimeoutId: number | null = null;
   private observers: ((state: VisionState) => void)[] = [];
   private selectedDeviceId: string | null = null;
   
@@ -92,12 +93,12 @@ class VisionCore {
     this.setState(VisionState.OFF);
   }
 
-  public async applyConstraint(name: string, value: any) {
+  public async applyConstraint(name: string, value: unknown) {
     if (!this.stream) return;
     const track = this.stream.getVideoTracks()[0];
     if (track) {
       try {
-        const constraints: any = { advanced: [{ [name]: value }] };
+        const constraints: MediaTrackConstraints = { advanced: [{ [name as any]: value }] };
         await track.applyConstraints(constraints);
       } catch (e) {
         console.warn(`Constraint ${name} not supported or failed:`, e);
@@ -117,17 +118,31 @@ class VisionCore {
     }
 
     this.setState(VisionState.CAPTURING);
-    
+
     this.canvasElement.width = this.videoElement.videoWidth;
     this.canvasElement.height = this.videoElement.videoHeight;
-    
+
     const ctx = this.canvasElement.getContext('2d');
     if (!ctx) return null;
 
     ctx.drawImage(this.videoElement, 0, 0);
     const dataUrl = this.canvasElement.toDataURL('image/jpeg', 0.95);
-    
-    setTimeout(() => this.setState(VisionState.ACTIVE), 300);
+
+    // Clear any existing capture timeout to prevent race conditions
+    if (this.captureTimeoutId) {
+      clearTimeout(this.captureTimeoutId);
+      this.captureTimeoutId = null;
+    }
+
+    // Use a timeout that's tied to the instance to allow for cleanup if needed
+    this.captureTimeoutId = window.setTimeout(() => {
+      // Only update state if we're still in CAPTURING state (to avoid race conditions)
+      if (this.state === VisionState.CAPTURING) {
+        this.setState(VisionState.ACTIVE);
+      }
+      // Clear the timeout ID after execution
+      this.captureTimeoutId = null;
+    }, 300);
 
     return dataUrl.split(',')[1];
   }
@@ -179,6 +194,16 @@ class VisionCore {
       console.warn("Could not enumerate devices", e);
       return [];
     }
+  }
+
+  public destroy() {
+    // Clear any pending capture timeout
+    if (this.captureTimeoutId) {
+      clearTimeout(this.captureTimeoutId);
+      this.captureTimeoutId = null;
+    }
+    // Stop camera if it's active
+    this.stopCamera();
   }
 }
 

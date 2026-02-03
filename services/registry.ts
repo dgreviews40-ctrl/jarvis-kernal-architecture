@@ -4,130 +4,131 @@ import { PluginManifest, RuntimePlugin } from "../types";
 const CORE_PLUGINS: PluginManifest[] = [
   {
     id: "core.os",
-    name: "Windows Core",
-    version: "10.0.1",
-    description: "Hardware Abstraction Layer",
-    author: "Microsoft",
+    name: "System Core",
+    version: "1.0.0",
+    description: "Core operating system interface and hardware abstraction layer.",
+    author: "JARVIS",
     permissions: ["HARDWARE_CONTROL"],
-    provides: ["os_level_control", "filesystem", "system_diagnostics", "security_protocols", "automation_protocols"],
+    provides: ["os_level_control", "filesystem", "system_diagnostics"],
     requires: [],
     priority: 100,
-    capabilities: ["system_diagnostics", "security_protocols", "automation_protocols"] 
+    capabilities: ["system_diagnostics", "process_management"]
   },
   {
     id: "core.network",
-    name: "Network Driver",
+    name: "Network Stack",
     version: "1.0.0",
-    description: "Connectivity Interface",
-    author: "System",
+    description: "HTTP/WebSocket connectivity and API communication layer.",
+    author: "JARVIS",
     permissions: ["NETWORK"],
-    provides: ["network"],
+    provides: ["network", "http_client", "websocket"],
     requires: ["os_level_control"],
     priority: 90,
-    capabilities: []
+    capabilities: ["api_requests", "realtime_data"]
   },
   {
     id: "core.memory",
-    name: "Cortex Memory",
+    name: "Memory Core",
     version: "1.0.0",
-    description: "Vector database interface.",
-    author: "Stark Ind.",
+    description: "Long-term memory storage with semantic search capabilities.",
+    author: "JARVIS",
     permissions: ["READ_MEMORY", "WRITE_MEMORY"],
-    provides: ["memory_read", "memory_write"],
+    provides: ["memory_read", "memory_write", "semantic_search"],
     requires: ["filesystem"],
     priority: 80,
-    capabilities: ["memory_read", "memory_write"]
+    capabilities: ["memory_read", "memory_write", "context_recall"]
   },
   {
-    id: "plugin.io.microphone",
-    name: "Array Microphone Driver",
-    version: "2.0.0",
-    description: "Audio Input Source (WASAPI)",
-    author: "Realtek",
-    permissions: ["AUDIO_INPUT"],
-    provides: ["audio_input"],
-    requires: ["os_level_control"],
-    priority: 95,
-    capabilities: []
-  },
-  {
-    id: "plugin.ai.stt",
-    name: "Whisper STT Engine",
-    version: "3.0.0",
-    description: "Speech-to-Text Transcriber",
-    author: "OpenAI",
-    permissions: [],
-    provides: ["text_input"],
-    requires: ["audio_input", "network"],
-    priority: 85,
-    capabilities: []
-  },
-  {
-    id: "plugin.io.speaker",
-    name: "Speaker Output",
+    id: "core.ai",
+    name: "AI Engine",
     version: "1.0.0",
-    description: "Audio Sink",
-    author: "System",
-    permissions: ["AUDIO_OUTPUT"],
-    provides: ["audio_output"],
-    requires: ["os_level_control"],
-    priority: 95,
-    capabilities: []
-  },
-  {
-    id: "plugin.ai.tts",
-    name: "Neural TTS Engine",
-    version: "4.1.0",
-    description: "Text-to-Speech Synthesis",
-    author: "ElevenLabs / Google",
-    permissions: [],
-    provides: ["speech_synthesis"],
-    requires: ["audio_output", "network"],
-    priority: 85,
-    capabilities: []
-  },
-  {
-    id: "system.home_assistant",
-    name: "Home Assistant Bridge",
-    version: "2.4.1",
-    description: "IoT control via Websocket.",
-    author: "Community",
-    permissions: ["NETWORK", "HARDWARE_CONTROL"],
-    provides: ["iot_control"],
+    description: "Multi-provider AI inference engine (Gemini, Ollama, Local).",
+    author: "JARVIS",
+    permissions: ["NETWORK"],
+    provides: ["ai_inference", "intent_analysis", "text_generation"],
     requires: ["network"],
-    priority: 50,
-    capabilities: ["light_control", "lock_control", "climate_control"]
+    priority: 85,
+    capabilities: ["natural_language", "intent_parsing", "conversation"]
   },
   {
-    id: "media.spotify",
-    name: "Spotify Connect",
-    version: "0.9.beta",
-    description: "Music playback control.",
-    author: "Spotify AB",
-    permissions: ["NETWORK", "AUDIO_OUTPUT"],
-    provides: ["music_playback"],
-    requires: ["network", "audio_output"],
-    priority: 40,
-    capabilities: ["music_playback", "volume_control"]
+    id: "plugin.voice",
+    name: "Voice Interface",
+    version: "1.0.0",
+    description: "Speech recognition and neural text-to-speech synthesis.",
+    author: "JARVIS",
+    permissions: ["AUDIO_INPUT", "AUDIO_OUTPUT"],
+    provides: ["speech_recognition", "speech_synthesis"],
+    requires: ["os_level_control", "ai_inference"],
+    priority: 75,
+    capabilities: ["voice_input", "voice_output", "wake_word"]
+  },
+  {
+    id: "plugin.vision",
+    name: "Vision System",
+    version: "1.0.0",
+    description: "Camera interface with frame capture and recording capabilities.",
+    author: "JARVIS",
+    permissions: ["CAMERA_ACCESS"],
+    provides: ["video_capture", "frame_analysis"],
+    requires: ["os_level_control"],
+    priority: 70,
+    capabilities: ["camera_control", "image_capture", "video_recording"]
+  },
+  {
+    id: "integration.home_assistant",
+    name: "Home Assistant",
+    version: "1.0.0",
+    description: "Smart home control via Home Assistant REST/WebSocket API.",
+    author: "JARVIS",
+    permissions: ["NETWORK", "HARDWARE_CONTROL"],
+    provides: ["iot_control", "device_state"],
+    requires: ["network"],
+    priority: 60,
+    capabilities: ["light_control", "switch_control", "climate_control", "sensor_read"]
+  },
+  {
+    id: "plugin.weather",
+    name: "Weather Station",
+    version: "1.0.0",
+    description: "Real-time weather data with forecasts, air quality, and location search via Open-Meteo API.",
+    author: "JARVIS",
+    permissions: ["NETWORK"],
+    provides: ["weather_data", "weather_forecast", "air_quality"],
+    requires: ["network"],
+    priority: 55,
+    capabilities: ["current_weather", "hourly_forecast", "daily_forecast", "air_quality", "location_search"]
   }
 ];
+
+// Version to force cache clear when plugins change
+// Bump this number whenever CORE_PLUGINS changes to clear localStorage
+const REGISTRY_VERSION = 10;
 
 class PluginRegistry {
   private plugins: Map<string, RuntimePlugin> = new Map();
   private observers: (() => void)[] = [];
   private storageKey = 'jarvis_plugin_registry';
+  private versionKey = 'jarvis_plugin_registry_version';
 
   constructor() {
     this.initialize();
   }
 
   private initialize() {
+    // Check version and clear stale data if needed
+    const savedVersion = localStorage.getItem(this.versionKey);
+    if (!savedVersion || parseInt(savedVersion) < REGISTRY_VERSION) {
+      localStorage.removeItem(this.storageKey);
+      localStorage.setItem(this.versionKey, REGISTRY_VERSION.toString());
+    }
+
     const savedStates = localStorage.getItem(this.storageKey);
     let statesMap: Record<string, RuntimePlugin['status']> = {};
     if (savedStates) {
       try { statesMap = JSON.parse(savedStates); } catch (e) {}
     }
 
+    // Only load plugins defined in CORE_PLUGINS
     CORE_PLUGINS.forEach(manifest => {
       this.plugins.set(manifest.id, {
         manifest,

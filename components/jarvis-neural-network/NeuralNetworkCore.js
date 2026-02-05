@@ -144,6 +144,49 @@ export class NeuralNetworkCore {
 
     // Create triangular mesh connections
     this.createTriangularConnections();
+    
+    // Create central energy core
+    this.createCentralCore();
+  }
+
+  createCentralCore() {
+    // Central energy sphere
+    const coreGeometry = new THREE.SphereGeometry(0.8, 32, 32);
+    const coreMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending
+    });
+    
+    this.centralCore = new THREE.Mesh(coreGeometry, coreMaterial);
+    this.meshGroup.add(this.centralCore);
+    
+    // Core glow
+    const glowTexture = this.createGlowTexture();
+    const glowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending
+    });
+    this.coreGlow = new THREE.Sprite(glowMaterial);
+    this.coreGlow.scale.set(4, 4, 1);
+    this.centralCore.add(this.coreGlow);
+    
+    // Ripple ring effect
+    const ringGeometry = new THREE.RingGeometry(1, 1.2, 64);
+    const ringMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ddff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending
+    });
+    this.rippleRing = new THREE.Mesh(ringGeometry, ringMaterial);
+    this.rippleRing.rotation.x = -Math.PI / 2;
+    this.meshGroup.add(this.rippleRing);
   }
 
   createNode(x, y, z, ring, index) {
@@ -292,9 +335,10 @@ export class NeuralNetworkCore {
 
   createPulseSystem() {
     this.pulsePool = [];
-    const pulseGeometry = new THREE.SphereGeometry(0.06, 8, 8);
+    // Larger, more visible pulses
+    const pulseGeometry = new THREE.SphereGeometry(0.12, 12, 12);
 
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       const material = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -304,10 +348,25 @@ export class NeuralNetworkCore {
       
       const pulse = new THREE.Mesh(pulseGeometry, material.clone());
       pulse.visible = false;
+      
+      // Add glow to pulses
+      const glowTexture = this.createGlowTexture();
+      const glowMaterial = new THREE.SpriteMaterial({
+        map: glowTexture,
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending
+      });
+      const glow = new THREE.Sprite(glowMaterial);
+      glow.scale.set(0.8, 0.8, 1);
+      pulse.add(glow);
+      
       this.meshGroup.add(pulse);
       
       this.pulsePool.push({
         mesh: pulse,
+        glow: glow,
         active: false,
         progress: 0,
         speed: 0,
@@ -316,21 +375,38 @@ export class NeuralNetworkCore {
     }
   }
 
-  spawnPulse(connection) {
+  spawnPulse(connection, isBurst = false) {
     const pulse = this.pulsePool.find(p => !p.active);
     if (!pulse) return;
 
     pulse.active = true;
     pulse.progress = 0;
-    pulse.speed = 0.015 + Math.random() * 0.02;
+    // Faster pulses during bursts (voice activity)
+    pulse.speed = isBurst ? 0.03 + Math.random() * 0.02 : 0.015 + Math.random() * 0.015;
     pulse.connection = connection;
     pulse.mesh.visible = true;
-    pulse.mesh.material.color.copy(connection.nodeA.color);
+    
+    // Brighter color for burst pulses
+    const baseColor = connection.nodeA.color;
+    if (isBurst) {
+      pulse.mesh.material.color.setHex(0xffffff);
+      pulse.mesh.scale.setScalar(1.5); // Larger during bursts
+      pulse.glow.material.opacity = 0.9;
+      pulse.glow.scale.set(1.2, 1.2, 1);
+    } else {
+      pulse.mesh.material.color.copy(baseColor);
+      pulse.mesh.scale.setScalar(1);
+      pulse.glow.material.opacity = 0.5;
+      pulse.glow.scale.set(0.8, 0.8, 1);
+    }
+    
     pulse.mesh.material.opacity = 1;
   }
 
   updatePulses() {
     const activityMultiplier = this.getActivityMultiplier();
+    const voiceState = this.options.voiceState;
+    const isVoiceActive = voiceState === 'speaking' || voiceState === 'listening';
 
     this.pulsePool.forEach(pulse => {
       if (!pulse.active) return;
@@ -349,23 +425,38 @@ export class NeuralNetworkCore {
       pulse.mesh.position.lerpVectors(start, end, pulse.progress);
       
       // Fade in then out
-      const fadeIn = Math.min(1, pulse.progress * 3);
-      const fadeOut = Math.min(1, (1 - pulse.progress) * 3);
-      pulse.mesh.material.opacity = Math.min(fadeIn, fadeOut);
+      const fadeIn = Math.min(1, pulse.progress * 4);
+      const fadeOut = Math.min(1, (1 - pulse.progress) * 4);
+      const opacity = Math.min(fadeIn, fadeOut);
       
-      // Color interpolation
-      pulse.mesh.material.color.copy(
-        pulse.connection.nodeA.color.clone().lerp(pulse.connection.nodeB.color, pulse.progress)
-      );
+      pulse.mesh.material.opacity = opacity;
+      if (pulse.glow) pulse.glow.material.opacity = opacity * 0.7;
+      
+      // Color interpolation (only if not a burst pulse)
+      if (pulse.mesh.scale.x <= 1.2) {
+        pulse.mesh.material.color.copy(
+          pulse.connection.nodeA.color.clone().lerp(pulse.connection.nodeB.color, pulse.progress)
+        );
+        if (pulse.glow) pulse.glow.material.color.copy(pulse.mesh.material.color);
+      }
     });
 
-    // Spawn new pulses
-    const spawnRate = 0.03 * activityMultiplier;
+    // Spawn new pulses - MUCH higher rate during voice activity
+    let spawnRate = 0.04 * activityMultiplier;
+    if (voiceState === 'speaking') spawnRate = 0.25; // Burst firing when speaking
+    else if (voiceState === 'listening') spawnRate = 0.15; // Higher when listening
+    
     if (Math.random() < spawnRate) {
       const activeConnections = this.connections.filter(c => c.active);
       if (activeConnections.length > 0) {
         const conn = activeConnections[Math.floor(Math.random() * activeConnections.length)];
-        this.spawnPulse(conn);
+        this.spawnPulse(conn, isVoiceActive);
+        
+        // During voice, spawn multiple pulses for burst effect
+        if (isVoiceActive && Math.random() < 0.3) {
+          const conn2 = activeConnections[Math.floor(Math.random() * activeConnections.length)];
+          setTimeout(() => this.spawnPulse(conn2, true), 50);
+        }
       }
     }
   }
@@ -373,15 +464,21 @@ export class NeuralNetworkCore {
   getActivityMultiplier() {
     const cpuFactor = this.options.cpuLoad / 100;
     const gpuFactor = this.options.gpuLoad / 100;
-    const voiceFactor = this.options.voiceState === 'speaking' ? 1.8 : 
-                       this.options.voiceState === 'listening' ? 1.4 : 0.6;
+    const voiceState = this.options.voiceState;
     
-    return 0.5 + (cpuFactor + gpuFactor) * 0.6 + voiceFactor * 0.4;
+    // Much higher multipliers for voice activity
+    let voiceFactor = 0.6;
+    if (voiceState === 'speaking') voiceFactor = 3.0; // 3x activity when speaking
+    else if (voiceState === 'listening') voiceFactor = 2.0; // 2x when listening
+    
+    return 0.5 + (cpuFactor + gpuFactor) * 0.8 + voiceFactor;
   }
 
   updateNodes(deltaTime) {
     const time = this.time;
     const activityMultiplier = this.getActivityMultiplier();
+    const voiceState = this.options.voiceState;
+    const isVoiceActive = voiceState === 'speaking' || voiceState === 'listening';
 
     this.nodes.forEach(node => {
       // Wave animation
@@ -393,21 +490,27 @@ export class NeuralNetworkCore {
       node.mesh.position.x = node.originalPos.x + waveX * (node.ring / this.options.gridSize);
       node.mesh.position.z = node.originalPos.z + waveZ * (node.ring / this.options.gridSize);
 
-      // Pulsing size
-      const pulse = Math.sin(time * 3 + node.pulsePhase) * 0.3 + 1;
-      const activityPulse = Math.sin(time * 5 * activityMultiplier + node.ring) * 0.2;
-      const scale = (pulse + activityPulse) * this.options.activityLevel;
+      // Pulsing size - much larger during voice
+      const basePulse = Math.sin(time * 3 + node.pulsePhase) * 0.3 + 1;
+      const activityPulse = Math.sin(time * 5 * activityMultiplier + node.ring) * 0.3;
+      const voiceBoost = isVoiceActive ? 0.5 : 0;
+      const scale = (basePulse + activityPulse + voiceBoost) * this.options.activityLevel;
       
       node.mesh.scale.setScalar(scale);
       
-      // Opacity pulse
-      node.mesh.material.opacity = (0.6 + Math.sin(time * 2 + node.pulsePhase) * 0.3) * this.options.activityLevel;
-      node.glow.material.opacity = (0.4 + Math.sin(time * 2 + node.pulsePhase) * 0.2) * this.options.activityLevel;
+      // Opacity pulse - brighter during voice
+      const baseOpacity = 0.6 + Math.sin(time * 2 + node.pulsePhase) * 0.3;
+      const voiceOpacity = isVoiceActive ? 0.3 : 0;
+      node.mesh.material.opacity = Math.min(1, (baseOpacity + voiceOpacity) * this.options.activityLevel);
+      node.glow.material.opacity = Math.min(0.9, (0.4 + voiceOpacity * 0.5) * this.options.activityLevel);
 
-      // Color shift based on activity
-      if (activityMultiplier > 1.2) {
+      // Color shift - flash white during voice
+      if (isVoiceActive) {
+        const flash = (Math.sin(time * 8 + node.pulsePhase) + 1) * 0.5;
+        node.mesh.material.color.copy(node.color).lerp(new THREE.Color(0xffffff), flash * 0.5);
+      } else if (activityMultiplier > 1.2) {
         const shift = (Math.sin(time * 4) + 1) * 0.5;
-        node.mesh.material.color.copy(node.color).lerp(new THREE.Color(0xffffff), shift * 0.3);
+        node.mesh.material.color.copy(node.color).lerp(new THREE.Color(0xffffff), shift * 0.2);
       } else {
         node.mesh.material.color.copy(node.color);
       }
@@ -453,12 +556,61 @@ export class NeuralNetworkCore {
 
   updateLights() {
     const time = this.time;
+    const voiceState = this.options.voiceState;
+    const isVoiceActive = voiceState === 'speaking' || voiceState === 'listening';
     
     this.lights.forEach(({ light, basePos, phase }) => {
       light.position.x = basePos[0] + Math.sin(time * 0.5 + phase) * 2;
       light.position.y = basePos[1] + Math.cos(time * 0.3 + phase) * 2;
-      light.intensity = 0.6 + Math.sin(time * 2 + phase) * 0.3;
+      // Much brighter during voice
+      const baseIntensity = 0.6 + Math.sin(time * 2 + phase) * 0.3;
+      light.intensity = isVoiceActive ? baseIntensity * 2.5 : baseIntensity;
     });
+  }
+
+  updateCentralCore() {
+    const time = this.time;
+    const voiceState = this.options.voiceState;
+    const isVoiceActive = voiceState === 'speaking' || voiceState === 'listening';
+    const isSpeaking = voiceState === 'speaking';
+    
+    // Central core pulsing
+    const basePulse = Math.sin(time * 3) * 0.3 + 1;
+    const voicePulse = isVoiceActive ? Math.sin(time * 10) * 0.5 + 1.5 : 1;
+    const scale = basePulse * voicePulse * this.options.activityLevel;
+    
+    this.centralCore.scale.setScalar(scale);
+    this.centralCore.material.opacity = isVoiceActive ? 0.9 : 0.6;
+    this.coreGlow.material.opacity = isVoiceActive ? 1.0 : 0.6;
+    
+    // Color shift during voice
+    if (isSpeaking) {
+      this.centralCore.material.color.setHex(0x00ff88); // Green when speaking
+      this.coreGlow.material.color.setHex(0x00ff88);
+    } else if (voiceState === 'listening') {
+      this.centralCore.material.color.setHex(0x00ddff); // Cyan when listening
+      this.coreGlow.material.color.setHex(0x00ddff);
+    } else {
+      this.centralCore.material.color.setHex(0xffffff);
+      this.coreGlow.material.color.setHex(0xffffff);
+    }
+    
+    // Ripple ring effect during voice
+    if (isVoiceActive) {
+      const rippleSpeed = isSpeaking ? 3 : 2;
+      const ripplePhase = (time * rippleSpeed) % 1;
+      this.rippleRing.scale.setScalar(1 + ripplePhase * 4);
+      this.rippleRing.material.opacity = (1 - ripplePhase) * (isSpeaking ? 0.8 : 0.5);
+      
+      // Color ripple
+      if (isSpeaking) {
+        this.rippleRing.material.color.setHex(0x00ff88);
+      } else {
+        this.rippleRing.material.color.setHex(0x00ddff);
+      }
+    } else {
+      this.rippleRing.material.opacity = 0;
+    }
   }
 
   animate() {
@@ -474,6 +626,7 @@ export class NeuralNetworkCore {
     this.updateConnections();
     this.updateParticles();
     this.updateLights();
+    this.updateCentralCore();
     this.updatePulses();
 
     this.renderer.render(this.scene, this.camera);

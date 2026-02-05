@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
 /**
- * ArcReactor v20 - CINEMATIC MATERIALS EDITION
- * Premium metallic materials, iridescent core, copper coils with heat glow
+ * ArcReactor v22 - HOLOGRAPHIC EDITION
+ * Holographic data rings floating above, energy effects, cinematic materials
  */
 export class JarvisArcReactor {
   constructor(container) {
@@ -26,6 +26,9 @@ export class JarvisArcReactor {
     this._createOuterHousing();
     this._createGlowEffects();
     this._createAmbientDust();
+    this._createEnergyPulses();
+    this._createElectricalSparks();
+    this._createHolographicRings();
     
     // Handle resize
     this._handleResize = this._handleResize.bind(this);
@@ -34,7 +37,7 @@ export class JarvisArcReactor {
     // Start render loop
     this._animate();
     
-    console.log('[ArcReactor] v20 - CINEMATIC MATERIALS EDITION');
+    console.log('[ArcReactor] v22 - HOLOGRAPHIC EDITION');
   }
 
   _setupScene() {
@@ -429,6 +432,263 @@ export class JarvisArcReactor {
     this.scene.add(this.dustParticles);
   }
 
+  _createEnergyPulses() {
+    // Create energy pulses that travel along coil rings
+    this.energyPulses = [];
+    
+    const pulseCount = 3;
+    for (let i = 0; i < pulseCount; i++) {
+      const radius = 2.2 + i * 0.9;
+      
+      // Create pulse geometry - glowing ring segment
+      const curve = new THREE.EllipseCurve(
+        0, 0,
+        radius, radius,
+        0, Math.PI / 8,
+        false,
+        0
+      );
+      const points = curve.getPoints(32);
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      
+      const material = new THREE.LineBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0,
+        linewidth: 3
+      });
+      
+      const pulse = new THREE.Line(geometry, material);
+      pulse.position.z = 0.15;
+      this.scene.add(pulse);
+      
+      this.energyPulses.push({
+        mesh: pulse,
+        radius: radius,
+        angle: Math.random() * Math.PI * 2,
+        speed: 0.5 + Math.random() * 0.5,
+        intensity: 0,
+        active: false,
+        nextActivation: Math.random() * 3
+      });
+    }
+  }
+
+  _createElectricalSparks() {
+    // Create electrical spark effects between coil rings
+    this.sparks = [];
+    const sparkCount = 5;
+    
+    for (let i = 0; i < sparkCount; i++) {
+      // Create zigzag line for spark
+      const segments = 8;
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(segments * 3);
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      
+      const material = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0,
+        linewidth: 2
+      });
+      
+      const spark = new THREE.Line(geometry, material);
+      this.scene.add(spark);
+      
+      this.sparks.push({
+        mesh: spark,
+        positions: geometry.attributes.position,
+        startPoint: new THREE.Vector3(),
+        endPoint: new THREE.Vector3(),
+        active: false,
+        lifetime: 0,
+        nextActivation: Math.random() * 2,
+        geometry: geometry
+      });
+    }
+    
+    // Spark glow sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(0.3, 'rgba(200, 240, 255, 0.5)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    
+    const glowTexture = new THREE.CanvasTexture(canvas);
+    this.sparkGlowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+  }
+
+  _createHolographicRings() {
+    this.holographicRings = [];
+    this.holographicGlyphs = [];
+    
+    // Create scanning line texture
+    const scanCanvas = document.createElement('canvas');
+    scanCanvas.width = 256;
+    scanCanvas.height = 256;
+    const scanCtx = scanCanvas.getContext('2d');
+    
+    // Draw scan lines
+    scanCtx.fillStyle = 'rgba(0, 0, 0, 0)';
+    scanCtx.fillRect(0, 0, 256, 256);
+    
+    for (let i = 0; i < 256; i += 4) {
+      scanCtx.fillStyle = `rgba(0, 255, 255, ${0.1 + Math.random() * 0.2})`;
+      scanCtx.fillRect(0, i, 256, 1);
+    }
+    
+    // Draw hex grid pattern
+    scanCtx.strokeStyle = 'rgba(0, 200, 255, 0.15)';
+    scanCtx.lineWidth = 1;
+    const hexSize = 20;
+    for (let y = 0; y < 256; y += hexSize * 1.5) {
+      for (let x = 0; x < 256; x += hexSize * 1.732) {
+        const offsetX = (y / (hexSize * 1.5)) % 2 === 0 ? 0 : hexSize * 0.866;
+        scanCtx.beginPath();
+        for (let j = 0; j < 6; j++) {
+          const angle = (j * 60) * Math.PI / 180;
+          const hx = x + offsetX + hexSize * Math.cos(angle);
+          const hy = y + hexSize * Math.sin(angle);
+          if (j === 0) scanCtx.moveTo(hx, hy);
+          else scanCtx.lineTo(hx, hy);
+        }
+        scanCtx.closePath();
+        scanCtx.stroke();
+      }
+    }
+    
+    const scanTexture = new THREE.CanvasTexture(scanCanvas);
+    scanTexture.wrapS = THREE.RepeatWrapping;
+    scanTexture.wrapT = THREE.RepeatWrapping;
+    
+    // Holographic ring material
+    this.holographicMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.DoubleSide,
+      map: scanTexture,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    // Create 3 floating holographic rings
+    for (let i = 0; i < 3; i++) {
+      const radius = 3.5 + i * 0.8;
+      const tubeRadius = 0.02 + i * 0.01;
+      
+      // Main ring
+      const ringGeometry = new THREE.TorusGeometry(radius, tubeRadius, 8, 64);
+      const ring = new THREE.Mesh(ringGeometry, this.holographicMaterial.clone());
+      ring.position.z = 1.5 + i * 0.4;
+      ring.rotation.x = Math.PI / 2;
+      
+      // Inner detail ring
+      const detailGeometry = new THREE.TorusGeometry(radius - 0.3, tubeRadius * 0.5, 6, 48);
+      const detailRing = new THREE.Mesh(detailGeometry, this.holographicMaterial.clone());
+      detailRing.material.opacity = 0.08;
+      detailRing.position.z = 1.5 + i * 0.4;
+      detailRing.rotation.x = Math.PI / 2;
+      
+      this.scene.add(ring);
+      this.scene.add(detailRing);
+      
+      this.holographicRings.push({
+        mainRing: ring,
+        detailRing: detailRing,
+        baseY: 1.5 + i * 0.4,
+        rotationSpeed: 0.1 + i * 0.05,
+        bobSpeed: 0.5 + i * 0.3,
+        bobAmount: 0.1 + i * 0.05,
+        textureOffset: Math.random()
+      });
+    }
+    
+    // Create floating data glyphs
+    const glyphChars = ['01', '10', 'AF', '3D', '7E', 'B2', 'C4', 'E8', '00', '11', 'FF', 'AA'];
+    
+    for (let i = 0; i < 8; i++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      
+      ctx.font = 'bold 16px monospace';
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const char = glyphChars[i % glyphChars.length];
+      ctx.fillText(char, 32, 16);
+      
+      // Add glow effect
+      ctx.shadowColor = '#00ffff';
+      ctx.shadowBlur = 10;
+      ctx.fillText(char, 32, 16);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const sprite = new THREE.Sprite(material);
+      const angle = (i / 8) * Math.PI * 2;
+      const radius = 3 + Math.random() * 2;
+      sprite.position.set(
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius,
+        2 + Math.random() * 1.5
+      );
+      sprite.scale.set(0.5, 0.25, 1);
+      
+      this.scene.add(sprite);
+      
+      this.holographicGlyphs.push({
+        sprite: sprite,
+        basePos: sprite.position.clone(),
+        angle: angle,
+        radius: radius,
+        orbitSpeed: 0.1 + Math.random() * 0.2,
+        bobSpeed: 0.3 + Math.random() * 0.4,
+        bobAmount: 0.05 + Math.random() * 0.1,
+        fadeSpeed: 0.5 + Math.random() * 0.5,
+        baseOpacity: 0.4 + Math.random() * 0.4
+      });
+    }
+    
+    // Create central holographic cone/projector effect
+    const coneGeometry = new THREE.ConeGeometry(1.5, 3, 32, 1, true);
+    const coneMaterial = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.08,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    this.holoCone = new THREE.Mesh(coneGeometry, coneMaterial);
+    this.holoCone.position.z = 2;
+    this.holoCone.rotation.x = Math.PI;
+    this.scene.add(this.holoCone);
+  }
+
   initAudio(audioStream) {
     return new Promise((resolve, reject) => {
       try {
@@ -539,6 +799,108 @@ export class JarvisArcReactor {
     // Slow dust rotation
     if (this.dustParticles) {
       this.dustParticles.rotation.z += 0.0005;
+    }
+    
+    // Animate energy pulses traveling along coil rings
+    if (this.energyPulses) {
+      this.energyPulses.forEach((pulse, i) => {
+        // Check if it's time to activate
+        if (!pulse.active && this.time > pulse.nextActivation) {
+          pulse.active = true;
+          pulse.intensity = 1.0;
+          pulse.angle = Math.random() * Math.PI * 2;
+        }
+        
+        if (pulse.active) {
+          // Move pulse along ring
+          pulse.angle += pulse.speed * 0.016;
+          pulse.intensity -= 0.008; // Fade out
+          
+          // Update pulse rotation
+          pulse.mesh.rotation.z = pulse.angle;
+          pulse.mesh.material.opacity = Math.max(0, pulse.intensity * 0.8);
+          
+          // Deactivate when faded
+          if (pulse.intensity <= 0) {
+            pulse.active = false;
+            pulse.nextActivation = this.time + 1 + Math.random() * 3;
+            pulse.mesh.material.opacity = 0;
+          }
+        }
+      });
+    }
+    
+    // Animate electrical sparks
+    if (this.sparks) {
+      this.sparks.forEach((spark, i) => {
+        // Check if it's time to activate
+        if (!spark.active && this.time > spark.nextActivation) {
+          spark.active = true;
+          spark.lifetime = 0.1 + Math.random() * 0.15;
+          
+          // Pick random start and end points between coil rings
+          const angle1 = Math.random() * Math.PI * 2;
+          const angle2 = angle1 + (Math.random() - 0.5) * 0.5;
+          const radius1 = 2.2 + Math.floor(Math.random() * 2) * 0.9;
+          const radius2 = 2.2 + Math.floor(Math.random() * 3) * 0.9;
+          
+          spark.startPoint.set(
+            Math.cos(angle1) * radius1,
+            Math.sin(angle1) * radius1,
+            (Math.random() - 0.5) * 0.2
+          );
+          spark.endPoint.set(
+            Math.cos(angle2) * radius2,
+            Math.sin(angle2) * radius2,
+            (Math.random() - 0.5) * 0.2
+          );
+          
+          // Generate zigzag path
+          const positions = spark.positions.array;
+          const segments = positions.length / 3;
+          
+          for (let j = 0; j < segments; j++) {
+            const t = j / (segments - 1);
+            const jitter = (Math.random() - 0.5) * 0.3;
+            
+            positions[j * 3] = spark.startPoint.x + (spark.endPoint.x - spark.startPoint.x) * t + jitter;
+            positions[j * 3 + 1] = spark.startPoint.y + (spark.endPoint.y - spark.startPoint.y) * t + jitter;
+            positions[j * 3 + 2] = spark.startPoint.z + (spark.endPoint.z - spark.startPoint.z) * t;
+          }
+          
+          spark.positions.needsUpdate = true;
+          spark.mesh.material.opacity = 1;
+          spark.mesh.material.color.setHex(Math.random() > 0.5 ? 0xffffff : 0x00ffff);
+        }
+        
+        if (spark.active) {
+          spark.lifetime -= 0.016;
+          
+          // Flicker effect
+          spark.mesh.material.opacity = spark.lifetime > 0 ? (Math.random() * 0.5 + 0.5) : 0;
+          
+          // Jitter the spark path for electrical effect
+          if (spark.lifetime > 0 && Math.random() > 0.5) {
+            const positions = spark.positions.array;
+            const segments = positions.length / 3;
+            
+            for (let j = 1; j < segments - 1; j++) {
+              const t = j / (segments - 1);
+              const jitter = (Math.random() - 0.5) * 0.2;
+              
+              positions[j * 3] = spark.startPoint.x + (spark.endPoint.x - spark.startPoint.x) * t + jitter;
+              positions[j * 3 + 1] = spark.startPoint.y + (spark.endPoint.y - spark.startPoint.y) * t + jitter;
+            }
+            spark.positions.needsUpdate = true;
+          }
+          
+          if (spark.lifetime <= 0) {
+            spark.active = false;
+            spark.mesh.material.opacity = 0;
+            spark.nextActivation = this.time + 0.5 + Math.random() * 2;
+          }
+        }
+      });
     }
     
     this.renderer.render(this.scene, this.camera);

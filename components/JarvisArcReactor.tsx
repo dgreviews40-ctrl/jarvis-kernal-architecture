@@ -3,7 +3,7 @@
  * Supports both classic (v7) and cinematic (v2.0) versions
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { JarvisArcReactor as ArcReactorClass, CinematicArcReactor } from './jarvis-arc-reactor';
 
 interface JarvisArcReactorProps {
@@ -28,7 +28,6 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
   width = 400,
   height = 400,
   glowIntensity = 1.2,
-  rotationSpeed = 1.0,
   enhanced = false,
   colorMode = 'classic',
   showControls = true,
@@ -39,9 +38,7 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
   const reactorRef = useRef<ArcReactorClass | CinematicArcReactor | null>(null);
   const animationRef = useRef<number | null>(null);
   
-  // State for enhanced mode controls
-  const [currentGlow, setCurrentGlow] = useState(glowIntensity);
-  const [currentColorMode, setCurrentColorMode] = useState(colorMode);
+  // Use props directly for display, no local state management needed
   const [isAudioActive, setIsAudioActive] = useState(false);
   const [fps, setFps] = useState(60);
 
@@ -51,25 +48,35 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
     { id: 'cyberpunk', name: 'Neon', color: '#ff00ff', desc: 'Pink' }
   ] as const;
 
-  // Initialize reactor
+  // Main initialization effect - recreates when mode changes
   useEffect(() => {
     if (!containerRef.current) return;
+
+    console.log(`[JarvisArcReactor] ${enhanced ? 'CINEMATIC' : 'CLASSIC'} mode initializing...`);
+
+    // Clean up existing reactor first
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
+    }
     
-    // Clean up existing canvas
+    if (reactorRef.current && 'destroy' in reactorRef.current) {
+      reactorRef.current.destroy();
+    }
+    
+    // Remove existing canvas
     const existingCanvas = containerRef.current.querySelector('canvas');
-    if (existingCanvas) {
+    if (existingCanvas && containerRef.current.contains(existingCanvas)) {
       containerRef.current.removeChild(existingCanvas);
     }
-
-    console.log(`[JarvisArcReactor] Creating ${enhanced ? 'CINEMATIC' : 'CLASSIC'} reactor...`);
 
     let reactor: ArcReactorClass | CinematicArcReactor;
 
     if (enhanced) {
       // Use cinematic version
-      const colorShift = colorModes.findIndex(m => m.id === currentColorMode);
+      const colorShift = colorModes.findIndex(m => m.id === colorMode);
       reactor = new CinematicArcReactor(containerRef.current, {
-        glowIntensity: currentGlow,
+        glowIntensity,
         colorShift: colorShift >= 0 ? colorShift : 0,
         particleCount,
         enablePostProcessing: true
@@ -113,25 +120,21 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
     };
     animate();
 
+    // Cleanup function
     return () => {
       console.log('[JarvisArcReactor] Cleaning up...');
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
-      }
-      if (containerRef.current) {
-        const canvas = containerRef.current.querySelector('canvas');
-        if (canvas) {
-          containerRef.current.removeChild(canvas);
-        }
+        animationRef.current = null;
       }
       if ('destroy' in reactor) {
         reactor.destroy();
       }
       reactorRef.current = null;
     };
-  }, [enhanced]); // Recreate when enhanced mode changes
+  }, [enhanced, colorMode, glowIntensity, particleCount]); // Recreate when these change
 
-  // Handle audio stream changes
+  // Handle audio stream changes separately
   useEffect(() => {
     if (!audioStream || !reactorRef.current) return;
 
@@ -139,18 +142,6 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
       setIsAudioActive(true);
     }).catch(console.error);
   }, [audioStream]);
-
-  // Control handlers (enhanced mode only)
-  const handleGlowChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseFloat(e.target.value);
-    setCurrentGlow(value);
-  }, []);
-
-  const handleColorChange = useCallback((mode: typeof colorMode) => {
-    setCurrentColorMode(mode);
-    // Would need to recreate reactor to apply color change
-    // Or implement dynamic color update in the reactor class
-  }, []);
 
   return (
     <div className={`relative ${className}`} style={{ width, height }}>
@@ -185,7 +176,7 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
             gap: '10px',
             minWidth: '220px',
             boxShadow: '0 4px 30px rgba(0, 170, 255, 0.25)',
-            zIndex: 10,
+            zIndex: 100,
           }}
         >
           {/* Header */}
@@ -198,14 +189,13 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
               letterSpacing: '1px',
               textShadow: '0 0 10px rgba(0,170,255,0.5)'
             }}>
-              ⚡ Arc Reactor v2.0
+              ⚡ CINEMATIC v2.0
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {isAudioActive && (
                 <span style={{ 
                   color: '#00ff88', 
                   fontSize: '9px',
-                  animation: 'pulse 1s infinite'
                 }}>● AUDIO</span>
               )}
               <span style={{ color: '#666', fontSize: '9px' }}>{fps} FPS</span>
@@ -215,54 +205,53 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
           {/* Color mode selector */}
           <div style={{ display: 'flex', gap: '6px' }}>
             {colorModes.map((mode) => (
-              <button
+              <div
                 key={mode.id}
-                onClick={() => handleColorChange(mode.id as typeof colorMode)}
                 style={{
                   flex: 1,
                   padding: '8px 6px',
-                  border: `1px solid ${currentColorMode === mode.id ? mode.color : 'rgba(255,255,255,0.15)'}`,
+                  border: `1px solid ${colorMode === mode.id ? mode.color : 'rgba(255,255,255,0.15)'}`,
                   borderRadius: '6px',
-                  background: currentColorMode === mode.id ? `${mode.color}25` : 'rgba(255,255,255,0.03)',
-                  color: currentColorMode === mode.id ? mode.color : '#888',
+                  background: colorMode === mode.id ? `${mode.color}25` : 'rgba(255,255,255,0.03)',
+                  color: colorMode === mode.id ? mode.color : '#888',
                   fontSize: '9px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '2px'
+                  gap: '2px',
+                  cursor: 'default',
                 }}
               >
                 <span style={{ fontWeight: 'bold' }}>{mode.name}</span>
                 <span style={{ opacity: 0.6, fontSize: '8px' }}>{mode.desc}</span>
-              </button>
+              </div>
             ))}
           </div>
 
-          {/* Glow intensity slider */}
+          {/* Glow intensity display */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ color: '#888', fontSize: '10px', display: 'flex', justifyContent: 'space-between' }}>
               <span>Glow Intensity</span>
-              <span style={{ color: '#00aaff', fontWeight: 'bold' }}>{Math.round(currentGlow * 100)}%</span>
+              <span style={{ color: '#00aaff', fontWeight: 'bold' }}>{Math.round(glowIntensity * 100)}%</span>
             </label>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.1"
-              value={currentGlow}
-              onChange={handleGlowChange}
+            <div
               style={{
                 width: '100%',
                 height: '4px',
-                background: 'linear-gradient(90deg, rgba(0,170,255,0.2), rgba(0,170,255,0.6))',
+                background: 'rgba(255,255,255,0.1)',
                 borderRadius: '2px',
-                outline: 'none',
-                cursor: 'pointer',
-                WebkitAppearance: 'none',
+                overflow: 'hidden',
               }}
-            />
+            >
+              <div
+                style={{
+                  width: `${Math.min(glowIntensity * 50, 100)}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #00aaff, #00ff88)',
+                  borderRadius: '2px',
+                }}
+              />
+            </div>
           </div>
 
           {/* Stats grid */}
@@ -287,7 +276,7 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
               <div style={{ fontSize: '8px', textTransform: 'uppercase' }}>Coils</div>
             </div>
             <div>
-              <div style={{ color: '#00aaff', fontWeight: 'bold', fontSize: '11px' }}>24</div>
+              <div style={{ color: '#00aaff', fontWeight: 'bold', fontSize: '11px' }}>36</div>
               <div style={{ fontSize: '8px', textTransform: 'uppercase' }}>Segments</div>
             </div>
           </div>
@@ -313,7 +302,7 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
           <div
             style={{
               position: 'absolute',
-              bottom: enhanced && showControls ? '180px' : '15px',
+              bottom: enhanced && showControls ? '200px' : '15px',
               left: '15px',
               width: '30px',
               height: '30px',

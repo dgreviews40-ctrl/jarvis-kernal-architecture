@@ -178,13 +178,12 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
 
       {/* Arc Reactor Visualization */}
       {!showingContent && (
-        <div className="absolute inset-0 flex items-center justify-center z-0 overflow-visible">
+        <div className="absolute inset-0 flex items-center justify-center overflow-visible" style={{ zIndex: 1 }}>
           <JarvisArcReactor
             audioStream={audioStream}
-            width={450}
-            height={450}
+            width={480}
+            height={480}
             glowIntensity={voiceState === VoiceState.SPEAKING ? 1.6 : voiceState === VoiceState.LISTENING ? 1.4 : 1.2}
-            rotationSpeed={voiceState === VoiceState.SPEAKING ? 1.5 : voiceState === VoiceState.LISTENING ? 1.2 : 1.0}
             enhanced={enhancedReactor}
             showControls={showReactorControls}
             colorMode="classic"
@@ -193,19 +192,32 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         </div>
       )}
       
-      {/* Arc Reactor Mode Toggle */}
+      {/* Arc Reactor Mode Toggle - Always Visible */}
       {!showingContent && (
-        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2">
+        <div 
+          className="absolute bottom-4 right-4 flex items-center gap-2"
+          style={{ zIndex: 50 }}
+        >
+          {/* Settings Toggle Button */}
           <button
-            onClick={() => setShowReactorControls(!showReactorControls)}
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('[DisplayArea] Toggling controls:', !showReactorControls);
+              setShowReactorControls(!showReactorControls);
+            }}
             className={`p-2 rounded-lg transition-all duration-300 ${showReactorControls ? 'bg-cyan-500/30 text-cyan-300' : 'bg-black/40 text-cyan-600 hover:text-cyan-400'}`}
             title="Toggle Reactor Controls"
+            style={{ cursor: 'pointer' }}
           >
             <Settings size={16} />
           </button>
+          
+          {/* Mode Switcher Button */}
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               const newValue = !enhancedReactor;
+              console.log('[DisplayArea] Switching reactor mode to:', newValue ? 'CINEMATIC' : 'CLASSIC');
               setEnhancedReactor(newValue);
               localStorage.setItem('jarvis.arcReactor.enhanced', String(newValue));
             }}
@@ -215,6 +227,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
                 : 'bg-black/40 text-gray-500 hover:text-cyan-500 border border-transparent'
             }`}
             title={enhancedReactor ? 'Switch to Classic Mode' : 'Switch to Cinematic Mode'}
+            style={{ cursor: 'pointer' }}
           >
             <Zap size={14} className={enhancedReactor ? 'animate-pulse' : ''} />
             <span>{enhancedReactor ? 'CINEMATIC' : 'CLASSIC'}</span>

@@ -1,657 +1,571 @@
 import * as THREE from 'three';
-import { createAudioAnalyzer } from './audio.js';
-import { 
-  coreVertex, coreFragment, 
-  ringVertex, ringFragment,
-  coilVertex, coilFragment,
-  particleVertex, particleFragment,
-  hexVertex, hexFragment,
-  glowVertex, glowFragment
-} from './shaders-v4.js';
 
 /**
- * Cinematic JARVIS Arc Reactor
- * Inspired by Iron Man's arc reactor with realistic materials and effects
+ * ArcReactor v20 - CINEMATIC MATERIALS EDITION
+ * Premium metallic materials, iridescent core, copper coils with heat glow
  */
 export class JarvisArcReactor {
   constructor(container) {
     this.container = container;
-    this.scene = new THREE.Scene();
+    this.time = 0;
+    this.frameCount = 0;
     
-    // Camera setup - adjusted for full arc reactor visibility
-    this.camera = new THREE.PerspectiveCamera(
-      50,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      100
-    );
-    this.camera.position.z = 6.5;
+    // Audio reactivity
+    this.audioIntensity = 0;
+    this.targetAudioIntensity = 0;
+    this.frequencyData = new Uint8Array(64);
+    
+    // Set up Three.js scene
+    this._setupScene();
+    this._setupLighting();
+    this._createMaterials();
+    this._createInnerCore();
+    this._createCoilRings();
+    this._createWaveform();
+    this._createSegmentRings();
+    this._createOuterHousing();
+    this._createGlowEffects();
+    this._createAmbientDust();
+    
+    // Handle resize
+    this._handleResize = this._handleResize.bind(this);
+    window.addEventListener('resize', this._handleResize);
+    
+    // Start render loop
+    this._animate();
+    
+    console.log('[ArcReactor] v20 - CINEMATIC MATERIALS EDITION');
+  }
 
-    // Renderer with high quality settings
+  _setupScene() {
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    this.camera.position.set(0, 0, 18);
+    this.camera.lookAt(0, 0, 0);
+    
     this.renderer = new THREE.WebGLRenderer({ 
       antialias: true, 
       alpha: true,
       powerPreference: 'high-performance'
     });
-    // Set clear color to transparent/black
-    this.renderer.setClearColor(0x000000, 0);
-    // Add padding to renderer size to prevent glow clipping
-    const padding = 60;
-    this.renderer.setSize(container.clientWidth + padding, container.clientHeight + padding);
+    this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    // Center the canvas with negative margins
-    this.renderer.domElement.style.position = 'absolute';
-    this.renderer.domElement.style.left = `-${padding/2}px`;
-    this.renderer.domElement.style.top = `-${padding/2}px`;
-    container.appendChild(this.renderer.domElement);
-
-    // Audio smoothing
-    this.lastAvg = 0;
-    this.smoothedAudio = 0;
-    
-    // Build the reactor - MOSTLY DISABLED TO ISOLATE BLOB SOURCE
-    this._setupLighting();
-    this._createInnerCore();
-    // DISABLED FOR TESTING: this._createPlasmaRing();
-    this._createCoilRings();
-    this._createWaveform();
-    this._createSegmentRings();
-    this._createOuterHousing();
-    // DISABLED - CAUSES CYAN BLOB: this._createParticleSystem();
-    // DISABLED FOR TESTING: this._createVolumetricGlow();
-    
-    // Time tracking
-    this.time = 0;
-    console.log('[ArcReactor] v19 - PARTICLES DISABLED - BLOB FIXED');
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.2;
+    this.container.appendChild(this.renderer.domElement);
   }
 
   _setupLighting() {
     // Ambient fill
-    const ambient = new THREE.AmbientLight(0x112244, 0.3);
-    this.scene.add(ambient);
+    const ambientLight = new THREE.AmbientLight(0x112233, 0.4);
+    this.scene.add(ambientLight);
     
-    // Main blue light from center - DISABLED to prevent cyan blob
-    // this.centerLight = new THREE.PointLight(0x00ddff, 0.4, 2);
-    // this.centerLight.position.set(0, 0, 0.5);
-    // this.scene.add(this.centerLight);
-    this.centerLight = null;
+    // Key light - warm from above-right
+    const keyLight = new THREE.DirectionalLight(0xfff8e7, 1.5);
+    keyLight.position.set(10, 15, 10);
+    this.scene.add(keyLight);
     
-    // Rim light for metallic edges
-    const rimLight = new THREE.DirectionalLight(0x4488ff, 0.8);
-    rimLight.position.set(2, 2, 2);
+    // Fill light - cool from left
+    const fillLight = new THREE.DirectionalLight(0x4488cc, 0.6);
+    fillLight.position.set(-10, 5, 8);
+    this.scene.add(fillLight);
+    
+    // Rim light - dramatic from behind
+    const rimLight = new THREE.DirectionalLight(0x00ffff, 1.0);
+    rimLight.position.set(0, -5, -10);
     this.scene.add(rimLight);
     
-    const rimLight2 = new THREE.DirectionalLight(0x2244aa, 0.5);
-    rimLight2.position.set(-2, -2, 1);
-    this.scene.add(rimLight2);
+    // Purple accent rim
+    const purpleRim = new THREE.DirectionalLight(0x8844ff, 0.5);
+    purpleRim.position.set(8, 0, -5);
+    this.scene.add(purpleRim);
+    
+    // Internal core glow (subtle)
+    this.coreLight = new THREE.PointLight(0x00ffff, 2, 8);
+    this.coreLight.position.set(0, 0, 1);
+    this.scene.add(this.coreLight);
   }
 
-  // Level 1: The bright white-hot inner core - TEST WITH BASIC MATERIAL
-  _createInnerCore() {
-    // Use basic material instead of shader to test
-    this.coreMat = new THREE.MeshBasicMaterial({
-      color: 0x00ddff,
-      transparent: true,
-      opacity: 0.5
-    });
-
-    this.core = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.1, 0.1),
-      this.coreMat
-    );
-    this.core.position.z = 0.4;
-    this.scene.add(this.core);
-    
-    console.log('[ArcReactor] TEST - BASIC MATERIAL - 0.1x0.1 - NO SHADER');
-    
-    // Inner hexagon pattern overlay
-    this.hexMat = new THREE.ShaderMaterial({
-      uniforms: {
-        time: { value: 0 },
-        intensity: { value: 0.8 },
-        audioLevel: { value: 0 }
-      },
-      vertexShader: hexVertex,
-      fragmentShader: hexFragment,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-    
-    // Hex grid disabled for testing
-    // this.hexGrid = new THREE.Mesh(
-    //   new THREE.PlaneGeometry(0.25, 0.25),
-    //   this.hexMat
-    // );
-    // this.hexGrid.position.z = 0.41;
-    // this.scene.add(this.hexGrid);
-    this.hexGrid = null;
-    this.hexMat = null;
-  }
-
-  // Level 2: Rotating plasma energy ring - ULTRA TINY
-  _createPlasmaRing() {
-    const cacheBust = `// ${Date.now()}\n`;
-    
-    this.plasmaMat = new THREE.ShaderMaterial({
-      uniforms: {
-        time: { value: 0 },
-        intensity: { value: 0.4 },
-        color: { value: new THREE.Color(0x00ddff) }
-      },
-      vertexShader: cacheBust + `
-varying vec2 vUv;
-varying vec3 vNormal;
-void main() {
-  vUv = uv;
-  vNormal = normalize(normalMatrix * normal);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`,
-      fragmentShader: cacheBust + `
-uniform float time;
-uniform float intensity;
-uniform vec3 color;
-varying vec2 vUv;
-varying vec3 vNormal;
-
-void main() {
-  // Flowing energy effect
-  float flow = sin(vUv.x * 20.0 + time * 4.0) * 0.5 + 0.5;
-  float flow2 = sin(vUv.x * 40.0 - time * 6.0) * 0.5 + 0.5;
-  
-  // Fresnel effect for edge glow - reduced
-  vec3 viewDir = vec3(0.0, 0.0, 1.0);
-  float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 1.5);
-  
-  float energy = (flow * 0.6 + flow2 * 0.4) * fresnel;
-  
-  vec3 finalColor = color * (0.2 + energy * 0.5) * intensity;
-  float alpha = (0.1 + energy * 0.5) * intensity;
-  
-  gl_FragColor = vec4(finalColor, alpha);
-}
-`,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false
-    });
-
-    // Main energy ring - ULTRA small
-    this.plasmaRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.15, 0.015, 16, 100),
-      this.plasmaMat
-    );
-    this.plasmaRing.position.z = 0.35;
-    this.scene.add(this.plasmaRing);
-    
-    // Secondary counter-rotating ring - ULTRA small
-    this.plasmaRing2 = new THREE.Mesh(
-      new THREE.TorusGeometry(0.22, 0.01, 16, 80),
-      this.plasmaMat.clone()
-    );
-    this.plasmaRing2.material.uniforms.color.value = new THREE.Color(0x66eeff);
-    this.plasmaRing2.position.z = 0.32;
-    this.scene.add(this.plasmaRing2);
-  }
-
-  // Level 3: Electromagnetic coil rings (the iconic copper coils)
-  _createCoilRings() {
-    this.coils = new THREE.Group();
-    
-    const coilCount = 10;
-    const coilMat = new THREE.MeshStandardMaterial({
-      color: 0xb87333,
+  _createMaterials() {
+    // Gunmetal housing - brushed metal look
+    this.housingMaterial = new THREE.MeshStandardMaterial({
+      color: 0x2a2a2a,
       metalness: 0.9,
       roughness: 0.3,
-      emissive: 0x0044aa,
-      emissiveIntensity: 0.2
+      envMapIntensity: 1.0
     });
     
-    for (let i = 0; i < coilCount; i++) {
-      const angle = (i / coilCount) * Math.PI * 2;
-      const radius = 1.15;
-      
-      // Coil ring segment
-      const coil = new THREE.Mesh(
-        new THREE.TorusGeometry(0.15, 0.04, 8, 20, Math.PI * 1.3),
-        coilMat.clone()
-      );
-      
-      coil.position.set(
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius,
-        0.25
-      );
-      coil.rotation.z = angle + Math.PI / 2;
-      
-      // Add energy glow to each coil
-      coil.userData.baseEmissive = 0.2;
-      coil.userData.index = i;
-      
-      this.coils.add(coil);
-    }
+    // Polished silver accents
+    this.silverMaterial = new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      metalness: 1.0,
+      roughness: 0.15
+    });
     
-    this.scene.add(this.coils);
+    // Copper coils with emissive heat
+    this.copperMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb87333,
+      metalness: 0.8,
+      roughness: 0.4
+    });
+    
+    this.copperGlowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xcc5500,
+      metalness: 0.6,
+      roughness: 0.5,
+      emissive: 0xff4400,
+      emissiveIntensity: 0.3
+    });
+    
+    // Iridescent core crystal
+    this.coreMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0x00ffff,
+      metalness: 0.1,
+      roughness: 0.1,
+      transmission: 0.6,
+      thickness: 1.5,
+      ior: 1.5,
+      iridescence: 1.0,
+      iridescenceIOR: 1.3,
+      emissive: 0x00ffff,
+      emissiveIntensity: 0.8,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1
+    });
+    
+    // Cyan emissive segments
+    this.segmentMaterial = new THREE.MeshStandardMaterial({
+      color: 0x00ffff,
+      metalness: 0.5,
+      roughness: 0.2,
+      emissive: 0x00ffff,
+      emissiveIntensity: 2.0
+    });
+    
+    // Amber warm segments
+    this.amberSegmentMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffaa00,
+      metalness: 0.3,
+      roughness: 0.3,
+      emissive: 0xff8800,
+      emissiveIntensity: 1.5
+    });
+    
+    // Dark matte connectors
+    this.matteBlackMaterial = new THREE.MeshStandardMaterial({
+      color: 0x111111,
+      metalness: 0.2,
+      roughness: 0.9
+    });
   }
 
-  // Level 4: Audio-reactive waveform ring
-  _createWaveform() {
-    this.POINTS = 180;
-    this.waveRadius = 1.45;
-
-    this.waveGeom = new THREE.BufferGeometry();
-    this.wavePositions = new Float32Array(this.POINTS * 3);
-    this.waveColors = new Float32Array(this.POINTS * 3);
+  _createInnerCore() {
+    // Main crystal core
+    const coreGeometry = new THREE.CylinderGeometry(1.2, 1.2, 0.4, 32);
+    this.core = new THREE.Mesh(coreGeometry, this.coreMaterial);
+    this.core.rotation.x = Math.PI / 2;
+    this.core.position.z = 0.3;
+    this.scene.add(this.core);
     
-    for (let i = 0; i < this.POINTS; i++) {
-      const a = (i / this.POINTS) * Math.PI * 2;
-      this.wavePositions[i * 3] = Math.cos(a) * this.waveRadius;
-      this.wavePositions[i * 3 + 1] = Math.sin(a) * this.waveRadius;
-      this.wavePositions[i * 3 + 2] = 0.15;
+    // Inner crystal facets
+    const innerGeometry = new THREE.CylinderGeometry(0.7, 0.7, 0.3, 16);
+    this.innerCore = new THREE.Mesh(innerGeometry, this.coreMaterial);
+    this.innerCore.rotation.x = Math.PI / 2;
+    this.innerCore.position.z = 0.5;
+    this.scene.add(this.innerCore);
+    
+    // Metal core ring
+    const ringGeometry = new THREE.TorusGeometry(1.3, 0.08, 16, 64);
+    this.coreRing = new THREE.Mesh(ringGeometry, this.silverMaterial);
+    this.scene.add(this.coreRing);
+    
+    // Cross pattern inside core
+    const crossGeo = new THREE.BoxGeometry(1.8, 0.15, 0.05);
+    this.cross1 = new THREE.Mesh(crossGeo, this.matteBlackMaterial);
+    this.cross1.position.z = 0.15;
+    this.scene.add(this.cross1);
+    
+    this.cross2 = new THREE.Mesh(crossGeo, this.matteBlackMaterial);
+    this.cross2.rotation.z = Math.PI / 2;
+    this.cross2.position.z = 0.15;
+    this.scene.add(this.cross2);
+  }
+
+  _createCoilRings() {
+    this.coils = [];
+    const coilCount = 3;
+    
+    for (let ring = 0; ring < coilCount; ring++) {
+      const radius = 2.2 + ring * 0.9;
+      const segments = 10 + ring * 2;
+      const coilsInRing = [];
       
-      // Gradient colors from cyan to blue
-      this.waveColors[i * 3] = 0.0;
-      this.waveColors[i * 3 + 1] = 0.8 + (i / this.POINTS) * 0.2;
-      this.waveColors[i * 3 + 2] = 1.0;
+      for (let i = 0; i < segments; i++) {
+        const angle = (i / segments) * Math.PI * 2;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        
+        // Copper coil body
+        const coilGeometry = new THREE.CylinderGeometry(0.22, 0.22, 0.6, 12);
+        const coil = new THREE.Mesh(coilGeometry, this.copperMaterial);
+        coil.position.set(x, y, 0);
+        coil.rotation.z = angle;
+        coil.lookAt(0, 0, 0);
+        coil.rotateX(Math.PI / 2);
+        
+        // Coil end caps (silver)
+        const capGeometry = new THREE.CylinderGeometry(0.23, 0.23, 0.05, 12);
+        const cap1 = new THREE.Mesh(capGeometry, this.silverMaterial);
+        cap1.position.y = 0.28;
+        coil.add(cap1);
+        
+        const cap2 = new THREE.Mesh(capGeometry, this.silverMaterial);
+        cap2.position.y = -0.28;
+        coil.add(cap2);
+        
+        // Heat glow ring around coil
+        const glowGeometry = new THREE.TorusGeometry(0.25, 0.03, 8, 24);
+        const glowRing = new THREE.Mesh(glowGeometry, this.copperGlowMaterial);
+        glowRing.rotation.x = Math.PI / 2;
+        glowRing.position.y = 0;
+        coil.add(glowRing);
+        
+        this.scene.add(coil);
+        coilsInRing.push({ coil, glowRing, angle, baseIntensity: 0.2 + Math.random() * 0.3 });
+      }
+      
+      this.coils.push(coilsInRing);
     }
-    
-    this.waveGeom.setAttribute('position', new THREE.BufferAttribute(this.wavePositions, 3));
-    this.waveGeom.setAttribute('color', new THREE.BufferAttribute(this.waveColors, 3));
+  }
 
-    this.waveMat = new THREE.LineBasicMaterial({
-      vertexColors: true,
+  _createWaveform() {
+    // Create smooth ring geometry for waveform
+    const curve = new THREE.EllipseCurve(
+      0, 0,
+      4.8, 4.8,
+      0, 2 * Math.PI,
+      false,
+      0
+    );
+    const points = curve.getPoints(128);
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(points.flatMap(p => [p.x, p.y, 0]), 3));
+    
+    // Cyan energy waveform
+    this.waveformMaterial = new THREE.LineBasicMaterial({
+      color: 0x00ffff,
       transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.8,
       linewidth: 2
     });
-
-    this.waveform = new THREE.LineLoop(this.waveGeom, this.waveMat);
-    this.waveform.position.z = 0.15;
+    
+    this.waveform = new THREE.Line(geometry, this.waveformMaterial);
+    this.waveform.position.z = 0.2;
     this.scene.add(this.waveform);
+    
+    // Secondary waveform (amber)
+    this.waveform2 = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+      color: 0xffaa00,
+      transparent: true,
+      opacity: 0.5,
+      linewidth: 1
+    }));
+    this.waveform2.position.z = 0.15;
+    this.waveform2.scale.set(0.95, 0.95, 1);
+    this.scene.add(this.waveform2);
   }
 
-  // Level 5: Light segments (the iconic arc reactor lights)
   _createSegmentRings() {
-    this.segments = new THREE.Group();
-    this.segmentsInner = new THREE.Group();
+    this.segments = [];
     
-    const count = 24;
-    const innerCount = 12;
+    // Inner cyan ring
+    const innerCount = 8;
+    const innerRadius = 3.8;
     
-    // Outer segment ring
-    for (let i = 0; i < count; i++) {
-      const segGroup = new THREE.Group();
-      
-      // The light bar
-      const lightMat = new THREE.MeshBasicMaterial({
-        color: 0x88ffff,
-        transparent: true,
-        opacity: 0.8,
-        blending: THREE.AdditiveBlending
-      });
-      
-      const light = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.35, 0.06),
-        lightMat
-      );
-      
-      // Glow behind the light
-      const glowMat = new THREE.MeshBasicMaterial({
-        color: 0x00aaff,
-        transparent: true,
-        opacity: 0.4,
-        blending: THREE.AdditiveBlending
-      });
-      
-      const glow = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.5, 0.12),
-        glowMat
-      );
-      glow.position.z = -0.01;
-      
-      segGroup.add(glow);
-      segGroup.add(light);
-      
-      const a = (i / count) * Math.PI * 2;
-      segGroup.position.set(Math.cos(a) * 1.9, Math.sin(a) * 1.9, 0.1);
-      segGroup.rotation.z = a;
-      
-      // Store for animation
-      segGroup.userData = { 
-        baseOpacity: 0.8, 
-        lightMat: lightMat,
-        glowMat: glowMat,
-        index: i 
-      };
-      
-      this.segments.add(segGroup);
-    }
-    
-    // Inner segment ring (smaller, different color)
     for (let i = 0; i < innerCount; i++) {
-      const seg = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.2, 0.04),
-        new THREE.MeshBasicMaterial({
-          color: 0xaaddff,
-          transparent: true,
-          opacity: 0.6,
-          blending: THREE.AdditiveBlending
-        })
-      );
+      const angle = (i / innerCount) * Math.PI * 2;
+      const x = Math.cos(angle) * innerRadius;
+      const y = Math.sin(angle) * innerRadius;
       
-      const a = (i / innerCount) * Math.PI * 2 + Math.PI / innerCount;
-      seg.position.set(Math.cos(a) * 1.6, Math.sin(a) * 1.6, 0.12);
-      seg.rotation.z = a;
+      const segGeometry = new THREE.BoxGeometry(0.5, 0.12, 0.08);
+      const segment = new THREE.Mesh(segGeometry, this.segmentMaterial);
+      segment.position.set(x, y, 0.1);
+      segment.rotation.z = angle;
       
-      seg.userData = { baseOpacity: 0.6 };
-      this.segmentsInner.add(seg);
+      this.scene.add(segment);
+      this.segments.push({ mesh: segment, type: 'cyan', baseInt: 2.0 });
     }
     
-    this.scene.add(this.segments);
-    this.scene.add(this.segmentsInner);
+    // Outer amber ring
+    const outerCount = 10;
+    const outerRadius = 4.2;
+    
+    for (let i = 0; i < outerCount; i++) {
+      const angle = (i / outerCount) * Math.PI * 2;
+      const x = Math.cos(angle) * outerRadius;
+      const y = Math.sin(angle) * outerRadius;
+      
+      const segGeometry = new THREE.BoxGeometry(0.4, 0.1, 0.06);
+      const segment = new THREE.Mesh(segGeometry, this.amberSegmentMaterial);
+      segment.position.set(x, y, 0.08);
+      segment.rotation.z = angle;
+      
+      this.scene.add(segment);
+      this.segments.push({ mesh: segment, type: 'amber', baseInt: 1.5 });
+    }
   }
 
-  // Level 6: Outer housing ring
   _createOuterHousing() {
-    // Main outer ring
-    this.outerRing = new THREE.Mesh(
-      new THREE.RingGeometry(2.3, 2.45, 128),
-      new THREE.MeshStandardMaterial({
-        color: 0x224466,
-        metalness: 0.8,
-        roughness: 0.4,
-        emissive: 0x001133,
-        emissiveIntensity: 0.3,
-        transparent: true,
-        opacity: 0.9,
-        side: THREE.DoubleSide
-      })
-    );
-    this.outerRing.position.z = 0.05;
+    // Main outer ring - gunmetal
+    const ringGeometry = new THREE.TorusGeometry(5.5, 0.35, 24, 128);
+    this.outerRing = new THREE.Mesh(ringGeometry, this.housingMaterial);
     this.scene.add(this.outerRing);
     
-    // No outer glow ring - removed to prevent blue blob
+    // Inner decorative ring - silver
+    const innerRingGeometry = new THREE.TorusGeometry(5.0, 0.1, 16, 96);
+    this.innerDecorativeRing = new THREE.Mesh(innerRingGeometry, this.silverMaterial);
+    this.innerDecorativeRing.position.z = 0.1;
+    this.scene.add(this.innerDecorativeRing);
     
-    // Detail bolts/screws around outer ring
-    this.bolts = new THREE.Group();
-    const boltCount = 12;
-    const boltMat = new THREE.MeshStandardMaterial({
-      color: 0x888888,
-      metalness: 0.95,
-      roughness: 0.2
-    });
+    // Outer decorative ring - silver
+    const outerRingGeo = new THREE.TorusGeometry(6.0, 0.08, 16, 96);
+    this.outerDecorativeRing = new THREE.Mesh(outerRingGeo, this.silverMaterial);
+    this.outerDecorativeRing.position.z = -0.1;
+    this.scene.add(this.outerDecorativeRing);
     
-    for (let i = 0; i < boltCount; i++) {
-      const a = (i / boltCount) * Math.PI * 2;
-      const bolt = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, 0.08, 16),
-        boltMat
-      );
-      bolt.rotation.x = Math.PI / 2;
-      bolt.position.set(Math.cos(a) * 2.55, Math.sin(a) * 2.55, 0.05);
-      this.bolts.add(bolt);
+    // Screw heads around outer ring
+    const screwCount = 12;
+    for (let i = 0; i < screwCount; i++) {
+      const angle = (i / screwCount) * Math.PI * 2;
+      const x = Math.cos(angle) * 5.5;
+      const y = Math.sin(angle) * 5.5;
+      
+      const screwGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.1, 8);
+      const screw = new THREE.Mesh(screwGeo, this.matteBlackMaterial);
+      screw.position.set(x, y, 0.25);
+      screw.rotation.x = Math.PI / 2;
+      screw.rotation.y = angle;
+      
+      this.scene.add(screw);
     }
-    this.scene.add(this.bolts);
+    
+    // Streaks detail on housing
+    const streakGeo = new THREE.BoxGeometry(0.08, 0.8, 0.05);
+    for (let i = 0; i < 24; i++) {
+      const angle = (i / 24) * Math.PI * 2;
+      const x = Math.cos(angle) * 5.5;
+      const y = Math.sin(angle) * 5.5;
+      
+      const streak = new THREE.Mesh(streakGeo, this.matteBlackMaterial);
+      streak.position.set(x, y, 0.32);
+      streak.rotation.z = angle;
+      
+      this.scene.add(streak);
+    }
   }
 
-  // Level 7: Floating energy particles
-  _createParticleSystem() {
-    const particleCount = 100;
-    const geom = new THREE.BufferGeometry();
+  _createGlowEffects() {
+    // Core glow sprite
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
     
+    const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gradient.addColorStop(0, 'rgba(0, 255, 255, 0.8)');
+    gradient.addColorStop(0.3, 'rgba(0, 200, 255, 0.4)');
+    gradient.addColorStop(0.6, 'rgba(0, 150, 255, 0.1)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 128, 128);
+    
+    const glowTexture = new THREE.CanvasTexture(canvas);
+    const glowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    this.coreGlow = new THREE.Sprite(glowMaterial);
+    this.coreGlow.scale.set(4, 4, 1);
+    this.coreGlow.position.z = 0.3;
+    this.scene.add(this.coreGlow);
+  }
+
+  _createAmbientDust() {
+    // Very subtle dust particles (not the blob culprit!)
+    const particleCount = 15;
+    const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
     const sizes = new Float32Array(particleCount);
-    const opacities = new Float32Array(particleCount);
-    const colors = new Float32Array(particleCount * 3);
     
     for (let i = 0; i < particleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 0.5 + Math.random() * 1.8;
-      
+      const radius = 3 + Math.random() * 4;
       positions[i * 3] = Math.cos(angle) * radius;
       positions[i * 3 + 1] = Math.sin(angle) * radius;
-      positions[i * 3 + 2] = Math.random() * 0.5;
-      
-      sizes[i] = 2 + Math.random() * 4;
-      opacities[i] = 0.3 + Math.random() * 0.5;
-      
-      // Blue to cyan gradient
-      colors[i * 3] = 0.0;
-      colors[i * 3 + 1] = 0.6 + Math.random() * 0.4;
-      colors[i * 3 + 2] = 1.0;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 2;
+      sizes[i] = 0.02 + Math.random() * 0.04;
     }
     
-    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-    geom.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
-    geom.setAttribute('customColor', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     
-    this.particleMat = new THREE.ShaderMaterial({
-      uniforms: {
-        time: { value: 0 },
-        audioLevel: { value: 0 }
-      },
-      vertexShader: particleVertex,
-      fragmentShader: particleFragment,
+    const material = new THREE.PointsMaterial({
+      color: 0x88ccff,
+      size: 0.05,
       transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
+      opacity: 0.3,
+      sizeAttenuation: true
     });
     
-    this.particles = new THREE.Points(geom, this.particleMat);
-    this.particles.position.z = 0.3;
-    this.scene.add(this.particles);
+    this.dustParticles = new THREE.Points(geometry, material);
+    this.scene.add(this.dustParticles);
   }
 
-  // Level 8: Very subtle volumetric glow - ULTRA minimal
-  _createVolumetricGlow() {
-    const cacheBust = `// ${Date.now()}\n`;
-    
-    // Single tiny glow behind core - ULTRA subtle
-    this.volGlowMat = new THREE.ShaderMaterial({
-      uniforms: {
-        time: { value: 0 },
-        intensity: { value: 0.15 },
-        glowColor: { value: new THREE.Color(0x0088cc) },
-        audioLevel: { value: 0 }
-      },
-      vertexShader: cacheBust + glowVertex,
-      fragmentShader: cacheBust + `
-uniform float time;
-uniform float intensity;
-uniform vec3 glowColor;
-uniform float audioLevel;
-varying vec2 vUv;
-
-void main() {
-  vec2 center = vUv - 0.5;
-  float dist = length(center) * 2.0;
-  
-  // ULTRA SHARP - 95% smaller
-  float glow = pow(max(0.0, 1.0 - dist * 20.0), 25.0);
-  
-  // Subtle pulse
-  float pulse = 0.9 + 0.1 * sin(time * 2.0) + audioLevel * 0.2;
-  
-  float totalGlow = glow * pulse * intensity;
-  
-  // Very soft color output
-  gl_FragColor = vec4(glowColor * totalGlow * 0.08, totalGlow * 0.15);
-}
-`,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
+  initAudio(audioStream) {
+    return new Promise((resolve, reject) => {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 128;
+        
+        const source = audioContext.createMediaStreamSource(audioStream);
+        source.connect(analyser);
+        
+        this.audioAnalyser = analyser;
+        this.audioDataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        console.log('[ArcReactor] Audio initialized');
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
     });
-
-    // Tiny glow just behind the core
-    this.volGlow = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.15, 0.15),
-      this.volGlowMat
-    );
-    this.volGlow.position.z = -0.05;
-    this.scene.add(this.volGlow);
   }
 
-  async initAudio(stream) {
-    if (this.audio) return;
-    try {
-      this.audio = await createAudioAnalyzer(stream);
-      console.log('[ArcReactor] Audio initialized successfully');
-    } catch (err) {
-      console.error('[ArcReactor] Failed to initialize audio:', err);
+  updateAudio(audioData) {
+    if (!audioData || audioData.length === 0) return;
+    
+    this.frequencyData.set(audioData);
+    
+    // Calculate average intensity
+    let sum = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      sum += audioData[i];
     }
+    this.targetAudioIntensity = sum / (audioData.length * 255);
   }
 
   update() {
     this.time += 0.016;
+    this.frameCount++;
     
-    // Get FFT data
-    let fft = null;
-    let fftLength = 0;
-    
-    if (this.audio) {
-      fft = this.audio.getData();
-      fftLength = fft ? fft.length : 0;
-    }
-    
-    // Calculate audio levels with smoothing
-    let avg = 0;
-    let maxVal = 0;
-    if (fft && fftLength > 0) {
-      const len = Math.min(fftLength, 128);
-      for (let i = 0; i < len; i++) {
-        avg += fft[i];
-        if (fft[i] > maxVal) maxVal = fft[i];
+    // Get audio data if available
+    if (this.audioAnalyser && this.audioDataArray) {
+      this.audioAnalyser.getByteFrequencyData(this.audioDataArray);
+      let sum = 0;
+      for (let i = 0; i < this.audioDataArray.length; i++) {
+        sum += this.audioDataArray[i];
       }
-      avg /= len;
+      this.targetAudioIntensity = sum / (this.audioDataArray.length * 255);
     }
     
-    // Smooth audio response
-    this.lastAvg = this.lastAvg * 0.6 + avg * 0.4;
-    const audioLevel = Math.min(this.lastAvg / 60, 1.0); // Normalize
-    this.smoothedAudio = this.smoothedAudio * 0.8 + audioLevel * 0.2;
+    // Smooth audio intensity
+    this.audioIntensity += (this.targetAudioIntensity - this.audioIntensity) * 0.1;
     
-    // Debug logging
-    if (!this._frameCount) this._frameCount = 0;
-    this._frameCount++;
-    if (this._frameCount % 60 === 0) {
-      console.log('[ArcReactor] avg:', avg.toFixed(1), 'audioLevel:', audioLevel.toFixed(2));
+    // Rotate core with iridescent shimmer
+    if (this.core) {
+      this.core.rotation.z += 0.005;
+      // Pulsing emissive intensity
+      const pulse = 0.8 + Math.sin(this.time * 2) * 0.2 + this.audioIntensity * 0.5;
+      this.coreMaterial.emissiveIntensity = pulse;
     }
-
-    // ============================================
-    // UPDATE ALL COMPONENTS
-    // ============================================
     
-    // 1. Core - basic material test (no uniforms)
-    // this.coreMat.uniforms.time.value = this.time;
-    // this.coreMat.uniforms.intensity.value = 0.7 + this.smoothedAudio * 0.4;
-    // this.coreMat.uniforms.audioLevel.value = this.smoothedAudio;
-    this.core.scale.setScalar(1 + this.smoothedAudio * 0.1);
+    if (this.innerCore) {
+      this.innerCore.rotation.z -= 0.003;
+    }
     
-    // Hex grid - DISABLED
-    // this.hexMat.uniforms.time.value = this.time;
-    // this.hexMat.uniforms.audioLevel.value = this.smoothedAudio;
-    // this.hexGrid.rotation.z = this.time * 0.1;
-    
-    // 2. Plasma rings - DISABLED FOR TESTING
-    // this.plasmaMat.uniforms.time.value = this.time;
-    // this.plasmaMat.uniforms.intensity.value = 0.6 + this.smoothedAudio * 0.8;
-    // this.plasmaRing.rotation.z = this.time * 0.5;
-    // this.plasmaRing.rotation.x = Math.sin(this.time * 0.3) * 0.1;
-    // this.plasmaRing.rotation.y = Math.cos(this.time * 0.2) * 0.1;
-    // this.plasmaRing2.material.uniforms.time.value = this.time;
-    // this.plasmaRing2.material.uniforms.intensity.value = 0.5 + this.smoothedAudio * 0.6;
-    // this.plasmaRing2.rotation.z = -this.time * 0.7;
-    
-    // 3. Coils
-    if (this.coils) {
-      this.coils.children.forEach((coil, i) => {
-        const offset = (i / this.coils.children.length) * Math.PI * 2;
-        const pulse = Math.sin(this.time * 3 + offset) * 0.5 + 0.5;
-        const audioPulse = this.smoothedAudio * Math.sin(offset * 3 + this.time * 5);
-        coil.material.emissiveIntensity = coil.userData.baseEmissive + pulse * 0.3 + audioPulse * 0.8;
+    // Animate coil heat glow
+    this.coils.forEach((ring, ringIndex) => {
+      ring.forEach((coilData, i) => {
+        const heatPulse = coilData.baseIntensity + 
+          Math.sin(this.time * 3 + i * 0.5 + ringIndex) * 0.1 +
+          this.audioIntensity * 0.4;
+        coilData.glowRing.material.emissiveIntensity = Math.max(0.1, heatPulse);
       });
-      this.coils.rotation.z = this.time * 0.05;
+    });
+    
+    // Animate waveforms
+    if (this.waveform) {
+      const scale = 1 + this.audioIntensity * 0.15;
+      this.waveform.scale.set(scale, scale, 1);
+      this.waveform.rotation.z += 0.002;
+      this.waveform.material.opacity = 0.5 + this.audioIntensity * 0.5;
     }
     
-    // 4. Waveform
-    if (this.waveform && fft) {
-      for (let i = 0; i < this.POINTS; i++) {
-        const a = (i / this.POINTS) * Math.PI * 2;
-        let amp = 0;
-        if (fft && fftLength > 0) {
-          const fftIndex = Math.floor((i / this.POINTS) * fftLength * 0.5);
-          amp = fft[fftIndex] / 255;
-        }
-        const r = this.waveRadius * (1 + amp * 0.6 * (1 + this.smoothedAudio));
-        this.wavePositions[i * 3] = Math.cos(a) * r;
-        this.wavePositions[i * 3 + 1] = Math.sin(a) * r;
-        this.wavePositions[i * 3 + 2] = 0.15 + amp * 0.3;
-        this.waveColors[i * 3] = amp * 0.5;
-        this.waveColors[i * 3 + 1] = 0.7 + amp * 0.3;
-        this.waveColors[i * 3 + 2] = 1.0;
-      }
-      this.waveGeom.attributes.position.needsUpdate = true;
-      this.waveGeom.attributes.color.needsUpdate = true;
-      this.waveform.rotation.z = -this.time * 0.2;
-      this.waveMat.opacity = 0.5 + this.smoothedAudio * 0.5;
+    if (this.waveform2) {
+      const scale2 = 0.95 - this.audioIntensity * 0.1;
+      this.waveform2.scale.set(scale2, scale2, 1);
+      this.waveform2.rotation.z -= 0.001;
+      this.waveform2.material.opacity = 0.3 + this.audioIntensity * 0.4;
     }
     
-    // 5. Segments
-    if (this.segments) {
-      this.segments.children.forEach((segGroup, i) => {
-        let boost = 0;
-        if (fft && fftLength > 0) {
-          const fftIndex = Math.floor((i / this.segments.children.length) * fftLength * 0.5);
-          boost = fft[fftIndex] / 255;
-        }
-        const pulse = 0.5 + 0.5 * Math.sin(this.time * 2 + i * 0.5);
-        segGroup.scale.x = 1 + boost * 2.0;
-        segGroup.scale.y = 1 + boost * 0.5;
-        const opacity = segGroup.userData.baseOpacity * (0.5 + pulse * 0.5 + boost);
-        segGroup.userData.lightMat.opacity = Math.min(opacity, 1.0);
-        segGroup.userData.glowMat.opacity = Math.min(opacity * 0.5, 0.6);
-        const energy = boost + this.smoothedAudio;
-        segGroup.userData.lightMat.color.setHSL(0.5 - energy * 0.1, 1.0 - energy * 0.3, 0.5 + energy * 0.5);
-      });
-      this.segments.rotation.z = this.time * 0.1;
+    // Animate segments
+    this.segments.forEach((seg, i) => {
+      const flicker = Math.sin(this.time * 4 + i * 0.7) * 0.1;
+      const audioBoost = this.audioIntensity * 0.8;
+      seg.mesh.material.emissiveIntensity = seg.baseInt + flicker + audioBoost;
+    });
+    
+    // Pulse core glow
+    if (this.coreGlow) {
+      const glowPulse = 0.5 + Math.sin(this.time * 1.5) * 0.1 + this.audioIntensity * 0.3;
+      this.coreGlow.material.opacity = glowPulse;
+      this.coreGlow.scale.setScalar(3.5 + Math.sin(this.time) * 0.3);
     }
     
-    // Inner segments
-    if (this.segmentsInner) {
-      this.segmentsInner.children.forEach((seg, i) => {
-        let boost = 0;
-        if (fft && fftLength > 0) {
-          const fftIndex = Math.floor((i / this.segmentsInner.children.length) * fftLength * 0.3);
-          boost = fft[fftIndex] / 255;
-        }
-        seg.material.opacity = seg.userData.baseOpacity * (0.5 + boost * 2.0);
-        seg.scale.x = 1 + boost;
-      });
-      this.segmentsInner.rotation.z = -this.time * 0.15;
+    // Core light pulsing
+    if (this.coreLight) {
+      this.coreLight.intensity = 2 + Math.sin(this.time * 2) * 0.5 + this.audioIntensity * 2;
     }
     
-    // 6. Outer housing
-    if (this.outerRing) this.outerRing.material.emissiveIntensity = 0.3 + this.smoothedAudio * 0.5;
+    // Slow dust rotation
+    if (this.dustParticles) {
+      this.dustParticles.rotation.z += 0.0005;
+    }
     
-    // 7. Particles - DISABLED (causes cyan blob)
-    // if (this.particleMat) { ... }
-    
-    // 8. Volumetric glow - DISABLED FOR TESTING
-    // this.volGlowMat.uniforms.time.value = this.time;
-    // this.volGlowMat.uniforms.audioLevel.value = this.smoothedAudio;
-    // this.volGlowMat.uniforms.intensity.value = 0.1 + this.smoothedAudio * 0.2;
-    
-    // Center light - DISABLED
-    // if (this.centerLight) this.centerLight.intensity = 0.2 + this.smoothedAudio * 0.2;
-    
-    // Render
     this.renderer.render(this.scene, this.camera);
+  }
+
+  _animate() {
+    this.update();
+    this.animationId = requestAnimationFrame(() => this._animate());
+  }
+
+  _handleResize() {
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  }
+
+  dispose() {
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+    }
+    window.removeEventListener('resize', this._handleResize);
+    this.renderer.dispose();
+    this.container.removeChild(this.renderer.domElement);
   }
 }
 
-
+export default JarvisArcReactor;

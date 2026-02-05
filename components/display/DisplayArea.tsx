@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { Activity, X, Download } from 'lucide-react';
+import { Activity, X, Download, Zap, Settings } from 'lucide-react';
 import { ProcessorState, VoiceState, DisplayMode, DisplayContent } from '../../types';
 import { JarvisArcReactor } from '../JarvisArcReactor';
 
@@ -114,6 +114,12 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   
+  // Arc Reactor enhanced mode toggle
+  const [enhancedReactor, setEnhancedReactor] = useState(() => {
+    return localStorage.getItem('jarvis.arcReactor.enhanced') === 'true';
+  });
+  const [showReactorControls, setShowReactorControls] = useState(false);
+  
   // Initialize audio stream when voice is active
   useEffect(() => {
     const initAudio = async () => {
@@ -175,11 +181,44 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         <div className="absolute inset-0 flex items-center justify-center z-0 overflow-visible">
           <JarvisArcReactor
             audioStream={audioStream}
-            width={400}
-            height={400}
+            width={450}
+            height={450}
             glowIntensity={voiceState === VoiceState.SPEAKING ? 1.6 : voiceState === VoiceState.LISTENING ? 1.4 : 1.2}
             rotationSpeed={voiceState === VoiceState.SPEAKING ? 1.5 : voiceState === VoiceState.LISTENING ? 1.2 : 1.0}
+            enhanced={enhancedReactor}
+            showControls={showReactorControls}
+            colorMode="classic"
+            particleCount={150}
           />
+        </div>
+      )}
+      
+      {/* Arc Reactor Mode Toggle */}
+      {!showingContent && (
+        <div className="absolute bottom-4 right-4 z-10 flex items-center gap-2">
+          <button
+            onClick={() => setShowReactorControls(!showReactorControls)}
+            className={`p-2 rounded-lg transition-all duration-300 ${showReactorControls ? 'bg-cyan-500/30 text-cyan-300' : 'bg-black/40 text-cyan-600 hover:text-cyan-400'}`}
+            title="Toggle Reactor Controls"
+          >
+            <Settings size={16} />
+          </button>
+          <button
+            onClick={() => {
+              const newValue = !enhancedReactor;
+              setEnhancedReactor(newValue);
+              localStorage.setItem('jarvis.arcReactor.enhanced', String(newValue));
+            }}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 ${
+              enhancedReactor 
+                ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(0,200,255,0.3)]' 
+                : 'bg-black/40 text-gray-500 hover:text-cyan-500 border border-transparent'
+            }`}
+            title={enhancedReactor ? 'Switch to Classic Mode' : 'Switch to Cinematic Mode'}
+          >
+            <Zap size={14} className={enhancedReactor ? 'animate-pulse' : ''} />
+            <span>{enhancedReactor ? 'CINEMATIC' : 'CLASSIC'}</span>
+          </button>
         </div>
       )}
 

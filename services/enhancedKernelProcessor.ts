@@ -24,6 +24,7 @@ import { vision } from './vision';
 import { streamingHandler, StreamingOptions } from './streaming';
 import { toolRegistry, ToolCall } from './tools';
 import { conversationPersistence } from './conversationPersistence';
+import { vectorMemoryService } from './vectorMemoryService';
 import { logger } from './logger';
 import { conversation } from './conversation';
 import { intelligence } from './intelligence';
@@ -162,7 +163,7 @@ export class EnhancedKernelProcessor {
         useKernelStore.getState().setStreamingText(null);
       },
       onError: (error) => {
-        logger.log('STREAM', `Error: ${error.message}`, 'error');
+        logger.log('ERROR', `Streaming error: ${error.message}`, 'error');
         useKernelStore.getState().setStreamingText(null);
       }
     };
@@ -177,7 +178,7 @@ export class EnhancedKernelProcessor {
       return fullResponse || streamingHandler.getFullResponse();
     } catch (error) {
       // Fall back to standard processing
-      logger.log('STREAM', 'Streaming failed, falling back to standard', 'warning');
+      logger.log('KERNEL', 'Streaming failed, falling back to standard', 'warning');
       return this.processStandard(input, context, options);
     }
   }
@@ -297,7 +298,7 @@ export class EnhancedKernelProcessor {
   ): Promise<string> {
     context.setActiveModule('TOOLS');
     
-    logger.log('TOOLS', `Executing ${toolCall.tool}`, 'info', toolCall.parameters);
+    logger.log('KERNEL', `Executing tool: ${toolCall.tool}`, 'info', toolCall.parameters);
     
     const result = await toolRegistry.execute(toolCall);
     
@@ -315,7 +316,7 @@ export class EnhancedKernelProcessor {
       return `Done! ${JSON.stringify(result.data)}`;
     } else {
       // Tool failed - fall back to AI
-      logger.log('TOOLS', `${toolCall.tool} failed: ${result.error}`, 'warning');
+      logger.log('KERNEL', `Tool ${toolCall.tool} failed: ${result.error}`, 'warning');
       return this.handleQuery(input, context, AIProvider.GEMINI);
     }
   }
@@ -417,8 +418,7 @@ export class EnhancedKernelProcessor {
       return synthesis.text;
     }
 
-    // Fall back to vector memory
-    const { vectorMemoryService } = await import('./vectorMemoryService');
+    // Fall back to vector memory (already imported at top)
     const memories = await vectorMemoryService.recall(input);
     
     if (memories.length > 0) {
@@ -436,10 +436,13 @@ export class EnhancedKernelProcessor {
     
     const content = input.replace(/\b(remember|save|store|note that)\b/gi, '').trim();
     
-    await conversationPersistence.tagConversation(
-      conversationPersistence.getCurrentId()!,
-      ['memory', 'important']
-    );
+    const currentId = conversationPersistence.getCurrentId();
+    if (currentId) {
+      await conversationPersistence.tagConversation(
+        currentId,
+        ['memory', 'important']
+      );
+    }
 
     const { vectorMemoryService } = await import('./vectorMemoryService');
     await vectorMemoryService.store({

@@ -7,7 +7,7 @@
  * - Conversation persistence
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { AIProvider } from '../types';
 import { enhancedKernelProcessor } from '../services/enhancedKernelProcessor';
 import { streamingHandler } from '../services/streaming';
@@ -50,6 +50,7 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
   const [isProcessing, setIsProcessing] = useState(false);
   const [streamingEnabled, setStreamingEnabled] = useState(true);
   const [toolsEnabled, setToolsEnabled] = useState(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
   
   const streamingText = useKernelStore((state) => state.streamingText);
   const isStreaming = useKernelStore((state) => state.isStreaming);
@@ -69,6 +70,9 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
 
   const processMessage = useCallback(async (input: string): Promise<string> => {
     if (isProcessing) return '';
+    
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
     
     setIsProcessing(true);
     useKernelStore.getState().setIsStreaming(options.streaming !== false && streamingEnabled);
@@ -105,8 +109,16 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
 
   const abortStreaming = useCallback(() => {
     streamingHandler.abort();
+    abortControllerRef.current?.abort();
     useKernelStore.getState().setIsStreaming(false);
   }, []);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortStreaming();
+    };
+  }, [abortStreaming]);
 
   const startNewConversation = useCallback(() => {
     return conversationPersistence.startNewConversation();

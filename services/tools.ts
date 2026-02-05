@@ -63,7 +63,7 @@ class ToolRegistry {
 
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
-    logger.log('TOOLS', `Registered tool: ${tool.name}`, 'info');
+    logger.log('KERNEL', `Registered tool: ${tool.name}`, 'info');
   }
 
   get(name: string): Tool | undefined {
@@ -108,13 +108,13 @@ class ToolRegistry {
     }
 
     try {
-      logger.log('TOOLS', `Executing: ${call.tool}`, 'info', call.parameters);
+      logger.log('KERNEL', `Executing tool: ${call.tool}`, 'info', call.parameters);
       const result = await tool.execute(call.parameters);
-      logger.log('TOOLS', `${call.tool} completed: ${result.success ? 'success' : 'failed'}`, result.success ? 'success' : 'error');
+      logger.log('KERNEL', `Tool ${call.tool} completed: ${result.success ? 'success' : 'failed'}`, result.success ? 'success' : 'error');
       return result;
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      logger.log('TOOLS', `${call.tool} error: ${errMsg}`, 'error');
+      logger.log('ERROR', `Tool ${call.tool} error: ${errMsg}`, 'error');
       return {
         success: false,
         data: null,
@@ -172,7 +172,7 @@ class ToolRegistry {
         }
       }
     } catch (error) {
-      logger.log('TOOLS', `Error parsing tool calls: ${error}`, 'error');
+      logger.log('ERROR', `Error parsing tool calls: ${error}`, 'error');
     }
 
     return calls;
@@ -420,12 +420,17 @@ class ToolRegistry {
             tags: ['timer']
           });
 
-          // Set actual timer
-          setTimeout(() => {
+          // Set actual timer and track it for cleanup
+          const timerId = setTimeout(() => {
             taskAutomation.completeTask(task.id);
             const { voice } = require('./voice');
-            voice.speak(`Timer complete: ${params.label}`);
+            voice.speak(`Timer complete: ${params.label}`).catch((err: any) => {
+              logger.log('ERROR', `Timer TTS error: ${err}`, 'error');
+            });
           }, durationMs);
+          
+          // Store timer ID for potential cleanup
+          (task as any)._timerId = timerId;
 
           return {
             success: true,
@@ -524,7 +529,9 @@ class ToolRegistry {
       ],
       execute: async (params) => {
         try {
-          const results = await searchService.search(params.query);
+          const searchResults = await searchService.search(params.query);
+          // searchService returns SearchResults object with results array
+          const results = searchResults.results || [];
           const limited = results.slice(0, params.num_results || 3);
           
           if (limited.length === 0) {
@@ -613,7 +620,7 @@ class ToolRegistry {
       }
     });
 
-    logger.log('TOOLS', `Registered ${this.tools.size} default tools`, 'success');
+    logger.log('KERNEL', `Registered ${this.tools.size} default tools`, 'success');
   }
 }
 

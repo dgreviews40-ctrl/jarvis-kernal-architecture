@@ -230,7 +230,7 @@ class ConversationPersistenceService {
     const conversation = this.conversations.get(id);
     if (!conversation) return false;
 
-    conversation.tags = [...new Set([...conversation.tags, ...tags])];
+    conversation.tags = Array.from(new Set([...conversation.tags, ...tags]));
     conversation.updatedAt = Date.now();
     this.saveToStorage();
     
@@ -269,7 +269,7 @@ class ConversationPersistenceService {
     const results: ConversationSearchResult[] = [];
     const lowerQuery = query.toLowerCase();
 
-    for (const conversation of this.conversations.values()) {
+    for (const conversation of Array.from(this.conversations.values())) {
       let relevanceScore = 0;
       const matchingTurns: ConversationTurn[] = [];
 
@@ -284,7 +284,7 @@ class ConversationPersistenceService {
       }
 
       // Check turns
-      for (const turn of conversation.turns) {
+      for (const turn of Array.from(conversation.turns)) {
         if (turn.text.toLowerCase().includes(lowerQuery)) {
           relevanceScore += 2;
           matchingTurns.push(turn);
@@ -313,7 +313,7 @@ class ConversationPersistenceService {
     const sourceTags = new Set(source.tags);
     const scored: { conversation: PersistedConversation; score: number }[] = [];
 
-    for (const conversation of this.conversations.values()) {
+    for (const conversation of Array.from(this.conversations.values())) {
       if (conversation.id === conversationId) continue;
 
       let score = 0;
@@ -399,7 +399,7 @@ class ConversationPersistenceService {
     let totalMessages = 0;
     let oldest = Date.now();
 
-    for (const conv of this.conversations.values()) {
+    for (const conv of Array.from(this.conversations.values())) {
       totalMessages += conv.messageCount;
       oldest = Math.min(oldest, conv.createdAt);
     }
@@ -483,14 +483,29 @@ class ConversationPersistenceService {
 
     // Remove expired conversations
     const cutoff = Date.now() - (this.config.retentionDays * 24 * 60 * 60 * 1000);
-    for (const [id, conv] of this.conversations) {
+    for (const [id, conv] of Array.from(this.conversations.entries())) {
       if (conv.updatedAt < cutoff) {
         this.conversations.delete(id);
       }
     }
   }
 
+  private isStorageAvailable(): boolean {
+    try {
+      return typeof localStorage !== 'undefined' && 
+             typeof window !== 'undefined' && 
+             window.localStorage !== null;
+    } catch {
+      return false;
+    }
+  }
+
   private saveToStorage(): void {
+    if (!this.isStorageAvailable()) {
+      logger.log('CONVERSATION', 'localStorage not available, skipping save', 'warning');
+      return;
+    }
+    
     try {
       const data = this.exportAll();
       const json = JSON.stringify(data);
@@ -507,11 +522,27 @@ class ConversationPersistenceService {
         localStorage.setItem(this.CURRENT_KEY, this.currentConversationId);
       }
     } catch (error) {
-      logger.log('CONVERSATION', `Failed to save: ${error}`, 'error');
+      // Handle quota exceeded or private browsing mode
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        logger.log('CONVERSATION', 'Storage quota exceeded, compressing...', 'warning');
+        this.compressStorage();
+        try {
+          localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.exportAll()));
+        } catch (e) {
+          logger.log('CONVERSATION', 'Failed to save even after compression', 'error');
+        }
+      } else {
+        logger.log('CONVERSATION', `Failed to save: ${error}`, 'error');
+      }
     }
   }
 
   private loadFromStorage(): void {
+    if (!this.isStorageAvailable()) {
+      logger.log('CONVERSATION', 'localStorage not available', 'warning');
+      return;
+    }
+    
     try {
       const saved = localStorage.getItem(this.STORAGE_KEY);
       if (saved) {
@@ -538,7 +569,7 @@ class ConversationPersistenceService {
     // Remove detailed turn content from very old conversations
     const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000); // 30 days
     
-    for (const conv of this.conversations.values()) {
+    for (const conv of Array.from(this.conversations.values())) {
       if (conv.updatedAt < cutoff && conv.turns.length > 10) {
         // Keep only first 5 and last 5 turns
         conv.turns = [

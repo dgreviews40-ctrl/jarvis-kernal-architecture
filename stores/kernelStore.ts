@@ -183,6 +183,10 @@ interface KernelState {
   // v1.4.2 Actions
   setAgentStats: (stats: AgentStats) => void;
   
+  // v1.1 Actions - Streaming
+  setStreamingText: (text: string | null) => void;
+  setIsStreaming: (streaming: boolean) => void;
+  
   // Batch updates
   refreshSystemState: (state: {
     breakerStatuses?: BreakerStatus[];

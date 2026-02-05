@@ -31,7 +31,7 @@ export interface StreamingOptions {
 export class StreamingResponseHandler {
   private abortController: AbortController | null = null;
   private ttsBuffer: string = '';
-  private ttsTimeout: number | null = null;
+  private ttsTimeout: ReturnType<typeof setTimeout> | null = null;
   private isStreaming: boolean = false;
   private fullResponse: string = '';
 
@@ -90,7 +90,7 @@ export class StreamingResponseHandler {
 
       // Check if provider supports streaming
       if (!this.supportsStreaming(preference)) {
-        logger.log('STREAM', 'Provider does not support streaming, falling back to standard', 'warning');
+        logger.log('KERNEL', 'Provider does not support streaming, falling back to standard', 'warning');
         const response = await provider.generate(request);
         this.fullResponse = response.text;
         
@@ -102,7 +102,7 @@ export class StreamingResponseHandler {
         return response.text;
       }
 
-      logger.log('STREAM', `Starting stream with ${preference}`, 'info');
+      logger.log('KERNEL', `Starting stream with ${preference}`, 'info');
 
       // Start streaming based on provider
       if (preference === AIProvider.GEMINI) {
@@ -122,7 +122,7 @@ export class StreamingResponseHandler {
 
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      logger.log('STREAM', `Stream error: ${err.message}`, 'error');
+      logger.log('ERROR', `Stream error: ${err.message}`, 'error');
       onError?.(err);
       throw err;
     } finally {
@@ -151,10 +151,11 @@ export class StreamingResponseHandler {
     // Get API key from provider manager
     const geminiProvider = providerManager.getProvider(AIProvider.GEMINI);
     const apiKey = (geminiProvider as any)?.getApiKey?.() || 
-                   (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : null);
+                   (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : null) ||
+                   (typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null);
     
     if (!apiKey) {
-      throw new Error('Gemini API key not found');
+      throw new Error('Gemini API key not found. Please configure your API key in settings.');
     }
 
     const client = new GoogleGenAI({ apiKey });
@@ -163,8 +164,34 @@ export class StreamingResponseHandler {
     const startTime = Date.now();
     let tokenCount = 0;
 
+    // Check if generateContentStream is available (v1.1+ of SDK)
+    const hasStreaming = typeof (client.models as any).generateContentStream === 'function';
+    
+    if (!hasStreaming) {
+      // Fallback to non-streaming
+      logger.log('KERNEL', 'Streaming not available in SDK, falling back to standard', 'warning');
+      const response = await client.models.generateContent({
+        model: request.images && request.images.length > 0 ? 'gemini-2.5-flash-image' : config.model,
+        contents: request.prompt,
+        config: {
+          systemInstruction: request.systemInstruction,
+          temperature: request.temperature ?? config.temperature,
+        }
+      });
+      
+      const text = response.text || '';
+      this.fullResponse = text;
+      options.onChunk?.({
+        text,
+        isComplete: true,
+        provider: AIProvider.GEMINI,
+        model: config.model
+      });
+      return;
+    }
+
     // Create streaming request
-    const stream = await client.models.generateContentStream({
+    const stream = await (client.models as any).generateContentStream({
       model: request.images && request.images.length > 0 ? 'gemini-2.5-flash-image' : config.model,
       contents: request.prompt,
       config: {
@@ -174,14 +201,17 @@ export class StreamingResponseHandler {
     });
 
     for await (const chunk of stream) {
-      // Check for abort
+      // Check for abort before processing each chunk
       if (this.abortController?.signal.aborted) {
-        logger.log('STREAM', 'Stream aborted by user', 'warning');
+        logger.log('KERNEL', 'Stream aborted by user', 'warning');
         break;
       }
 
       const text = chunk.text || '';
       if (!text) continue;
+      
+      // Double-check abort after getting text
+      if (this.abortController?.signal.aborted) break;
 
       this.fullResponse += text;
       tokenCount++;
@@ -201,7 +231,7 @@ export class StreamingResponseHandler {
     }
 
     const latency = Date.now() - startTime;
-    logger.log('STREAM', `Stream complete: ${tokenCount} chunks in ${latency}ms`, 'success');
+    logger.log('KERNEL', `Stream complete: ${tokenCount} chunks in ${latency}ms`, 'success');
 
     // Flush remaining TTS buffer
     if (options.enableTTS && this.ttsBuffer.trim()) {
@@ -228,8 +258,8 @@ export class StreamingResponseHandler {
       clearTimeout(this.ttsTimeout);
     }
 
-    // Set new timeout to speak buffer
-    this.ttsTimeout = window.setTimeout(() => {
+    // Set new timeout to speak buffer (use global setTimeout for compatibility)
+    this.ttsTimeout = setTimeout(() => {
       this.speakBuffer();
     }, delayMs);
   }
@@ -245,7 +275,7 @@ export class StreamingResponseHandler {
 
     // Speak the buffer
     voice.speak(this.ttsBuffer).catch(err => {
-      logger.log('STREAM', `TTS error: ${err.message}`, 'error');
+      logger.log('ERROR', `TTS error: ${err.message}`, 'error');
     });
 
     this.ttsBuffer = '';

@@ -73,7 +73,16 @@ export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this conversation?')) {
+    // Use a safer delete without native confirm for better UX
+    // In production, this would use a custom modal
+    if (typeof window !== 'undefined' && window.confirm) {
+      if (window.confirm('Delete this conversation?')) {
+        conversationPersistence.deleteConversation(id);
+        loadConversations();
+        logger.log('CONVERSATION', `Deleted conversation ${id}`, 'info');
+      }
+    } else {
+      // Fallback: delete without confirmation in SSR/embedded contexts
       conversationPersistence.deleteConversation(id);
       loadConversations();
       logger.log('CONVERSATION', `Deleted conversation ${id}`, 'info');
@@ -286,7 +295,10 @@ export const ConversationHistory: React.FC<ConversationHistoryProps> = ({
           <span>Conversations are stored locally in your browser</span>
           <button
             onClick={() => {
-              if (confirm('Clear all conversation history? This cannot be undone.')) {
+              const confirmed = typeof window !== 'undefined' && window.confirm 
+                ? window.confirm('Clear all conversation history? This cannot be undone.')
+                : true; // In SSR, proceed without confirmation
+              if (confirmed) {
                 conversationPersistence.clearAll();
                 loadConversations();
               }

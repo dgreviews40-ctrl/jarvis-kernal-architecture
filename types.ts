@@ -159,6 +159,7 @@ export interface AIRequest {
   temperature?: number;
   stopSequences?: string[];
   timeout?: number; // Request timeout in milliseconds
+  model?: string; // Optional model override (for Ollama)
 }
 
 export interface AIResponse {

@@ -34,44 +34,33 @@ export class ModelRouter {
         this.currentModel = targetModel;
       }
       
-      // Prepare the AI request
+      // Pass model preference in the request instead of modifying global config
       const request: AIRequest = {
         prompt,
         images,
         systemInstruction: 'You are JARVIS, an intelligent assistant. Generate appropriate content based on the user request.',
-        temperature: 0.7
+        temperature: 0.7,
+        model: targetModel  // Request-specific model override
       };
-      
-      // Update Ollama config to use the selected model
-      const currentConfig = providerManager.getOllamaConfig();
-      providerManager.setOllamaConfig({
-        ...currentConfig,
-        model: targetModel
-      });
       
       // Route the request through the provider manager
       const response = await providerManager.route(request, AIProvider.OLLAMA);
       
       return response;
     } catch (error) {
-      // Fallback to default model if there's an error
-      const currentConfig = providerManager.getOllamaConfig();
-      providerManager.setOllamaConfig({
-        ...currentConfig,
-        model: 'llama3'
-      });
-      
+      // Fallback to default model if there's an error (don't modify global config)
       this.notificationService.error(`Model routing error: ${(error as Error).message}. Falling back to default model.`);
       
       // Retry with default model
-      const request: AIRequest = {
+      const fallbackRequest: AIRequest = {
         prompt,
         images,
         systemInstruction: 'You are JARVIS, an intelligent assistant. Generate appropriate content based on the user request.',
-        temperature: 0.7
+        temperature: 0.7,
+        model: 'llama3'  // Fallback model only for this request
       };
       
-      return await providerManager.route(request, AIProvider.OLLAMA);
+      return await providerManager.route(fallbackRequest, AIProvider.OLLAMA);
     }
   }
   

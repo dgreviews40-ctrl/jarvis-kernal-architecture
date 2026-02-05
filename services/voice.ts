@@ -12,6 +12,7 @@ import { piperLauncher } from "./piperLauncher";
 import { optimizer } from "./performance";
 import { inputValidator } from "./inputValidator";
 import { whisperSTT } from "./whisperSTT";
+import { voiceStreaming } from "./voiceStreaming";
 import EnhancedTTSService, { enhancedTTS } from "./enhancedTTS";
 
 const DEFAULT_CONFIG: VoiceConfig = {
@@ -811,6 +812,46 @@ class VoiceCoreOptimized {
         this.preloadedResponse = text;
       }
     }
+  }
+
+  /**
+   * NEW v1.1: Start streaming TTS session
+   * Allows TTS to begin speaking while AI is still generating
+   */
+  public startStreamingTTS(voiceType?: 'SYSTEM' | 'PIPER' | 'GEMINI'): string {
+    const type = voiceType || 
+      (this.config.voiceType === 'NEURAL' ? 'GEMINI' : 
+       this.config.voiceType === 'SYSTEM' ? 'SYSTEM' : 'PIPER');
+    return voiceStreaming.startSession(type);
+  }
+
+  /**
+   * NEW v1.1: Feed token to streaming TTS
+   * Returns true if the token triggered speech
+   */
+  public streamToken(token: string): boolean {
+    return voiceStreaming.onToken(token);
+  }
+
+  /**
+   * NEW v1.1: End streaming TTS session
+   */
+  public endStreamingTTS(): void {
+    voiceStreaming.endSession();
+  }
+
+  /**
+   * NEW v1.1: Abort streaming TTS
+   */
+  public abortStreamingTTS(): void {
+    voiceStreaming.abort();
+  }
+
+  /**
+   * NEW v1.1: Check if streaming TTS is active
+   */
+  public isStreamingTTS(): boolean {
+    return voiceStreaming.isStreaming();
   }
 
   private splitTextIntoChunks(text: string, maxLength: number): string[] {

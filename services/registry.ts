@@ -41,8 +41,8 @@ const CORE_PLUGINS: PluginManifest[] = [
   {
     id: "core.ai",
     name: "AI Engine",
-    version: "1.0.0",
-    description: "Multi-provider AI inference engine (Gemini, Ollama, Local).",
+    version: "1.1.0",
+    description: "Multi-provider AI inference engine (Gemini, Ollama, Local) with streaming, tool calling, and conversation persistence.",
     author: "JARVIS",
     permissions: ["NETWORK"],
     provides: ["ai_inference", "intent_analysis", "text_generation"],
@@ -53,14 +53,14 @@ const CORE_PLUGINS: PluginManifest[] = [
   {
     id: "plugin.voice",
     name: "Voice Interface",
-    version: "1.0.0",
-    description: "Speech recognition and neural text-to-speech synthesis.",
+    version: "1.1.0",
+    description: "Advanced speech recognition with streaming TTS, token-level synchronization, and real-time response delivery.",
     author: "JARVIS",
     permissions: ["AUDIO_INPUT", "AUDIO_OUTPUT"],
-    provides: ["speech_recognition", "speech_synthesis"],
+    provides: ["speech_recognition", "speech_synthesis", "streaming_tts", "voice_performance"],
     requires: ["os_level_control", "ai_inference"],
     priority: 75,
-    capabilities: ["voice_input", "voice_output", "wake_word"]
+    capabilities: ["voice_input", "voice_output", "wake_word", "streaming_tts", "token_sync", "real_time_audio"]
   },
   {
     id: "plugin.vision",

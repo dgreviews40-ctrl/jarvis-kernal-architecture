@@ -239,6 +239,9 @@ export class OllamaProvider implements IAIProvider {
 
     const start = Date.now();
     const config = providerManager.getOllamaConfig();
+    
+    // Use request-specific model if provided, otherwise fall back to config
+    const model = request.model || config.model;
 
     // Validate request parameters
     if (!config.url || !config.model) {
@@ -248,15 +251,15 @@ export class OllamaProvider implements IAIProvider {
     // Vision processing with Ollama (requires vision-capable model like llava, bakllava, moondream)
     if (request.images && request.images.length > 0) {
       try {
-        // Check if using a vision-capable model
+        // Check if using a vision-capable model (use request-specific model if provided)
         const visionModels = ['llava', 'bakllava', 'moondream', 'cogvlm', 'fuyu'];
-        const isVisionModel = visionModels.some(vm => config.model.toLowerCase().includes(vm));
+        const isVisionModel = visionModels.some(vm => model.toLowerCase().includes(vm));
 
         if (!isVisionModel) {
           return {
-            text: `[VISION NOTICE] Current model "${config.model}" doesn't support images. Install a vision model like "llava" or "bakllava" for image analysis.\n\nTo install: ollama pull llava`,
+            text: `[VISION NOTICE] Current model "${model}" doesn't support images. Install a vision model like "llava" or "bakllava" for image analysis.\n\nTo install: ollama pull llava`,
             provider: AIProvider.OLLAMA,
-            model: config.model,
+            model: model,
             latencyMs: Date.now() - start
           };
         }
@@ -281,7 +284,7 @@ export class OllamaProvider implements IAIProvider {
                 'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
               },
               body: JSON.stringify({
-                model: config.model,
+                model: model,
                 prompt: request.prompt || 'Describe this image in detail.',
                 images: request.images, // Ollama accepts base64 images directly
                 system: request.systemInstruction || 'You are JARVIS. Analyze images accurately and concisely.',
@@ -318,7 +321,7 @@ export class OllamaProvider implements IAIProvider {
         return {
           text: result.response,
           provider: AIProvider.OLLAMA,
-          model: config.model,
+          model: model,
           latencyMs: Date.now() - start
         };
 
@@ -327,7 +330,7 @@ export class OllamaProvider implements IAIProvider {
         return {
           text: `[VISION ERROR] ${error?.message || 'Failed to analyze image'}.\n\nMake sure you have a vision model installed:\nollama pull llava`,
           provider: AIProvider.OLLAMA,
-          model: config.model,
+          model: model,
           latencyMs: Date.now() - start
         };
       }
@@ -369,7 +372,7 @@ export class OllamaProvider implements IAIProvider {
               'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
             },
             body: JSON.stringify({
-              model: config.model,
+              model: model,
               prompt: finalPrompt,
               system: request.systemInstruction,
               stream: false,
@@ -405,7 +408,7 @@ export class OllamaProvider implements IAIProvider {
       return {
         text: result.response,
         provider: AIProvider.OLLAMA,
-        model: config.model,
+        model: model,
         latencyMs: Date.now() - start
       };
 

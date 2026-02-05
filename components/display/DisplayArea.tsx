@@ -103,55 +103,80 @@ const MapViewer: React.FC<{ content: DisplayContent['map'] }> = ({ content }) =>
 
 // Neural Network Control Panel
 const NeuralNetworkControls: React.FC<{
-  activityLevel: number;
-  setActivityLevel: (a: number) => void;
+  nodeSize: number;
+  setNodeSize: (s: number) => void;
+  brightness: number;
+  setBrightness: (b: number) => void;
   rotationSpeed: number;
   setRotationSpeed: (s: number) => void;
   cpuLoad: number;
   gpuLoad: number;
   voiceState: VoiceState;
-}> = ({ activityLevel, setActivityLevel, rotationSpeed, setRotationSpeed, cpuLoad, gpuLoad, voiceState }) => {
+}> = ({ nodeSize, setNodeSize, brightness, setBrightness, rotationSpeed, setRotationSpeed, cpuLoad, gpuLoad, voiceState }) => {
   return (
     <div
-      className="relative p-5 rounded-2xl"
+      className="relative p-4 rounded-2xl"
       style={{
         background: 'linear-gradient(180deg, rgba(10,12,24,0.98) 0%, rgba(5,6,12,0.99) 100%)',
         border: '1px solid rgba(100, 150, 255, 0.3)',
         boxShadow: '0 4px 30px rgba(0,0,0,0.6), 0 0 40px rgba(100, 150, 255, 0.15)',
-        minWidth: '240px',
+        minWidth: '260px',
       }}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-bold tracking-widest bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-          🧠 NEURAL MESH
-        </span>
-        <span className="text-xs font-mono font-bold text-cyan-400">
-          {Math.round(activityLevel * 100)}%
+          🧠 NEURAL NET
         </span>
       </div>
 
-      {/* Activity Slider */}
-      <div className="mb-4">
-        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Activity</label>
+      {/* Node Size */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-bold text-slate-500 uppercase">Node Size</label>
+          <span className="text-[10px] font-mono font-bold text-cyan-400">{(nodeSize * 1000).toFixed(0)}</span>
+        </div>
+        <input
+          type="range"
+          min="0.03"
+          max="0.18"
+          step="0.01"
+          value={nodeSize}
+          onChange={(e) => { setNodeSize(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.nodeSize', e.target.value); }}
+          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(to right, #00ddff 0%, #00ddff ${((nodeSize - 0.03) / 0.15) * 100}%, rgba(255,255,255,0.1) ${((nodeSize - 0.03) / 0.15) * 100}%)`,
+          }}
+        />
+      </div>
+
+      {/* Brightness */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-bold text-slate-500 uppercase">Brightness</label>
+          <span className="text-[10px] font-mono font-bold text-yellow-400">{(brightness * 100).toFixed(0)}%</span>
+        </div>
         <input
           type="range"
           min="0.3"
           max="1.5"
           step="0.1"
-          value={activityLevel}
-          onChange={(e) => { setActivityLevel(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.activity', e.target.value); }}
-          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          value={brightness}
+          onChange={(e) => { setBrightness(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.brightness', e.target.value); }}
+          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
           style={{
-            background: `linear-gradient(to right, #00ddff 0%, #ff00ff ${((activityLevel - 0.3) / 1.2) * 50}%, #ff8800 ${((activityLevel - 0.3) / 1.2) * 100}%, rgba(255,255,255,0.1) ${((activityLevel - 0.3) / 1.2) * 100}%)`,
+            background: `linear-gradient(to right, #444 0%, #ffff00 ${((brightness - 0.3) / 1.2) * 100}%, rgba(255,255,255,0.1) ${((brightness - 0.3) / 1.2) * 100}%)`,
           }}
         />
       </div>
 
-      {/* Rotation Speed */}
-      <div className="mb-4">
-        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Rotation</label>
+      {/* Rotation */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-bold text-slate-500 uppercase">Rotation</label>
+          <span className="text-[10px] font-mono font-bold text-purple-400">{(rotationSpeed * 1000).toFixed(1)}x</span>
+        </div>
         <input
           type="range"
           min="0"
@@ -159,7 +184,7 @@ const NeuralNetworkControls: React.FC<{
           step="0.0005"
           value={rotationSpeed}
           onChange={(e) => { setRotationSpeed(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.rotation', e.target.value); }}
-          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
           style={{
             background: `linear-gradient(to right, #8844ff 0%, #ff4488 ${(rotationSpeed / 0.005) * 100}%, rgba(255,255,255,0.1) ${(rotationSpeed / 0.005) * 100}%)`,
           }}
@@ -167,7 +192,7 @@ const NeuralNetworkControls: React.FC<{
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10">
+      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10">
         <div className="text-center">
           <div className="text-sm font-bold font-mono text-cyan-400">{Math.round(cpuLoad)}%</div>
           <div className="text-[8px] text-slate-500 uppercase">CPU</div>
@@ -203,9 +228,13 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   
   // Neural Network settings
   const [showControls, setShowControls] = useState(false);
-  const [activityLevel, setActivityLevel] = useState(() => {
-    const saved = localStorage.getItem('jarvis.neural.activity');
-    return saved ? parseFloat(saved) : 0.8;
+  const [nodeSize, setNodeSize] = useState(() => {
+    const saved = localStorage.getItem('jarvis.neural.nodeSize');
+    return saved ? parseFloat(saved) : 0.08;
+  });
+  const [brightness, setBrightness] = useState(() => {
+    const saved = localStorage.getItem('jarvis.neural.brightness');
+    return saved ? parseFloat(saved) : 1.0;
   });
   const [rotationSpeed, setRotationSpeed] = useState(() => {
     const saved = localStorage.getItem('jarvis.neural.rotation');
@@ -298,8 +327,10 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
       {showControls && !showingContent && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
           <NeuralNetworkControls
-            activityLevel={activityLevel}
-            setActivityLevel={setActivityLevel}
+            nodeSize={nodeSize}
+            setNodeSize={setNodeSize}
+            brightness={brightness}
+            setBrightness={setBrightness}
             rotationSpeed={rotationSpeed}
             setRotationSpeed={setRotationSpeed}
             cpuLoad={cpuLoad}

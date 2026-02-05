@@ -232,12 +232,12 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
     return () => clearInterval(interval);
   }, [processorState]);
   
-  // Dynamic activity based on voice state
-  const dynamicActivity = voiceState === VoiceState.SPEAKING 
-    ? activityLevel * 1.5 
+  // Dynamic brightness boost based on voice state
+  const dynamicBrightness = voiceState === VoiceState.SPEAKING 
+    ? brightness * 1.2 
     : voiceState === VoiceState.LISTENING 
-    ? activityLevel * 1.25 
-    : activityLevel;
+    ? brightness * 1.1 
+    : brightness;
 
   const renderContent = () => {
     const contentKey = displayContent 
@@ -272,14 +272,19 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             gpuLoad={gpuLoad}
             voiceState={voiceState === VoiceState.SPEAKING ? 'speaking' : 
                        voiceState === VoiceState.LISTENING ? 'listening' : 'idle'}
-            activityLevel={dynamicActivity}
+            nodeSize={nodeSize}
+            brightness={dynamicBrightness}
             rotationSpeed={rotationSpeed}
             width={640}
             height={640}
             showControls={false}
-            onActivityChange={(level) => {
-              setActivityLevel(level);
-              localStorage.setItem('jarvis.neural.activity', String(level));
+            onNodeSizeChange={(size) => {
+              setNodeSize(size);
+              localStorage.setItem('jarvis.neural.nodeSize', String(size));
+            }}
+            onBrightnessChange={(b) => {
+              setBrightness(b);
+              localStorage.setItem('jarvis.neural.brightness', String(b));
             }}
             onRotationChange={(speed) => {
               setRotationSpeed(speed);

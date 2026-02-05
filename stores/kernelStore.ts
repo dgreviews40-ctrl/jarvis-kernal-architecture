@@ -143,6 +143,10 @@ interface KernelState {
   // v1.4.2 New State
   agentStats: AgentStats;
   
+  // v1.1 New State - Streaming
+  streamingText: string | null;
+  isStreaming: boolean;
+  
   // Actions
   setProcessorState: (state: ProcessorState) => void;
   setActiveModule: (module: string | null) => void;
@@ -281,6 +285,10 @@ export const useKernelStore = create<KernelState>()(
           isInitialized: false
         },
         
+        // v1.1 Initial State - Streaming
+        streamingText: null,
+        isStreaming: false,
+        
         // Actions
         setProcessorState: (processorState) => set({ processorState }),
         
@@ -374,6 +382,10 @@ export const useKernelStore = create<KernelState>()(
         // v1.4.2 Actions
         setAgentStats: (agentStats) => set({ agentStats }),
         
+        // v1.1 Actions - Streaming
+        setStreamingText: (streamingText) => set({ streamingText }),
+        setIsStreaming: (isStreaming) => set({ isStreaming }),
+        
         refreshSystemState: (updates) => set((state) => ({
           ...state,
           ...updates
@@ -438,6 +450,10 @@ export const useMemoryConsolidationStats = () => useKernelStore((state) => state
 
 // v1.4.2 Selectors
 export const useAgentStats = () => useKernelStore((state) => state.agentStats);
+
+// v1.1 Selectors - Streaming
+export const useStreamingText = () => useKernelStore((state) => state.streamingText);
+export const useIsStreaming = () => useKernelStore((state) => state.isStreaming);
 
 // v1.2 Computed selectors
 export const useFormattedUptime = () => {

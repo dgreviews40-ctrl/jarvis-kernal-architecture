@@ -192,22 +192,24 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
       {/* Enhanced Mode Controls */}
       {enhanced && showControls && (
         <div
+          onClick={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
             bottom: '10px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(0, 10, 30, 0.9)',
+            background: 'rgba(0, 10, 30, 0.95)',
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(0, 170, 255, 0.3)',
+            border: '1px solid rgba(0, 170, 255, 0.4)',
             borderRadius: '12px',
             padding: '12px 16px',
             display: 'flex',
             flexDirection: 'column',
             gap: '10px',
             minWidth: '220px',
-            boxShadow: '0 4px 30px rgba(0, 170, 255, 0.25)',
-            zIndex: 100,
+            boxShadow: '0 4px 30px rgba(0, 170, 255, 0.3)',
+            zIndex: 9999,
+            pointerEvents: 'auto',
           }}
         >
           {/* Header */}
@@ -232,6 +234,22 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
               <span style={{ color: '#666', fontSize: '9px' }}>{fps} FPS</span>
             </div>
           </div>
+
+          {/* TEST BUTTON - Remove after debugging */}
+          <button
+            onClick={() => console.log('[ArcReactor] TEST BUTTON CLICKED!')}
+            style={{
+              padding: '4px 8px',
+              background: '#ff0000',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px',
+              fontSize: '10px',
+              cursor: 'pointer',
+            }}
+          >
+            TEST CLICK ME
+          </button>
 
           {/* Color mode selector - CLICKABLE */}
           <div style={{ display: 'flex', gap: '6px' }}>

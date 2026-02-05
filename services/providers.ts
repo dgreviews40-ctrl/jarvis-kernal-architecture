@@ -243,6 +243,9 @@ export class OllamaProvider implements IAIProvider {
     // Use request-specific model if provided, otherwise fall back to config
     const model = request.model || config.model;
     
+    // Use request timeout if provided, otherwise default
+    const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
+    
     console.log('[OLLAMA DEBUG] Vision request model:', { 
       requestModel: request.model, 
       configModel: config.model, 
@@ -363,9 +366,6 @@ export class OllamaProvider implements IAIProvider {
     }
 
     try {
-      // Use request timeout if provided, otherwise default
-      const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
-      
       // Wrap the API call with circuit breaker (pass timeout to circuit breaker)
       const result = await this.circuitBreaker.call(async () => {
         const controller = new AbortController();

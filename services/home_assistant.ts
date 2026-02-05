@@ -1,4 +1,4 @@
-import { CircuitBreaker } from "./circuitBreaker";
+import { CircuitBreaker } from "./CircuitBreaker";
 
 export interface HAEntity {
   entity_id: string;

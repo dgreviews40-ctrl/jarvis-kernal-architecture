@@ -274,13 +274,30 @@ export class OllamaProvider implements IAIProvider {
           };
         }
 
-        // Validate image data
+        // Validate and prepare image data
+        const validImages: string[] = [];
         for (const img of request.images) {
           if (!img || typeof img !== 'string') {
-            throw new Error('Invalid image data provided to Ollama');
+            console.warn('[OLLAMA VISION] Invalid image data skipped');
+            continue;
           }
+          // Ensure image data doesn't have data URL prefix (Ollama expects raw base64)
+          const cleanImg = img.includes(',') ? img.split(',')[1] : img;
+          validImages.push(cleanImg);
+          console.log('[OLLAMA VISION] Image data length:', cleanImg.length, 'chars');
+        }
+        
+        if (validImages.length === 0) {
+          throw new Error('No valid image data provided');
         }
 
+        console.log('[OLLAMA VISION] Sending request:', {
+          model,
+          prompt: request.prompt?.substring(0, 50) + '...',
+          imageCount: validImages.length,
+          firstImageLength: validImages[0]?.length
+        });
+        
         // Wrap the API call with circuit breaker (with per-request timeout)
         const result = await this.circuitBreaker.call(async () => {
           const controller = new AbortController();
@@ -296,7 +313,7 @@ export class OllamaProvider implements IAIProvider {
               body: JSON.stringify({
                 model: model,
                 prompt: request.prompt || 'Describe this image in detail.',
-                images: request.images, // Ollama accepts base64 images directly
+                images: validImages, // Use cleaned base64 images
                 system: request.systemInstruction || 'You are JARVIS. Analyze images accurately and concisely.',
                 stream: false,
                 options: {

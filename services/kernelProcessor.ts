@@ -415,11 +415,14 @@ export class KernelProcessor {
 
     const imageBase64 = vision.captureFrame();
     if (imageBase64) {
-      logger.log('VISION', 'Frame captured. Transmitting...', 'success');
+      logger.log('VISION', `Frame captured. Size: ${imageBase64.length} chars`, 'success');
       
       // Get current Ollama config to ensure we use the correct model
       const ollamaConfig = providerManager.getOllamaConfig();
       logger.log('VISION', `Using Ollama model: ${ollamaConfig.model}`, 'info');
+      
+      // Log first 100 chars of image data for debugging
+      console.log('[VISION DEBUG] Image data preview:', imageBase64.substring(0, 100) + '...');
       
       const response = await providerManager.route({
         prompt: input + correctionContext,

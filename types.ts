@@ -73,7 +73,10 @@ export interface KernelAction {
 export interface LogEntry {
   id: string;
   timestamp: Date;
-  source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION' | 'HOME_ASSISTANT' | 'AGENT' | 'WEBSOCKET' | 'CACHE' | 'SECURITY' | 'RESILIENCE' | 'PREDICTIVE' | 'PERFORMANCE' | 'TESTING' | 'SETTINGS' | 'MARKETPLACE' | 'ERROR' | 'BACKUP';
+  source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION' | 'HOME_ASSISTANT' | 'AGENT' | 'WEBSOCKET' | 'CACHE' | 'SECURITY' | 'RESILIENCE' | 'PREDICTIVE' | 'PERFORMANCE' | 'TESTING' | 'SETTINGS' | 'MARKETPLACE' | 'ERROR' | 'BACKUP' |
+    // v1.1+ Additional sources
+    'FILE_GENERATOR' | 'VECTOR_DB' | 'CONTEXT_WINDOW' | 'INTELLIGENCE' | 'DISPLAY' | 'WEATHER' | 'PIPER' | 'TIMER' |
+    'ERROR_HANDLER' | 'NOTIFICATION' | 'GLOBAL' | 'PLUGIN_LOADER' | 'VECTOR_MEMORY' | 'STREAMING' | 'CORE_OS' | 'BOOT';
   message: string;
   details?: Record<string, unknown> | string | number | boolean | object;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -100,7 +103,7 @@ export interface BreakerStatus {
   nextAttempt?: number;
 }
 
-export type Permission = 'READ_MEMORY' | 'WRITE_MEMORY' | 'NETWORK' | 'HARDWARE_CONTROL' | 'AUDIO_OUTPUT' | 'CAMERA_ACCESS' | 'AUDIO_INPUT';
+export type Permission = 'READ_MEMORY' | 'WRITE_MEMORY' | 'NETWORK' | 'HARDWARE_CONTROL' | 'AUDIO_OUTPUT' | 'CAMERA_ACCESS' | 'AUDIO_INPUT' | 'DISPLAY_RENDER' | 'MODEL_SELECTION';
 
 export interface PluginManifest {
   id: string;
@@ -260,7 +263,8 @@ export enum HealthEventType {
   API_ERROR = 'API_ERROR',
   HIGH_LATENCY = 'HIGH_LATENCY',
   RESOURCE_SPIKE = 'RESOURCE_SPIKE',
-  INTERRUPT = 'INTERRUPT' 
+  INTERRUPT = 'INTERRUPT',
+  ERROR = 'ERROR'
 }
 
 export enum ImpactLevel {
@@ -282,6 +286,13 @@ export interface OperationalEvent {
     endpoint?: string;
     params?: string; 
     errorMessage?: string;
+    message?: string;
+    operation?: string;
+    componentStack?: string;
+    alertType?: string;
+    healthScore?: number;
+    pluginErrors?: string[];
+    [key: string]: any;
   };
 }
 
@@ -371,6 +382,33 @@ export interface DisplayContent {
   };
 }
 
+// Additional types for services
+export interface Topic {
+  id: string;
+  name: string;
+  keywords: string[];
+  startTime: number;
+  lastActive: number;
+  turnCount: number;
+  relatedTopics?: string[];
+}
+
+export interface PluginCapability {
+  name: string;
+  version: string;
+  description?: string;
+}
+
+export interface KernelEvent {
+  id: string;
+  timestamp: number;
+  type: string;
+  source: string;
+  payload: unknown;
+}
+
+export type FileFormat = 'png' | 'jpeg' | 'svg' | 'pdf' | 'txt' | 'md';
+
 // Extend global window interface for speech recognition and audio context
 declare global {
   interface Window {
@@ -385,6 +423,15 @@ declare global {
     };
     webkitAudioContext: {
       new(options?: AudioContextOptions): AudioContext;
+    };
+  }
+  
+  // Extend ImportMeta for env access
+  interface ImportMeta {
+    env?: {
+      DEV?: boolean;
+      PROD?: boolean;
+      [key: string]: any;
     };
   }
 }

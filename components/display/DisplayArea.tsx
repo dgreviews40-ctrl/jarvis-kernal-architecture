@@ -101,6 +101,110 @@ const MapViewer: React.FC<{ content: DisplayContent['map'] }> = ({ content }) =>
   );
 };
 
+// Arc Reactor Control Panel - Rendered outside reactor to ensure clicks work
+const ArcReactorControls: React.FC<{
+  reactorMode: 'classic' | 'cinematic' | 'authentic';
+  setReactorMode: (m: 'classic' | 'cinematic' | 'authentic') => void;
+  reactorColor: 'classic' | 'warm' | 'cyberpunk';
+  setReactorColor: (c: 'classic' | 'warm' | 'cyberpunk') => void;
+  reactorGlow: number;
+  setReactorGlow: (g: number) => void;
+  dynamicGlow: number;
+}> = ({ reactorMode, setReactorMode, reactorColor, setReactorColor, reactorGlow, setReactorGlow, dynamicGlow }) => {
+  const colorInfo = {
+    classic: { name: 'Palladium', color: '#00ddff' },
+    warm: { name: 'Plasma', color: '#ff8800' },
+    cyberpunk: { name: 'Vibranium', color: '#ff00ff' }
+  };
+
+  return (
+    <div
+      className="relative p-5 rounded-2xl"
+      style={{
+        background: 'linear-gradient(180deg, rgba(10,20,40,0.98) 0%, rgba(5,10,20,0.99) 100%)',
+        border: '2px solid rgba(0, 170, 255, 0.5)',
+        boxShadow: '0 4px 30px rgba(0,0,0,0.6), 0 0 40px rgba(0, 170, 255, 0.3)',
+        minWidth: '260px',
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-xs font-bold tracking-widest" style={{ color: colorInfo[reactorColor].color }}>
+          ⚡ REACTOR CONFIG
+        </span>
+        <span className="text-xs font-mono font-bold" style={{ color: colorInfo[reactorColor].color }}>
+          {Math.round(dynamicGlow * 100)}%
+        </span>
+      </div>
+
+      {/* Mode Buttons */}
+      <div className="mb-4">
+        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Model</label>
+        <div className="grid grid-cols-3 gap-2">
+          {(['authentic', 'cinematic', 'classic'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setReactorMode(m); localStorage.setItem('jarvis.arcReactor.mode', m); }}
+              className="py-2 rounded-lg text-[9px] font-bold uppercase transition-all"
+              style={{
+                background: reactorMode === m ? 'rgba(0,170,255,0.3)' : 'rgba(255,255,255,0.05)',
+                border: `2px solid ${reactorMode === m ? '#00aaff' : 'rgba(255,255,255,0.1)'}`,
+                color: reactorMode === m ? '#00aaff' : '#64748b',
+                boxShadow: reactorMode === m ? '0 0 15px rgba(0,170,255,0.4)' : 'none',
+              }}
+            >
+              {m === 'authentic' ? 'MARK I' : m === 'cinematic' ? 'CINEMA' : 'CLASSIC'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Color Buttons */}
+      <div className="mb-4">
+        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Element</label>
+        <div className="flex gap-2">
+          {(['classic', 'warm', 'cyberpunk'] as const).map((c) => (
+            <button
+              key={c}
+              onClick={() => { setReactorColor(c); localStorage.setItem('jarvis.arcReactor.color', c); }}
+              className="flex-1 py-2 rounded-lg transition-all"
+              style={{
+                background: reactorColor === c ? `${colorInfo[c].color}20` : 'rgba(255,255,255,0.05)',
+                border: `2px solid ${reactorColor === c ? colorInfo[c].color : 'rgba(255,255,255,0.1)'}`,
+              }}
+            >
+              <div className="flex flex-col items-center gap-1">
+                <div className="w-3 h-3 rounded-full" style={{ background: colorInfo[c].color }} />
+                <span className="text-[8px] uppercase font-bold" style={{ color: reactorColor === c ? colorInfo[c].color : '#64748b' }}>
+                  {colorInfo[c].name}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Power Slider */}
+      <div>
+        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Power Output</label>
+        <input
+          type="range"
+          min="0.3"
+          max="2"
+          step="0.1"
+          value={reactorGlow}
+          onChange={(e) => { setReactorGlow(parseFloat(e.target.value)); localStorage.setItem('jarvis.arcReactor.glow', e.target.value); }}
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(to right, ${colorInfo[reactorColor].color} 0%, ${colorInfo[reactorColor].color} ${((reactorGlow - 0.3) / 1.7) * 100}%, rgba(255,255,255,0.1) ${((reactorGlow - 0.3) / 1.7) * 100}%)`,
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
 export const DisplayArea: React.FC<DisplayAreaProps> = ({
   processorState,
   voiceState,
@@ -206,7 +310,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             height={520}
             glowIntensity={dynamicGlow}
             mode={reactorMode}
-            showControls={showReactorControls}
+            showControls={false} // Controls rendered separately at higher z-index
             colorMode={reactorColor}
             particleCount={150}
             onGlowChange={(value) => {
@@ -221,6 +325,21 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
               setReactorMode(mode);
               localStorage.setItem('jarvis.arcReactor.mode', mode);
             }}
+          />
+        </div>
+      )}
+      
+      {/* Arc Reactor Controls - Rendered OUTSIDE at high z-index */}
+      {showReactorControls && !showingContent && (
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
+          <ArcReactorControls
+            reactorMode={reactorMode}
+            setReactorMode={setReactorMode}
+            reactorColor={reactorColor}
+            setReactorColor={setReactorColor}
+            reactorGlow={reactorGlow}
+            setReactorGlow={setReactorGlow}
+            dynamicGlow={dynamicGlow}
           />
         </div>
       )}

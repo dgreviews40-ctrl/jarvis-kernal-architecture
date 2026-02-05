@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
 /**
- * ArcReactor v23 - PARTICLE TRAIL EDITION
- * Rising particles from core, holographic rings, energy effects, cinematic materials
+ * ArcReactor v24 - CABLE BUNDLES EDITION
+ * Industrial cables connecting coils, particle trail, holographic rings, energy effects
  */
 export class JarvisArcReactor {
   constructor(container) {
@@ -30,6 +30,7 @@ export class JarvisArcReactor {
     this._createElectricalSparks();
     this._createHolographicRings();
     this._createCoreParticleTrail();
+    this._createCableBundles();
     
     // Handle resize
     this._handleResize = this._handleResize.bind(this);
@@ -38,7 +39,7 @@ export class JarvisArcReactor {
     // Start render loop
     this._animate();
     
-    console.log('[ArcReactor] v23 - PARTICLE TRAIL EDITION');
+    console.log('[ArcReactor] v24 - CABLE BUNDLES EDITION');
   }
 
   _setupScene() {
@@ -728,6 +729,149 @@ export class JarvisArcReactor {
         maxHeight: 3 + Math.random() * 2,
         baseSize: 0.03 + Math.random() * 0.05
       });
+    }
+  }
+
+  _createCableBundles() {
+    // Create thick electrical cables connecting coil rings
+    this.cables = [];
+    
+    // Cable material - black rubber with slight shine
+    const cableMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1a1a1a,
+      metalness: 0.1,
+      roughness: 0.8
+    });
+    
+    // Create cable bundles between coil rings
+    const cableCount = 6;
+    const ringRadii = [2.2, 3.1, 4.0]; // Radii of the 3 coil rings
+    
+    for (let i = 0; i < cableCount; i++) {
+      const angle = (i / cableCount) * Math.PI * 2;
+      
+      // Create curved cable path using Catmull-Rom curve
+      const points = [];
+      
+      // Start from inner ring
+      const startRadius = ringRadii[0];
+      points.push(new THREE.Vector3(
+        Math.cos(angle) * startRadius,
+        Math.sin(angle) * startRadius,
+        -0.2
+      ));
+      
+      // Control points for curve
+      const midRadius1 = ringRadii[0] + (ringRadii[1] - ringRadii[0]) * 0.5;
+      points.push(new THREE.Vector3(
+        Math.cos(angle) * midRadius1,
+        Math.sin(angle) * midRadius1,
+        -0.4
+      ));
+      
+      // Middle ring
+      const midRadius = ringRadii[1];
+      points.push(new THREE.Vector3(
+        Math.cos(angle) * midRadius,
+        Math.sin(angle) * midRadius,
+        -0.3
+      ));
+      
+      // Control point to outer
+      const midRadius2 = ringRadii[1] + (ringRadii[2] - ringRadii[1]) * 0.5;
+      points.push(new THREE.Vector3(
+        Math.cos(angle) * midRadius2,
+        Math.sin(angle) * midRadius2,
+        -0.4
+      ));
+      
+      // End at outer ring
+      const endRadius = ringRadii[2];
+      points.push(new THREE.Vector3(
+        Math.cos(angle) * endRadius,
+        Math.sin(angle) * endRadius,
+        -0.2
+      ));
+      
+      // Create smooth curve
+      const curve = new THREE.CatmullRomCurve3(points);
+      curve.curveType = 'catmullrom';
+      curve.tension = 0.5;
+      
+      // Create tube geometry along curve
+      const tubeGeometry = new THREE.TubeGeometry(curve, 32, 0.08, 8, false);
+      const cable = new THREE.Mesh(tubeGeometry, cableMaterial);
+      this.scene.add(cable);
+      
+      // Add cable connectors at joints (small cylinders)
+      const connectorGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.15, 12);
+      const connectorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x333333,
+        metalness: 0.6,
+        roughness: 0.4
+      });
+      
+      // Connector at inner ring
+      const connector1 = new THREE.Mesh(connectorGeometry, connectorMaterial);
+      connector1.position.set(
+        Math.cos(angle) * startRadius,
+        Math.sin(angle) * startRadius,
+        -0.2
+      );
+      connector1.rotation.z = angle;
+      connector1.lookAt(0, 0, -0.2);
+      connector1.rotateX(Math.PI / 2);
+      this.scene.add(connector1);
+      
+      // Connector at outer ring
+      const connector2 = new THREE.Mesh(connectorGeometry, connectorMaterial);
+      connector2.position.set(
+        Math.cos(angle) * endRadius,
+        Math.sin(angle) * endRadius,
+        -0.2
+      );
+      connector2.rotation.z = angle;
+      connector2.lookAt(0, 0, -0.2);
+      connector2.rotateX(Math.PI / 2);
+      this.scene.add(connector2);
+      
+      this.cables.push({
+        cable: cable,
+        connectors: [connector1, connector2],
+        baseAngle: angle
+      });
+    }
+    
+    // Create radial cable connections (ring to ring)
+    const radialCableCount = 8;
+    for (let i = 0; i < radialCableCount; i++) {
+      const angle = (i / radialCableCount) * Math.PI * 2 + (Math.PI / radialCableCount);
+      
+      // Cable from inner to middle ring
+      const startR = ringRadii[0] + 0.3;
+      const endR = ringRadii[1] - 0.3;
+      
+      const startPoint = new THREE.Vector3(
+        Math.cos(angle) * startR,
+        Math.sin(angle) * startR,
+        -0.15
+      );
+      const endPoint = new THREE.Vector3(
+        Math.cos(angle) * endR,
+        Math.sin(angle) * endR,
+        -0.15
+      );
+      
+      // Create slightly curved path
+      const midPoint = new THREE.Vector3().lerpVectors(startPoint, endPoint, 0.5);
+      midPoint.z -= 0.15; // Dip in middle
+      
+      const curve = new THREE.QuadraticBezierCurve3(startPoint, midPoint, endPoint);
+      const tubeGeometry = new THREE.TubeGeometry(curve, 20, 0.06, 8, false);
+      const cable = new THREE.Mesh(tubeGeometry, cableMaterial);
+      this.scene.add(cable);
+      
+      this.cables.push({ cable });
     }
   }
 

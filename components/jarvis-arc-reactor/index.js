@@ -5,6 +5,9 @@ export { JarvisArcReactor } from './ArcReactor-v7.js';
 // Cinematic version (enhanced visuals, more effects)
 export { CinematicArcReactor } from './ArcReactor-cinematic.js';
 
+// Authentic version (MCU-accurate Mark I/II design)
+export { AuthenticArcReactor } from './ArcReactor-authentic.js';
+
 // Shader exports for custom implementations
 export {
   coreVertex, coreFragment,

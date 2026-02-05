@@ -114,16 +114,20 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   
-  // Arc Reactor enhanced mode toggle
-  const [enhancedReactor, setEnhancedReactor] = useState(() => {
-    return localStorage.getItem('jarvis.arcReactor.enhanced') === 'true';
+  // Arc Reactor settings
+  const [reactorMode, setReactorMode] = useState<'classic' | 'cinematic' | 'authentic'>(() => {
+    const saved = localStorage.getItem('jarvis.arcReactor.mode');
+    return (saved as 'classic' | 'cinematic' | 'authentic') || 'authentic';
   });
   const [showReactorControls, setShowReactorControls] = useState(false);
+  
+  // Determine if using enhanced reactor (cinematic or authentic modes)
+  const enhancedReactor = reactorMode !== 'classic';
   
   // User-adjustable settings (saved to localStorage)
   const [reactorGlow, setReactorGlow] = useState(() => {
     const saved = localStorage.getItem('jarvis.arcReactor.glow');
-    return saved ? parseFloat(saved) : 1.2;
+    return saved ? parseFloat(saved) : 1.0;
   });
   const [reactorColor, setReactorColor] = useState<'classic' | 'warm' | 'cyberpunk'>(() => {
     const saved = localStorage.getItem('jarvis.arcReactor.color');
@@ -198,115 +202,26 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         <div className="absolute inset-0 flex items-center justify-center overflow-visible" style={{ zIndex: 1 }}>
           <JarvisArcReactor
             audioStream={audioStream}
-            width={480}
-            height={480}
+            width={520}
+            height={520}
             glowIntensity={dynamicGlow}
-            enhanced={enhancedReactor}
-            showControls={false} // Controls rendered separately below
+            mode={reactorMode}
+            showControls={showReactorControls}
             colorMode={reactorColor}
             particleCount={150}
             onGlowChange={(value) => {
-              console.log('[DisplayArea] Glow changed to:', value);
               setReactorGlow(value);
               localStorage.setItem('jarvis.arcReactor.glow', String(value));
             }}
             onColorChange={(mode) => {
-              console.log('[DisplayArea] Color changed to:', mode);
               setReactorColor(mode);
               localStorage.setItem('jarvis.arcReactor.color', mode);
             }}
+            onModeChange={(mode) => {
+              setReactorMode(mode);
+              localStorage.setItem('jarvis.arcReactor.mode', mode);
+            }}
           />
-        </div>
-      )}
-      
-      {/* Arc Reactor Controls - Rendered OUTSIDE the reactor container */}
-      {enhancedReactor && showReactorControls && !showingContent && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            bottom: '80px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'rgba(0, 10, 30, 0.95)',
-            backdropFilter: 'blur(10px)',
-            border: '2px solid rgba(0, 170, 255, 0.5)',
-            borderRadius: '12px',
-            padding: '16px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            minWidth: '240px',
-            boxShadow: '0 4px 30px rgba(0, 170, 255, 0.3)',
-            zIndex: 100,
-          }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#00aaff', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-              ⚡ REACTOR CONTROLS
-            </span>
-            <span style={{ color: '#00aaff', fontWeight: 'bold' }}>{Math.round(dynamicGlow * 100)}%</span>
-          </div>
-          
-          {/* Color Buttons */}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {(['classic', 'warm', 'cyberpunk'] as const).map((mode) => {
-              const colors = {
-                classic: '#00ddff',
-                warm: '#ffaa00', 
-                cyberpunk: '#ff00ff'
-              };
-              return (
-                <button
-                  key={mode}
-                  onClick={() => {
-                    console.log('[DisplayArea] Color clicked:', mode);
-                    setReactorColor(mode);
-                    localStorage.setItem('jarvis.arcReactor.color', mode);
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: '8px',
-                    background: reactorColor === mode ? `${colors[mode]}30` : 'rgba(255,255,255,0.05)',
-                    border: `2px solid ${reactorColor === mode ? colors[mode] : 'rgba(255,255,255,0.2)'}`,
-                    borderRadius: '6px',
-                    color: reactorColor === mode ? colors[mode] : '#888',
-                    fontSize: '10px',
-                    fontWeight: 'bold',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {mode}
-                </button>
-              );
-            })}
-          </div>
-          
-          {/* Glow Slider */}
-          <div>
-            <label style={{ color: '#888', fontSize: '10px' }}>Glow Intensity</label>
-            <input
-              type="range"
-              min="0.5"
-              max="2"
-              step="0.1"
-              value={reactorGlow}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                console.log('[DisplayArea] Slider moved:', val);
-                setReactorGlow(val);
-                localStorage.setItem('jarvis.arcReactor.glow', String(val));
-              }}
-              style={{
-                width: '100%',
-                height: '8px',
-                marginTop: '8px',
-                cursor: 'pointer',
-              }}
-            />
-          </div>
         </div>
       )}
       
@@ -330,25 +245,23 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             <Settings size={16} />
           </button>
           
-          {/* Mode Switcher Button */}
+          {/* Mode Switcher Button - Cycles through modes */}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const newValue = !enhancedReactor;
-              console.log('[DisplayArea] Switching reactor mode to:', newValue ? 'CINEMATIC' : 'CLASSIC');
-              setEnhancedReactor(newValue);
-              localStorage.setItem('jarvis.arcReactor.enhanced', String(newValue));
+              const modes: ('authentic' | 'cinematic' | 'classic')[] = ['authentic', 'cinematic', 'classic'];
+              const currentIndex = modes.indexOf(reactorMode);
+              const nextMode = modes[(currentIndex + 1) % modes.length];
+              console.log('[DisplayArea] Switching reactor mode to:', nextMode);
+              setReactorMode(nextMode);
+              localStorage.setItem('jarvis.arcReactor.mode', nextMode);
             }}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 ${
-              enhancedReactor 
-                ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(0,200,255,0.3)]' 
-                : 'bg-black/40 text-gray-500 hover:text-cyan-500 border border-transparent'
-            }`}
-            title={enhancedReactor ? 'Switch to Classic Mode' : 'Switch to Cinematic Mode'}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(0,200,255,0.3)]"
+            title="Click to cycle reactor modes"
             style={{ cursor: 'pointer' }}
           >
-            <Zap size={14} className={enhancedReactor ? 'animate-pulse' : ''} />
-            <span>{enhancedReactor ? 'CINEMATIC' : 'CLASSIC'}</span>
+            <Zap size={14} className="animate-pulse" />
+            <span>{reactorMode === 'authentic' ? 'MARK I' : reactorMode === 'cinematic' ? 'CINEMATIC' : 'CLASSIC'}</span>
           </button>
         </div>
       )}

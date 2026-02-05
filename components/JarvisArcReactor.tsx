@@ -3,7 +3,7 @@
  * Supports both classic (v7) and cinematic (v2.0) versions
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { JarvisArcReactor as ArcReactorClass, CinematicArcReactor } from './jarvis-arc-reactor';
 
 interface JarvisArcReactorProps {
@@ -21,34 +21,51 @@ interface JarvisArcReactorProps {
   /** Number of particles in enhanced mode */
   particleCount?: number;
   className?: string;
+  /** Callback when glow intensity changes */
+  onGlowChange?: (value: number) => void;
+  /** Callback when color mode changes */
+  onColorChange?: (mode: 'classic' | 'warm' | 'cyberpunk') => void;
 }
 
 export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
   audioStream,
   width = 400,
   height = 400,
-  glowIntensity = 1.2,
+  glowIntensity: initialGlow = 1.2,
   enhanced = false,
-  colorMode = 'classic',
+  colorMode: initialColorMode = 'classic',
   showControls = true,
   particleCount = 150,
-  className = ''
+  className = '',
+  onGlowChange,
+  onColorChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const reactorRef = useRef<ArcReactorClass | CinematicArcReactor | null>(null);
   const animationRef = useRef<number | null>(null);
   
-  // Use props directly for display, no local state management needed
+  // Local state for adjustable controls
+  const [glowIntensity, setGlowIntensity] = useState(initialGlow);
+  const [colorMode, setColorMode] = useState(initialColorMode);
   const [isAudioActive, setIsAudioActive] = useState(false);
   const [fps, setFps] = useState(60);
 
   const colorModes = [
-    { id: 'classic', name: 'Classic', color: '#00ddff', desc: 'Blue' },
-    { id: 'warm', name: 'Warm', color: '#ffaa00', desc: 'Orange' },
-    { id: 'cyberpunk', name: 'Neon', color: '#ff00ff', desc: 'Pink' }
-  ] as const;
+    { id: 'classic' as const, name: 'Classic', color: '#00ddff', desc: 'Blue' },
+    { id: 'warm' as const, name: 'Warm', color: '#ffaa00', desc: 'Orange' },
+    { id: 'cyberpunk' as const, name: 'Neon', color: '#ff00ff', desc: 'Pink' }
+  ];
 
-  // Main initialization effect - recreates when mode changes
+  // Sync with props when they change externally
+  useEffect(() => {
+    setGlowIntensity(initialGlow);
+  }, [initialGlow]);
+
+  useEffect(() => {
+    setColorMode(initialColorMode);
+  }, [initialColorMode]);
+
+  // Main initialization effect - recreates when mode or key props change
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -143,6 +160,18 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
     }).catch(console.error);
   }, [audioStream]);
 
+  // Handlers for controls
+  const handleGlowChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = parseFloat(e.target.value);
+    setGlowIntensity(newValue);
+    onGlowChange?.(newValue);
+  }, [onGlowChange]);
+
+  const handleColorChange = useCallback((newMode: 'classic' | 'warm' | 'cyberpunk') => {
+    setColorMode(newMode);
+    onColorChange?.(newMode);
+  }, [onColorChange]);
+
   return (
     <div className={`relative ${className}`} style={{ width, height }}>
       {/* Main reactor container */}
@@ -202,11 +231,12 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
             </div>
           </div>
 
-          {/* Color mode selector */}
+          {/* Color mode selector - CLICKABLE */}
           <div style={{ display: 'flex', gap: '6px' }}>
             {colorModes.map((mode) => (
-              <div
+              <button
                 key={mode.id}
+                onClick={() => handleColorChange(mode.id)}
                 style={{
                   flex: 1,
                   padding: '8px 6px',
@@ -219,39 +249,40 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: '2px',
-                  cursor: 'default',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
                 }}
               >
                 <span style={{ fontWeight: 'bold' }}>{mode.name}</span>
                 <span style={{ opacity: 0.6, fontSize: '8px' }}>{mode.desc}</span>
-              </div>
+              </button>
             ))}
           </div>
 
-          {/* Glow intensity display */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {/* Glow intensity slider - ADJUSTABLE */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ color: '#888', fontSize: '10px', display: 'flex', justifyContent: 'space-between' }}>
               <span>Glow Intensity</span>
               <span style={{ color: '#00aaff', fontWeight: 'bold' }}>{Math.round(glowIntensity * 100)}%</span>
             </label>
-            <div
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              value={glowIntensity}
+              onChange={handleGlowChange}
               style={{
                 width: '100%',
-                height: '4px',
+                height: '6px',
                 background: 'rgba(255,255,255,0.1)',
-                borderRadius: '2px',
-                overflow: 'hidden',
+                borderRadius: '3px',
+                outline: 'none',
+                cursor: 'pointer',
+                WebkitAppearance: 'none',
+                appearance: 'none',
               }}
-            >
-              <div
-                style={{
-                  width: `${Math.min(glowIntensity * 50, 100)}%`,
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #00aaff, #00ff88)',
-                  borderRadius: '2px',
-                }}
-              />
-            </div>
+            />
           </div>
 
           {/* Stats grid */}

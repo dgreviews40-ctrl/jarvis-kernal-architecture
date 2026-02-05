@@ -120,6 +120,19 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   });
   const [showReactorControls, setShowReactorControls] = useState(false);
   
+  // User-adjustable glow intensity (starts at default, can be overridden)
+  const [reactorGlow, setReactorGlow] = useState(() => {
+    const saved = localStorage.getItem('jarvis.arcReactor.glow');
+    return saved ? parseFloat(saved) : 1.2;
+  });
+  
+  // Dynamic glow based on voice state + user setting
+  const dynamicGlow = voiceState === VoiceState.SPEAKING 
+    ? reactorGlow * 1.3 
+    : voiceState === VoiceState.LISTENING 
+    ? reactorGlow * 1.15 
+    : reactorGlow;
+  
   // Initialize audio stream when voice is active
   useEffect(() => {
     const initAudio = async () => {
@@ -183,11 +196,15 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             audioStream={audioStream}
             width={480}
             height={480}
-            glowIntensity={voiceState === VoiceState.SPEAKING ? 1.6 : voiceState === VoiceState.LISTENING ? 1.4 : 1.2}
+            glowIntensity={dynamicGlow}
             enhanced={enhancedReactor}
             showControls={showReactorControls}
             colorMode="classic"
             particleCount={150}
+            onGlowChange={(value) => {
+              setReactorGlow(value);
+              localStorage.setItem('jarvis.arcReactor.glow', String(value));
+            }}
           />
         </div>
       )}

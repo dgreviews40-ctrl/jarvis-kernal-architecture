@@ -903,6 +903,61 @@ export class JarvisArcReactor {
       });
     }
     
+    // Animate holographic rings
+    if (this.holographicRings) {
+      this.holographicRings.forEach((ring, i) => {
+        // Rotate rings
+        ring.mainRing.rotation.z += ring.rotationSpeed * 0.016;
+        ring.detailRing.rotation.z -= ring.rotationSpeed * 0.008;
+        
+        // Bob up and down
+        const bobOffset = Math.sin(this.time * ring.bobSpeed + i) * ring.bobAmount;
+        ring.mainRing.position.z = ring.baseY + bobOffset;
+        ring.detailRing.position.z = ring.baseY + bobOffset;
+        
+        // Pulsing opacity
+        const pulseOpacity = 0.15 + Math.sin(this.time * 2 + i) * 0.05 + this.audioIntensity * 0.1;
+        ring.mainRing.material.opacity = Math.max(0.05, pulseOpacity);
+        ring.detailRing.material.opacity = Math.max(0.03, pulseOpacity * 0.5);
+        
+        // Scroll texture
+        if (ring.mainRing.material.map) {
+          ring.mainRing.material.map.offset.y -= 0.005;
+        }
+      });
+    }
+    
+    // Animate holographic glyphs
+    if (this.holographicGlyphs) {
+      this.holographicGlyphs.forEach((glyph, i) => {
+        // Orbit around center
+        glyph.angle += glyph.orbitSpeed * 0.016;
+        
+        // Bob up and down
+        const bobOffset = Math.sin(this.time * glyph.bobSpeed + i * 0.5) * glyph.bobAmount;
+        
+        // Update position
+        glyph.sprite.position.x = Math.cos(glyph.angle) * glyph.radius;
+        glyph.sprite.position.y = Math.sin(glyph.angle) * glyph.radius;
+        glyph.sprite.position.z = glyph.basePos.z + bobOffset;
+        
+        // Fade in/out
+        const fadePhase = (this.time * glyph.fadeSpeed + i) % (Math.PI * 2);
+        const fadeOpacity = Math.sin(fadePhase) * 0.5 + 0.5;
+        glyph.sprite.material.opacity = glyph.baseOpacity * fadeOpacity;
+        
+        // Scale with audio
+        const audioScale = 1 + this.audioIntensity * 0.3;
+        glyph.sprite.scale.set(0.5 * audioScale, 0.25 * audioScale, 1);
+      });
+    }
+    
+    // Animate holographic cone
+    if (this.holoCone) {
+      this.holoCone.rotation.z += 0.002;
+      this.holoCone.material.opacity = 0.08 + Math.sin(this.time * 1.5) * 0.03 + this.audioIntensity * 0.1;
+    }
+    
     this.renderer.render(this.scene, this.camera);
   }
 

@@ -385,10 +385,15 @@ export class EnhancedKernelProcessor {
       return "Optical sensors failed to return frame buffer.";
     }
 
+    // Get current Ollama config to ensure we use the correct model
+    const ollamaConfig = providerManager.getOllamaConfig();
+    
     const response = await providerManager.route({
       prompt: input,
       images: [imageBase64],
-      systemInstruction: "You are JARVIS. Analyze the visual input concisely."
+      systemInstruction: "You are JARVIS. Analyze the visual input concisely.",
+      // Pass the model from config to ensure the correct one is used
+      model: provider === AIProvider.OLLAMA ? ollamaConfig.model : undefined,
     }, provider);
 
     return response.text;

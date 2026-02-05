@@ -416,10 +416,17 @@ export class KernelProcessor {
     const imageBase64 = vision.captureFrame();
     if (imageBase64) {
       logger.log('VISION', 'Frame captured. Transmitting...', 'success');
+      
+      // Get current Ollama config to ensure we use the correct model
+      const ollamaConfig = providerManager.getOllamaConfig();
+      logger.log('VISION', `Using Ollama model: ${ollamaConfig.model}`, 'info');
+      
       const response = await providerManager.route({
         prompt: input + correctionContext,
         images: [imageBase64],
         systemInstruction: "You are JARVIS. Analyze the visual input concisely.",
+        // Pass the model from config to ensure the correct one is used
+        model: selectedProvider === AIProvider.OLLAMA ? ollamaConfig.model : undefined,
       }, selectedProvider);
       logger.log(response.provider === AIProvider.GEMINI ? 'GEMINI' : 'OLLAMA', response.text, 'success');
       return response.text;

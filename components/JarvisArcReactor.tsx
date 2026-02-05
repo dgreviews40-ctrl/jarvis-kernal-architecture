@@ -192,23 +192,26 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
       {/* Enhanced Mode Controls */}
       {enhanced && showControls && (
         <div
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            console.log('[ArcReactor] Control panel clicked!');
+          }}
           style={{
             position: 'absolute',
             bottom: '10px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: 'rgba(0, 10, 30, 0.95)',
+            background: 'rgba(100, 0, 0, 0.95)', // RED background to see it
             backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(0, 170, 255, 0.4)',
+            border: '3px solid #ff0000', // RED border
             borderRadius: '12px',
             padding: '12px 16px',
             display: 'flex',
             flexDirection: 'column',
             gap: '10px',
             minWidth: '220px',
-            boxShadow: '0 4px 30px rgba(0, 170, 255, 0.3)',
-            zIndex: 9999,
+            boxShadow: '0 4px 30px rgba(255, 0, 0, 0.5)',
+            zIndex: 99999,
             pointerEvents: 'auto',
           }}
         >

@@ -242,6 +242,13 @@ export class OllamaProvider implements IAIProvider {
     
     // Use request-specific model if provided, otherwise fall back to config
     const model = request.model || config.model;
+    
+    console.log('[OLLAMA DEBUG] Vision request model:', { 
+      requestModel: request.model, 
+      configModel: config.model, 
+      finalModel: model,
+      hasImages: !!request.images?.length 
+    });
 
     // Validate request parameters
     if (!config.url || !config.model) {

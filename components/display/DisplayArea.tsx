@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { Activity, X, Download, Zap, Settings } from 'lucide-react';
+import { Activity, X, Download, Settings, Brain } from 'lucide-react';
 import { ProcessorState, VoiceState, DisplayMode, DisplayContent } from '../../types';
-import { JarvisArcReactor } from '../JarvisArcReactor';
+import { JarvisNeuralNetwork } from '../JarvisNeuralNetwork';
 
 interface DisplayAreaProps {
   processorState: ProcessorState;
@@ -101,20 +101,23 @@ const MapViewer: React.FC<{ content: DisplayContent['map'] }> = ({ content }) =>
   );
 };
 
-// Arc Reactor Control Panel - Rendered outside reactor to ensure clicks work
-const ArcReactorControls: React.FC<{
-  reactorMode: 'classic' | 'cinematic' | 'authentic';
-  setReactorMode: (m: 'classic' | 'cinematic' | 'authentic') => void;
-  reactorColor: 'classic' | 'warm' | 'cyberpunk';
-  setReactorColor: (c: 'classic' | 'warm' | 'cyberpunk') => void;
-  reactorGlow: number;
-  setReactorGlow: (g: number) => void;
-  dynamicGlow: number;
-}> = ({ reactorMode, setReactorMode, reactorColor, setReactorColor, reactorGlow, setReactorGlow, dynamicGlow }) => {
-  const colorInfo = {
-    classic: { name: 'Palladium', color: '#00ddff' },
-    warm: { name: 'Plasma', color: '#ff8800' },
-    cyberpunk: { name: 'Vibranium', color: '#ff00ff' }
+// Neural Network Control Panel
+const NeuralNetworkControls: React.FC<{
+  colorTheme: 'cyan' | 'orange' | 'purple' | 'green';
+  setColorTheme: (t: 'cyan' | 'orange' | 'purple' | 'green') => void;
+  activityLevel: number;
+  setActivityLevel: (a: number) => void;
+  rotationSpeed: number;
+  setRotationSpeed: (s: number) => void;
+  cpuLoad: number;
+  gpuLoad: number;
+  voiceState: VoiceState;
+}> = ({ colorTheme, setColorTheme, activityLevel, setActivityLevel, rotationSpeed, setRotationSpeed, cpuLoad, gpuLoad, voiceState }) => {
+  const themeInfo = {
+    cyan: { name: 'Neural Blue', color: '#00ddff' },
+    orange: { name: 'Plasma', color: '#ff8800' },
+    purple: { name: 'Synaptic', color: '#ff00ff' },
+    green: { name: 'Bio', color: '#00ff88' }
   };
 
   return (
@@ -130,76 +133,91 @@ const ArcReactorControls: React.FC<{
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs font-bold tracking-widest" style={{ color: colorInfo[reactorColor].color }}>
-          ⚡ REACTOR CONFIG
+        <span className="text-xs font-bold tracking-widest" style={{ color: themeInfo[colorTheme].color }}>
+          🧠 NEURAL CONFIG
         </span>
-        <span className="text-xs font-mono font-bold" style={{ color: colorInfo[reactorColor].color }}>
-          {Math.round(dynamicGlow * 100)}%
+        <span className="text-xs font-mono font-bold" style={{ color: themeInfo[colorTheme].color }}>
+          {Math.round(activityLevel * 100)}%
         </span>
       </div>
 
-      {/* Mode Buttons */}
+      {/* Color Theme Buttons */}
       <div className="mb-4">
-        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Model</label>
-        <div className="grid grid-cols-3 gap-2">
-          {(['authentic', 'cinematic', 'classic'] as const).map((m) => (
+        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Theme</label>
+        <div className="grid grid-cols-2 gap-2">
+          {(['cyan', 'orange', 'purple', 'green'] as const).map((t) => (
             <button
-              key={m}
-              onClick={() => { setReactorMode(m); localStorage.setItem('jarvis.arcReactor.mode', m); }}
-              className="py-2 rounded-lg text-[9px] font-bold uppercase transition-all"
+              key={t}
+              onClick={() => { setColorTheme(t); localStorage.setItem('jarvis.neural.color', t); }}
+              className="py-2 rounded-lg text-[9px] font-bold uppercase transition-all flex items-center gap-2 justify-center"
               style={{
-                background: reactorMode === m ? 'rgba(0,170,255,0.3)' : 'rgba(255,255,255,0.05)',
-                border: `2px solid ${reactorMode === m ? '#00aaff' : 'rgba(255,255,255,0.1)'}`,
-                color: reactorMode === m ? '#00aaff' : '#64748b',
-                boxShadow: reactorMode === m ? '0 0 15px rgba(0,170,255,0.4)' : 'none',
+                background: colorTheme === t ? `${themeInfo[t].color}20` : 'rgba(255,255,255,0.05)',
+                border: `2px solid ${colorTheme === t ? themeInfo[t].color : 'rgba(255,255,255,0.1)'}`,
+                color: colorTheme === t ? themeInfo[t].color : '#64748b',
+                boxShadow: colorTheme === t ? `0 0 15px ${themeInfo[t].color}40` : 'none',
               }}
             >
-              {m === 'authentic' ? 'MARK I' : m === 'cinematic' ? 'CINEMA' : 'CLASSIC'}
+              <div className="w-2 h-2 rounded-full" style={{ background: themeInfo[t].color }} />
+              {themeInfo[t].name}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Color Buttons */}
+      {/* Activity Slider */}
       <div className="mb-4">
-        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Element</label>
-        <div className="flex gap-2">
-          {(['classic', 'warm', 'cyberpunk'] as const).map((c) => (
-            <button
-              key={c}
-              onClick={() => { setReactorColor(c); localStorage.setItem('jarvis.arcReactor.color', c); }}
-              className="flex-1 py-2 rounded-lg transition-all"
-              style={{
-                background: reactorColor === c ? `${colorInfo[c].color}20` : 'rgba(255,255,255,0.05)',
-                border: `2px solid ${reactorColor === c ? colorInfo[c].color : 'rgba(255,255,255,0.1)'}`,
-              }}
-            >
-              <div className="flex flex-col items-center gap-1">
-                <div className="w-3 h-3 rounded-full" style={{ background: colorInfo[c].color }} />
-                <span className="text-[8px] uppercase font-bold" style={{ color: reactorColor === c ? colorInfo[c].color : '#64748b' }}>
-                  {colorInfo[c].name}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Power Slider */}
-      <div>
-        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Power Output</label>
+        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Activity</label>
         <input
           type="range"
-          min="0.3"
-          max="2"
+          min="0.2"
+          max="1.5"
           step="0.1"
-          value={reactorGlow}
-          onChange={(e) => { setReactorGlow(parseFloat(e.target.value)); localStorage.setItem('jarvis.arcReactor.glow', e.target.value); }}
+          value={activityLevel}
+          onChange={(e) => { setActivityLevel(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.activity', e.target.value); }}
           className="w-full h-2 rounded-lg appearance-none cursor-pointer"
           style={{
-            background: `linear-gradient(to right, ${colorInfo[reactorColor].color} 0%, ${colorInfo[reactorColor].color} ${((reactorGlow - 0.3) / 1.7) * 100}%, rgba(255,255,255,0.1) ${((reactorGlow - 0.3) / 1.7) * 100}%)`,
+            background: `linear-gradient(to right, ${themeInfo[colorTheme].color} 0%, ${themeInfo[colorTheme].color} ${((activityLevel - 0.2) / 1.3) * 100}%, rgba(255,255,255,0.1) ${((activityLevel - 0.2) / 1.3) * 100}%)`,
           }}
         />
+      </div>
+
+      {/* Rotation Speed */}
+      <div>
+        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Rotation</label>
+        <input
+          type="range"
+          min="0"
+          max="0.01"
+          step="0.001"
+          value={rotationSpeed}
+          onChange={(e) => { setRotationSpeed(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.rotation', e.target.value); }}
+          className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+          style={{
+            background: `linear-gradient(to right, ${themeInfo[colorTheme].color} 0%, ${themeInfo[colorTheme].color} ${(rotationSpeed / 0.01) * 100}%, rgba(255,255,255,0.1) ${(rotationSpeed / 0.01) * 100}%)`,
+          }}
+        />
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/10">
+        <div className="text-center">
+          <div className="text-sm font-bold font-mono" style={{ color: themeInfo[colorTheme].color }}>
+            {Math.round(cpuLoad)}%
+          </div>
+          <div className="text-[8px] text-slate-500 uppercase">CPU</div>
+        </div>
+        <div className="text-center">
+          <div className="text-sm font-bold font-mono" style={{ color: themeInfo[colorTheme].color }}>
+            {Math.round(gpuLoad)}%
+          </div>
+          <div className="text-[8px] text-slate-500 uppercase">GPU</div>
+        </div>
+        <div className="text-center">
+          <div className="text-sm font-bold font-mono uppercase" style={{ color: themeInfo[colorTheme].color }}>
+            {voiceState === VoiceState.SPEAKING ? 'TTS' : voiceState === VoiceState.LISTENING ? 'STT' : 'IDLE'}
+          </div>
+          <div className="text-[8px] text-slate-500 uppercase">Voice</div>
+        </div>
       </div>
     </div>
   );
@@ -215,66 +233,52 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   const isExecuting = processorState === ProcessorState.EXECUTING || processorState === ProcessorState.ANALYZING;
   const showingContent = displayMode !== 'NEURAL' && displayContent !== null;
   
-  const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  // System load states (these would come from actual system monitoring)
+  const [cpuLoad, setCpuLoad] = useState(15);
+  const [gpuLoad, setGpuLoad] = useState(8);
   
-  // Arc Reactor settings
-  const [reactorMode, setReactorMode] = useState<'classic' | 'cinematic' | 'authentic'>(() => {
-    const saved = localStorage.getItem('jarvis.arcReactor.mode');
-    return (saved as 'classic' | 'cinematic' | 'authentic') || 'authentic';
+  // Neural Network settings
+  const [colorTheme, setColorTheme] = useState<'cyan' | 'orange' | 'purple' | 'green'>(() => {
+    const saved = localStorage.getItem('jarvis.neural.color');
+    return (saved as 'cyan' | 'orange' | 'purple' | 'green') || 'cyan';
   });
-  const [showReactorControls, setShowReactorControls] = useState(false);
-  
-  // Determine if using enhanced reactor (cinematic or authentic modes)
-  const enhancedReactor = reactorMode !== 'classic';
-  
-  // User-adjustable settings (saved to localStorage)
-  const [reactorGlow, setReactorGlow] = useState(() => {
-    const saved = localStorage.getItem('jarvis.arcReactor.glow');
-    return saved ? parseFloat(saved) : 1.0;
+  const [showControls, setShowControls] = useState(false);
+  const [activityLevel, setActivityLevel] = useState(() => {
+    const saved = localStorage.getItem('jarvis.neural.activity');
+    return saved ? parseFloat(saved) : 0.7;
   });
-  const [reactorColor, setReactorColor] = useState<'classic' | 'warm' | 'cyberpunk'>(() => {
-    const saved = localStorage.getItem('jarvis.arcReactor.color');
-    return (saved as 'classic' | 'warm' | 'cyberpunk') || 'classic';
+  const [rotationSpeed, setRotationSpeed] = useState(() => {
+    const saved = localStorage.getItem('jarvis.neural.rotation');
+    return saved ? parseFloat(saved) : 0.002;
   });
   
-  // Dynamic glow based on voice state + user setting
-  const dynamicGlow = voiceState === VoiceState.SPEAKING 
-    ? reactorGlow * 1.3 
-    : voiceState === VoiceState.LISTENING 
-    ? reactorGlow * 1.15 
-    : reactorGlow;
-  
-  // Initialize audio stream when voice is active
+  // Simulate system load changes
   useEffect(() => {
-    const initAudio = async () => {
-      // Create stream if we don't have one and we're in an active voice state
-      const isActiveState = voiceState !== VoiceState.MUTED && voiceState !== VoiceState.ERROR;
+    const interval = setInterval(() => {
+      // Base load plus variation based on processor state
+      const baseCpu = processorState === ProcessorState.EXECUTING ? 45 : 
+                      processorState === ProcessorState.ANALYZING ? 35 : 15;
+      const baseGpu = processorState === ProcessorState.EXECUTING ? 30 : 8;
       
-      if (isActiveState && !streamRef.current) {
-        try {
-          console.log('[DisplayArea] Creating audio stream for state:', voiceState);
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          streamRef.current = stream;
-          setAudioStream(stream);
-        } catch (error) {
-          console.error('[DisplayArea] Failed to get audio stream:', error);
-        }
-      } else if (!isActiveState && streamRef.current) {
-        // Stop stream when going to MUTED/ERROR
-        console.log('[DisplayArea] Stopping audio stream for state:', voiceState);
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-        setAudioStream(null);
-      }
-    };
+      setCpuLoad(prev => {
+        const variation = (Math.random() - 0.5) * 10;
+        return Math.max(5, Math.min(95, baseCpu + variation));
+      });
+      setGpuLoad(prev => {
+        const variation = (Math.random() - 0.5) * 8;
+        return Math.max(2, Math.min(90, baseGpu + variation));
+      });
+    }, 2000);
     
-    initAudio();
-    
-    return () => {
-      // Only cleanup on unmount, not on state changes
-    };
-  }, [voiceState]);
+    return () => clearInterval(interval);
+  }, [processorState]);
+  
+  // Dynamic activity based on voice state
+  const dynamicActivity = voiceState === VoiceState.SPEAKING 
+    ? activityLevel * 1.4 
+    : voiceState === VoiceState.LISTENING 
+    ? activityLevel * 1.2 
+    : activityLevel;
 
   const renderContent = () => {
     const contentKey = displayContent 
@@ -301,50 +305,54 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   return (
     <div className="flex-1 relative border border-cyan-900/40 bg-transparent flex flex-col items-center justify-center overflow-hidden rounded-lg min-h-0">
 
-      {/* Arc Reactor Visualization */}
+      {/* Neural Network Visualization */}
       {!showingContent && (
         <div className="absolute inset-0 flex items-center justify-center overflow-visible" style={{ zIndex: 1 }}>
-          <JarvisArcReactor
-            audioStream={audioStream}
-            width={520}
-            height={520}
-            glowIntensity={dynamicGlow}
-            mode={reactorMode}
-            showControls={false} // Controls rendered separately at higher z-index
-            colorMode={reactorColor}
-            particleCount={150}
-            onGlowChange={(value) => {
-              setReactorGlow(value);
-              localStorage.setItem('jarvis.arcReactor.glow', String(value));
+          <JarvisNeuralNetwork
+            cpuLoad={cpuLoad}
+            gpuLoad={gpuLoad}
+            voiceState={voiceState === VoiceState.SPEAKING ? 'speaking' : 
+                       voiceState === VoiceState.LISTENING ? 'listening' : 'idle'}
+            colorTheme={colorTheme}
+            activityLevel={dynamicActivity}
+            rotationSpeed={rotationSpeed}
+            width={560}
+            height={560}
+            showControls={false}
+            onColorChange={(theme) => {
+              setColorTheme(theme);
+              localStorage.setItem('jarvis.neural.color', theme);
             }}
-            onColorChange={(mode) => {
-              setReactorColor(mode);
-              localStorage.setItem('jarvis.arcReactor.color', mode);
+            onActivityChange={(level) => {
+              setActivityLevel(level);
+              localStorage.setItem('jarvis.neural.activity', String(level));
             }}
-            onModeChange={(mode) => {
-              setReactorMode(mode);
-              localStorage.setItem('jarvis.arcReactor.mode', mode);
+            onRotationChange={(speed) => {
+              setRotationSpeed(speed);
+              localStorage.setItem('jarvis.neural.rotation', String(speed));
             }}
           />
         </div>
       )}
       
-      {/* Arc Reactor Controls - Rendered OUTSIDE at high z-index */}
-      {showReactorControls && !showingContent && (
+      {/* Neural Network Controls - Rendered OUTSIDE at high z-index */}
+      {showControls && !showingContent && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
-          <ArcReactorControls
-            reactorMode={reactorMode}
-            setReactorMode={setReactorMode}
-            reactorColor={reactorColor}
-            setReactorColor={setReactorColor}
-            reactorGlow={reactorGlow}
-            setReactorGlow={setReactorGlow}
-            dynamicGlow={dynamicGlow}
+          <NeuralNetworkControls
+            colorTheme={colorTheme}
+            setColorTheme={setColorTheme}
+            activityLevel={activityLevel}
+            setActivityLevel={setActivityLevel}
+            rotationSpeed={rotationSpeed}
+            setRotationSpeed={setRotationSpeed}
+            cpuLoad={cpuLoad}
+            gpuLoad={gpuLoad}
+            voiceState={voiceState}
           />
         </div>
       )}
       
-      {/* Arc Reactor Mode Toggle - Always Visible */}
+      {/* Controls Toggle - Always Visible */}
       {!showingContent && (
         <div 
           className="absolute bottom-4 right-4 flex items-center gap-2"
@@ -354,38 +362,27 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              console.log('[DisplayArea] Toggling controls:', !showReactorControls);
-              setShowReactorControls(!showReactorControls);
+              setShowControls(!showControls);
             }}
-            className={`p-2 rounded-lg transition-all duration-300 ${showReactorControls ? 'bg-cyan-500/30 text-cyan-300' : 'bg-black/40 text-cyan-600 hover:text-cyan-400'}`}
-            title="Toggle Reactor Controls"
+            className={`p-2 rounded-lg transition-all duration-300 ${showControls ? 'bg-cyan-500/30 text-cyan-300' : 'bg-black/40 text-cyan-600 hover:text-cyan-400'}`}
+            title="Toggle Neural Controls"
             style={{ cursor: 'pointer' }}
           >
             <Settings size={16} />
           </button>
           
-          {/* Mode Switcher Button - Cycles through modes */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const modes: ('authentic' | 'cinematic' | 'classic')[] = ['authentic', 'cinematic', 'classic'];
-              const currentIndex = modes.indexOf(reactorMode);
-              const nextMode = modes[(currentIndex + 1) % modes.length];
-              console.log('[DisplayArea] Switching reactor mode to:', nextMode);
-              setReactorMode(nextMode);
-              localStorage.setItem('jarvis.arcReactor.mode', nextMode);
-            }}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 bg-cyan-500/30 text-cyan-300 border border-cyan-500/50 shadow-[0_0_15px_rgba(0,200,255,0.3)]"
-            title="Click to cycle reactor modes"
-            style={{ cursor: 'pointer' }}
+          {/* Neural Net Indicator */}
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 bg-cyan-500/20 text-cyan-300 border border-cyan-500/50"
+            title="JARVIS Neural Network Active"
           >
-            <Zap size={14} className="animate-pulse" />
-            <span>{reactorMode === 'authentic' ? 'MARK I' : reactorMode === 'cinematic' ? 'CINEMATIC' : 'CLASSIC'}</span>
-          </button>
+            <Brain size={14} className="animate-pulse" />
+            <span>NEURAL</span>
+          </div>
         </div>
       )}
 
-      {/* Processing Overlay -->
+      {/* Processing Overlay */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           {isExecuting ? (
               <div className="text-center bg-black/40 p-8 rounded-2xl backdrop-blur-md border border-cyan-500/20 shadow-2xl z-30">

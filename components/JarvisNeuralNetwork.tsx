@@ -1,7 +1,7 @@
 /**
- * JarvisNeuralNetwork - React Wrapper for 3D Mesh Neural Network
+ * JarvisNeuralNetwork - React Wrapper for 3D Spherical Neural Network
  * 
- * Multi-colored 3D mesh visualization like the reference image.
+ * A complete 3D globe of neural nodes with firing pulses.
  * Reacts to system load (CPU/GPU) and voice state.
  */
 
@@ -11,27 +11,16 @@ import { NeuralNetworkCore } from './jarvis-neural-network';
 type VoiceState = 'idle' | 'listening' | 'speaking';
 
 interface JarvisNeuralNetworkProps {
-  /** CPU load percentage (0-100) */
   cpuLoad?: number;
-  /** GPU load percentage (0-100) */
   gpuLoad?: number;
-  /** Current voice state */
   voiceState?: VoiceState;
-  /** Base activity level (0-1) */
   activityLevel?: number;
-  /** Network rotation speed */
   rotationSpeed?: number;
-  /** Width of the visualization */
   width?: number;
-  /** Height of the visualization */
   height?: number;
-  /** Show control panel */
   showControls?: boolean;
-  /** Additional CSS classes */
   className?: string;
-  /** Callback when activity level changes */
   onActivityChange?: (level: number) => void;
-  /** Callback when rotation speed changes */
   onRotationChange?: (speed: number) => void;
 }
 
@@ -52,37 +41,30 @@ export const JarvisNeuralNetwork: React.FC<JarvisNeuralNetworkProps> = ({
   const networkRef = useRef<NeuralNetworkCore | null>(null);
   const animationRef = useRef<number | null>(null);
   
-  // Local state
   const [activityLevel, setActivityLevel] = useState(initialActivity);
   const [rotationSpeed, setRotationSpeed] = useState(initialRotation);
   const [fps, setFps] = useState(60);
 
-  // Sync props
   useEffect(() => setActivityLevel(initialActivity), [initialActivity]);
   useEffect(() => setRotationSpeed(initialRotation), [initialRotation]);
 
-  // Initialize neural network
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Cleanup previous instance
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     if (networkRef.current) {
       networkRef.current.destroy();
     }
     
-    // Remove any existing canvas
     const existingCanvas = containerRef.current.querySelector('canvas');
     if (existingCanvas && containerRef.current.contains(existingCanvas)) {
       containerRef.current.removeChild(existingCanvas);
     }
 
-    console.log('[JarvisNeuralNetwork] Initializing 3D neural mesh...');
-
     const network = new NeuralNetworkCore(containerRef.current, {
-      gridSize: 12,
-      radius: 8,
-      waveHeight: 2,
+      nodeCount: 120,
+      connectionDensity: 0.12,
+      radius: 7,
       rotationSpeed,
       activityLevel,
       cpuLoad,
@@ -92,7 +74,6 @@ export const JarvisNeuralNetwork: React.FC<JarvisNeuralNetworkProps> = ({
     
     networkRef.current = network;
 
-    // FPS tracking
     let lastTime = performance.now();
     let frames = 0;
     let lastFpsTime = lastTime;
@@ -114,40 +95,14 @@ export const JarvisNeuralNetwork: React.FC<JarvisNeuralNetworkProps> = ({
       network.destroy();
       networkRef.current = null;
     };
-  }, []); // Only initialize once
+  }, []);
 
-  // Update network when props change (without recreating)
-  useEffect(() => {
-    if (networkRef.current) {
-      networkRef.current.setCpuLoad(cpuLoad);
-    }
-  }, [cpuLoad]);
+  useEffect(() => { if (networkRef.current) networkRef.current.setCpuLoad(cpuLoad); }, [cpuLoad]);
+  useEffect(() => { if (networkRef.current) networkRef.current.setGpuLoad(gpuLoad); }, [gpuLoad]);
+  useEffect(() => { if (networkRef.current) networkRef.current.setVoiceState(voiceState); }, [voiceState]);
+  useEffect(() => { if (networkRef.current) networkRef.current.setActivityLevel(activityLevel); }, [activityLevel]);
+  useEffect(() => { if (networkRef.current) networkRef.current.setRotationSpeed(rotationSpeed); }, [rotationSpeed]);
 
-  useEffect(() => {
-    if (networkRef.current) {
-      networkRef.current.setGpuLoad(gpuLoad);
-    }
-  }, [gpuLoad]);
-
-  useEffect(() => {
-    if (networkRef.current) {
-      networkRef.current.setVoiceState(voiceState);
-    }
-  }, [voiceState]);
-
-  useEffect(() => {
-    if (networkRef.current) {
-      networkRef.current.setActivityLevel(activityLevel);
-    }
-  }, [activityLevel]);
-
-  useEffect(() => {
-    if (networkRef.current) {
-      networkRef.current.setRotationSpeed(rotationSpeed);
-    }
-  }, [rotationSpeed]);
-
-  // Handlers
   const handleActivityChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value);
     setActivityLevel(value);
@@ -164,7 +119,6 @@ export const JarvisNeuralNetwork: React.FC<JarvisNeuralNetworkProps> = ({
 
   return (
     <div className={`relative ${className}`} style={{ width, height }}>
-      {/* Main neural network container */}
       <div
         ref={containerRef}
         style={{
@@ -176,7 +130,6 @@ export const JarvisNeuralNetwork: React.FC<JarvisNeuralNetworkProps> = ({
         }}
       />
 
-      {/* Professional Control Panel */}
       {showControls && (
         <div
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50"
@@ -188,139 +141,89 @@ export const JarvisNeuralNetwork: React.FC<JarvisNeuralNetworkProps> = ({
             padding: '18px 22px',
             minWidth: '260px',
             maxWidth: '300px',
-            boxShadow: `
-              0 0 0 1px rgba(0,0,0,0.5),
-              0 4px 20px rgba(0,0,0,0.5),
-              0 0 30px rgba(100, 150, 255, 0.1),
-              inset 0 1px 0 rgba(255,255,255,0.05)
-            `,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5), 0 0 30px rgba(100, 150, 255, 0.1)',
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <div 
-                className="w-2 h-2 rounded-full animate-pulse"
-                style={{ 
-                  background: 'linear-gradient(135deg, #00ddff, #ff00ff)',
-                  boxShadow: '0 0 10px #00ddff'
-                }} 
-              />
+              <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'linear-gradient(135deg, #00ddff, #ff00ff)' }} />
               <span className="text-xs font-bold tracking-widest bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-                NEURAL MESH
+                NEURAL SPHERE
               </span>
             </div>
             <span className="text-[10px] font-mono text-slate-500">{fps} FPS</span>
           </div>
 
-          {/* Activity Level Slider */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Activity Level
-              </label>
-              <span className="text-[11px] font-mono font-bold text-cyan-400">
-                {(activityLevel * 100).toFixed(0)}%
-              </span>
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Activity</label>
+              <span className="text-[11px] font-mono font-bold text-cyan-400">{(activityLevel * 100).toFixed(0)}%</span>
             </div>
-            <div className="relative h-6 flex items-center">
-              <input
-                type="range"
-                min="0.3"
-                max="1.5"
-                step="0.1"
-                value={activityLevel}
-                onChange={handleActivityChange}
-                className="w-full h-2 rounded-full appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, 
-                    #00ddff 0%, 
-                    #ff00ff ${((activityLevel - 0.3) / 1.2) * 50}%,
-                    #ff8800 ${((activityLevel - 0.3) / 1.2) * 100}%, 
-                    rgba(255,255,255,0.1) ${((activityLevel - 0.3) / 1.2) * 100}%, 
-                    rgba(255,255,255,0.1) 100%
-                  )`,
-                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
-                }}
-              />
-              <style>{`
-                input[type="range"]::-webkit-slider-thumb {
-                  -webkit-appearance: none;
-                  appearance: none;
-                  width: 16px;
-                  height: 16px;
-                  border-radius: 50%;
-                  background: linear-gradient(135deg, #00ddff, #ff00ff);
-                  cursor: pointer;
-                  box-shadow: 
-                    0 0 0 2px rgba(0,0,0,0.8),
-                    0 0 10px rgba(0,221,255,0.8),
-                    0 0 20px rgba(255,0,255,0.5);
-                  transition: transform 0.1s;
-                }
-                input[type="range"]::-webkit-slider-thumb:hover {
-                  transform: scale(1.15);
-                }
-              `}</style>
-            </div>
+            <input
+              type="range"
+              min="0.3"
+              max="1.5"
+              step="0.1"
+              value={activityLevel}
+              onChange={handleActivityChange}
+              className="w-full h-2 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #00ddff 0%, #ff00ff ${((activityLevel - 0.3) / 1.2) * 50}%, #ff8800 ${((activityLevel - 0.3) / 1.2) * 100}%, rgba(255,255,255,0.1) ${((activityLevel - 0.3) / 1.2) * 100}%)`,
+              }}
+            />
+            <style>{`
+              input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #00ddff, #ff00ff);
+                cursor: pointer;
+                box-shadow: 0 0 0 2px rgba(0,0,0,0.8), 0 0 10px rgba(0,221,255,0.8);
+                transition: transform 0.1s;
+              }
+              input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+            `}</style>
           </div>
 
-          {/* Rotation Speed Slider */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Rotation
-              </label>
-              <span className="text-[11px] font-mono font-bold text-purple-400">
-                {(rotationSpeed * 1000).toFixed(1)}x
-              </span>
+              <label className="text-[10px] font-bold text-slate-400 uppercase">Rotation</label>
+              <span className="text-[11px] font-mono font-bold text-purple-400">{(rotationSpeed * 1000).toFixed(1)}x</span>
             </div>
-            <div className="relative h-6 flex items-center">
-              <input
-                type="range"
-                min="0"
-                max="0.005"
-                step="0.0005"
-                value={rotationSpeed}
-                onChange={handleRotationChange}
-                className="w-full h-2 rounded-full appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, 
-                    #8844ff 0%, 
-                    #ff4488 ${(rotationSpeed / 0.005) * 100}%, 
-                    rgba(255,255,255,0.1) ${(rotationSpeed / 0.005) * 100}%, 
-                    rgba(255,255,255,0.1) 100%
-                  )`,
-                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)',
-                }}
-              />
-            </div>
+            <input
+              type="range"
+              min="0"
+              max="0.005"
+              step="0.0005"
+              value={rotationSpeed}
+              onChange={handleRotationChange}
+              className="w-full h-2 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, #8844ff 0%, #ff4488 ${(rotationSpeed / 0.005) * 100}%, rgba(255,255,255,0.1) ${(rotationSpeed / 0.005) * 100}%)`,
+              }}
+            />
           </div>
 
-          {/* Stats */}
           <div className="grid grid-cols-3 gap-3 pt-3 border-t border-white/10">
             <div className="text-center">
-              <div className="text-sm font-bold font-mono text-cyan-400">
-                {Math.round(cpuLoad)}%
-              </div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wider">CPU</div>
+              <div className="text-sm font-bold font-mono text-cyan-400">{Math.round(cpuLoad)}%</div>
+              <div className="text-[9px] text-slate-500 uppercase">CPU</div>
             </div>
             <div className="text-center">
-              <div className="text-sm font-bold font-mono text-purple-400">
-                {Math.round(gpuLoad)}%
-              </div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wider">GPU</div>
+              <div className="text-sm font-bold font-mono text-purple-400">{Math.round(gpuLoad)}%</div>
+              <div className="text-[9px] text-slate-500 uppercase">GPU</div>
             </div>
             <div className="text-center">
               <div className="text-sm font-bold font-mono uppercase text-pink-400">
                 {voiceState === 'speaking' ? 'TTS' : voiceState === 'listening' ? 'STT' : 'IDLE'}
               </div>
-              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Voice</div>
+              <div className="text-[9px] text-slate-500 uppercase">Voice</div>
             </div>
           </div>
 
-          {/* Decorative corner accents */}
           <div className="absolute top-0 left-0 w-3 h-3 border-l-2 border-t-2 rounded-tl-lg border-cyan-500/50" />
           <div className="absolute top-0 right-0 w-3 h-3 border-r-2 border-t-2 rounded-tr-lg border-purple-500/50" />
           <div className="absolute bottom-0 left-0 w-3 h-3 border-l-2 border-b-2 rounded-bl-lg border-pink-500/50" />

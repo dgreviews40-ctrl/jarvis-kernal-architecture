@@ -274,8 +274,8 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
                        voiceState === VoiceState.LISTENING ? 'listening' : 'idle'}
             activityLevel={dynamicActivity}
             rotationSpeed={rotationSpeed}
-            width={620}
-            height={620}
+            width={640}
+            height={640}
             showControls={false}
             onActivityChange={(level) => {
               setActivityLevel(level);

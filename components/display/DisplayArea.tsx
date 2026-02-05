@@ -202,7 +202,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             height={480}
             glowIntensity={dynamicGlow}
             enhanced={enhancedReactor}
-            showControls={showReactorControls}
+            showControls={false} // Controls rendered separately below
             colorMode={reactorColor}
             particleCount={150}
             onGlowChange={(value) => {
@@ -216,6 +216,97 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
               localStorage.setItem('jarvis.arcReactor.color', mode);
             }}
           />
+        </div>
+      )}
+      
+      {/* Arc Reactor Controls - Rendered OUTSIDE the reactor container */}
+      {enhancedReactor && showReactorControls && !showingContent && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            bottom: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0, 10, 30, 0.95)',
+            backdropFilter: 'blur(10px)',
+            border: '2px solid rgba(0, 170, 255, 0.5)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            minWidth: '240px',
+            boxShadow: '0 4px 30px rgba(0, 170, 255, 0.3)',
+            zIndex: 100,
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#00aaff', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+              ⚡ REACTOR CONTROLS
+            </span>
+            <span style={{ color: '#00aaff', fontWeight: 'bold' }}>{Math.round(dynamicGlow * 100)}%</span>
+          </div>
+          
+          {/* Color Buttons */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {(['classic', 'warm', 'cyberpunk'] as const).map((mode) => {
+              const colors = {
+                classic: '#00ddff',
+                warm: '#ffaa00', 
+                cyberpunk: '#ff00ff'
+              };
+              return (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    console.log('[DisplayArea] Color clicked:', mode);
+                    setReactorColor(mode);
+                    localStorage.setItem('jarvis.arcReactor.color', mode);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    background: reactorColor === mode ? `${colors[mode]}30` : 'rgba(255,255,255,0.05)',
+                    border: `2px solid ${reactorColor === mode ? colors[mode] : 'rgba(255,255,255,0.2)'}`,
+                    borderRadius: '6px',
+                    color: reactorColor === mode ? colors[mode] : '#888',
+                    fontSize: '10px',
+                    fontWeight: 'bold',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {mode}
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Glow Slider */}
+          <div>
+            <label style={{ color: '#888', fontSize: '10px' }}>Glow Intensity</label>
+            <input
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value={reactorGlow}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                console.log('[DisplayArea] Slider moved:', val);
+                setReactorGlow(val);
+                localStorage.setItem('jarvis.arcReactor.glow', String(val));
+              }}
+              style={{
+                width: '100%',
+                height: '8px',
+                marginTop: '8px',
+                cursor: 'pointer',
+              }}
+            />
+          </div>
         </div>
       )}
       

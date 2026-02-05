@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
 /**
- * ArcReactor v22 - HOLOGRAPHIC EDITION
- * Holographic data rings floating above, energy effects, cinematic materials
+ * ArcReactor v23 - PARTICLE TRAIL EDITION
+ * Rising particles from core, holographic rings, energy effects, cinematic materials
  */
 export class JarvisArcReactor {
   constructor(container) {
@@ -29,6 +29,7 @@ export class JarvisArcReactor {
     this._createEnergyPulses();
     this._createElectricalSparks();
     this._createHolographicRings();
+    this._createCoreParticleTrail();
     
     // Handle resize
     this._handleResize = this._handleResize.bind(this);
@@ -37,7 +38,7 @@ export class JarvisArcReactor {
     // Start render loop
     this._animate();
     
-    console.log('[ArcReactor] v22 - HOLOGRAPHIC EDITION');
+    console.log('[ArcReactor] v23 - PARTICLE TRAIL EDITION');
   }
 
   _setupScene() {
@@ -675,6 +676,61 @@ export class JarvisArcReactor {
     
   }
 
+  _createCoreParticleTrail() {
+    // Create particles that rise from the core like heat/energy
+    const particleCount = 25;
+    this.coreParticles = [];
+    
+    // Create shared geometry
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+    const opacities = new Float32Array(particleCount);
+    
+    for (let i = 0; i < particleCount; i++) {
+      // Start from random position near core center
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.random() * 0.8;
+      
+      positions[i * 3] = Math.cos(angle) * radius;
+      positions[i * 3 + 1] = Math.sin(angle) * radius;
+      positions[i * 3 + 2] = 0.3 + Math.random() * 2; // Start at different heights
+      
+      sizes[i] = 0.03 + Math.random() * 0.05;
+      opacities[i] = Math.random();
+    }
+    
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    geometry.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
+    
+    // Custom shader material for better looking particles
+    const material = new THREE.PointsMaterial({
+      color: 0x00ffff,
+      size: 0.05,
+      transparent: true,
+      opacity: 0.6,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    this.coreParticleSystem = new THREE.Points(geometry, material);
+    this.scene.add(this.coreParticleSystem);
+    
+    // Store particle data for animation
+    this.coreParticleData = [];
+    for (let i = 0; i < particleCount; i++) {
+      this.coreParticleData.push({
+        speed: 0.02 + Math.random() * 0.03,
+        drift: (Math.random() - 0.5) * 0.01,
+        resetHeight: 0.3 + Math.random() * 0.2,
+        maxHeight: 3 + Math.random() * 2,
+        baseSize: 0.03 + Math.random() * 0.05
+      });
+    }
+  }
+
   initAudio(audioStream) {
     return new Promise((resolve, reject) => {
       try {
@@ -936,6 +992,37 @@ export class JarvisArcReactor {
         const audioScale = 1 + this.audioIntensity * 0.3;
         glyph.sprite.scale.set(0.5 * audioScale, 0.25 * audioScale, 1);
       });
+    }
+    
+    // Animate core particle trail
+    if (this.coreParticleSystem && this.coreParticleData) {
+      const positions = this.coreParticleSystem.geometry.attributes.position.array;
+      
+      for (let i = 0; i < this.coreParticleData.length; i++) {
+        const data = this.coreParticleData[i];
+        
+        // Move particle upward
+        positions[i * 3 + 2] += data.speed * (1 + this.audioIntensity * 2);
+        
+        // Add slight drift
+        positions[i * 3] += data.drift + Math.sin(this.time * 2 + i) * 0.002;
+        positions[i * 3 + 1] += Math.cos(this.time * 1.5 + i) * 0.002;
+        
+        // Reset particle when it reaches max height
+        if (positions[i * 3 + 2] > data.maxHeight) {
+          positions[i * 3 + 2] = data.resetHeight;
+          // Randomize new starting position near core
+          const angle = Math.random() * Math.PI * 2;
+          const radius = Math.random() * 0.6;
+          positions[i * 3] = Math.cos(angle) * radius;
+          positions[i * 3 + 1] = Math.sin(angle) * radius;
+        }
+      }
+      
+      this.coreParticleSystem.geometry.attributes.position.needsUpdate = true;
+      
+      // Pulse opacity with audio
+      this.coreParticleSystem.material.opacity = 0.4 + Math.sin(this.time * 3) * 0.2 + this.audioIntensity * 0.4;
     }
     
     this.renderer.render(this.scene, this.camera);

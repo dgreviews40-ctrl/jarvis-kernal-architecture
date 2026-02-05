@@ -25,13 +25,14 @@ JARVIS now has 7 major new capability categories powered by external integration
 ---
 
 ### 2. 🌤️ Weather
-**File:** `services/integrations/weather.ts`
+**File:** `services/weather.ts`
 
+- **Real-time weather data** using Open-Meteo API (no API key required)
 - **Current conditions** with natural language summaries
-- **Clothing recommendations** based on temperature
-- **Weather alerts** detection
-- **Forecast summaries** (5-day)
-- **Location-aware** queries
+- **Hourly/daily forecasts** up to 7 days
+- **Air quality monitoring** with AQI data
+- **Location-aware** queries with geocoding
+- **Automatic location detection** using browser geolocation
 
 **Example commands:**
 ```
@@ -39,6 +40,7 @@ JARVIS now has 7 major new capability categories powered by external integration
 "Will it rain tomorrow?"
 "What's the forecast for this week?"
 "How's the weather in New York?"
+"Current temperature?"
 ```
 
 ---
@@ -129,10 +131,9 @@ JARVIS now has 7 major new capability categories powered by external integration
 ## 🏗️ Architecture
 
 ```
-services/integrations/
-├── index.ts           # IntegrationHub - central router
+services/
+├── weather.ts         # Real-time weather data (Open-Meteo API)
 ├── calendar.ts        # Calendar & reminders
-├── weather.ts         # Weather data
 ├── news.ts            # News & briefings
 ├── webSearch.ts       # Web search & knowledge
 └── taskAutomation.ts  # Tasks & automations
@@ -141,7 +142,7 @@ services/integrations/
 ### How It Works
 
 1. **User input** → `App.tsx`
-2. **IntegrationHub.route()** checks all integrations first
+2. **KernelProcessor** routes to appropriate service (weather, calendar, etc.)
 3. If **handled**, returns response immediately
 4. If **not handled**, falls through to AI processing
 5. **Dashboard** provides UI for managing integrations

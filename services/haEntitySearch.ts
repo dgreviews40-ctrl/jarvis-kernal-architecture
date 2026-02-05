@@ -430,7 +430,14 @@ export function formatEntityValue(entity: HAEntity): string {
   const name = entity.attributes?.friendly_name || entity.entity_id;
   const state = entity.state || 'unknown';
   const unit = entity.attributes?.unit_of_measurement || '';
-  
+
+  // Handle temperature conversion from Celsius to Fahrenheit
+  if (unit === '°C' && !isNaN(parseFloat(state))) {
+    const celsius = parseFloat(state);
+    const fahrenheit = (celsius * 9/5) + 32;
+    return `${name}: ${Math.round(fahrenheit)} °F`;
+  }
+
   // Format numeric values
   if (!isNaN(parseFloat(state))) {
     const num = parseFloat(state);
@@ -576,10 +583,28 @@ export function generateEntityResponse(
     const bestLocation = getEntityLocation(bestMatch.entity);
     
     if (locationContext.isInside && bestLocation === 'indoor') {
-      return `The indoor temperature is ${bestMatch.entity.state}${bestMatch.entity.attributes?.unit_of_measurement || '°F'}.`;
+      // Convert to Fahrenheit if the unit is Celsius
+      let tempValue = parseFloat(bestMatch.entity.state);
+      const unit = bestMatch.entity.attributes?.unit_of_measurement || '°F';
+
+      if (unit === '°C') {
+        tempValue = (tempValue * 9/5) + 32; // Convert Celsius to Fahrenheit
+        return `The indoor temperature is ${Math.round(tempValue)}°F.`;
+      } else {
+        return `The indoor temperature is ${bestMatch.entity.state}${unit}.`;
+      }
     }
     if (locationContext.isOutside && bestLocation === 'outdoor') {
-      return `The outdoor temperature is ${bestMatch.entity.state}${bestMatch.entity.attributes?.unit_of_measurement || '°F'}.`;
+      // Convert to Fahrenheit if the unit is Celsius
+      let tempValue = parseFloat(bestMatch.entity.state);
+      const unit = bestMatch.entity.attributes?.unit_of_measurement || '°F';
+
+      if (unit === '°C') {
+        tempValue = (tempValue * 9/5) + 32; // Convert Celsius to Fahrenheit
+        return `The outdoor temperature is ${Math.round(tempValue)}°F.`;
+      } else {
+        return `The outdoor temperature is ${bestMatch.entity.state}${unit}.`;
+      }
     }
   }
   

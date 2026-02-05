@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Send, Terminal as TerminalIcon, Sparkles } from 'lucide-react';
 import { useLogsStore } from '../stores';
 import { suggestionService, Suggestion } from '../services/suggestions';
+import { LogEntry } from '../types';
 
 interface TerminalProps {
   onCommand: (cmd: string) => void;

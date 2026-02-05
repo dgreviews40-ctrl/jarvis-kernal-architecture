@@ -24,6 +24,7 @@ class RequestDeduplicationService {
   private inFlight = new Map<string, InFlightRequest<unknown>>();
   private completed = new Map<string, { result: unknown; timestamp: number }>();
   private config: DeduplicationConfig;
+  private cleanupIntervalId: NodeJS.Timeout | null = null;
 
   constructor(config: Partial<DeduplicationConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -143,9 +144,9 @@ class RequestDeduplicationService {
 
   private startCleanupInterval(): void {
     // Clean up expired entries every 30 seconds
-    setInterval(() => {
+    this.cleanupIntervalId = setInterval(() => {
       const now = Date.now();
-      
+
       // Clean up expired completed requests
       for (const [key, entry] of this.completed.entries()) {
         if (now - entry.timestamp > this.config.ttl) {
@@ -160,6 +161,16 @@ class RequestDeduplicationService {
         }
       }
     }, 30000);
+  }
+
+  /**
+   * Clean up resources and stop the cleanup interval
+   */
+  public dispose(): void {
+    if (this.cleanupIntervalId) {
+      clearInterval(this.cleanupIntervalId);
+      this.cleanupIntervalId = null;
+    }
   }
 }
 

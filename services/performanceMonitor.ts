@@ -76,7 +76,7 @@ class PerformanceMonitor {
     this.startMemoryMonitoring();
     this.measureInitialMetrics();
     
-    logger.info('PERFORMANCE', 'Monitor initialized');
+    logger.log('SYSTEM', 'Monitor initialized');
   }
 
   // Stop monitoring
@@ -103,9 +103,9 @@ class PerformanceMonitor {
     
     // Check thresholds
     if (gzipSize > THRESHOLDS.bundleSize.critical) {
-      logger.error('PERFORMANCE', `Bundle ${chunkName} exceeds critical size: ${(gzipSize / 1024).toFixed(2)}KB`, { chunkName, size, gzipSize });
+      logger.log('SYSTEM', `Bundle ${chunkName} exceeds critical size: ${(gzipSize / 1024).toFixed(2)}KB`, { chunkName, size, gzipSize });
     } else if (gzipSize > THRESHOLDS.bundleSize.warning) {
-      logger.warning('PERFORMANCE', `Bundle ${chunkName} exceeds warning size: ${(gzipSize / 1024).toFixed(2)}KB`, { chunkName, size, gzipSize });
+      logger.log('SYSTEM', `Bundle ${chunkName} exceeds warning size: ${(gzipSize / 1024).toFixed(2)}KB`, { chunkName, size, gzipSize });
     }
     
     this.saveHistoricalData();
@@ -129,9 +129,9 @@ class PerformanceMonitor {
       
       // Check thresholds
       if (duration > THRESHOLDS.timing.critical) {
-        logger.error('PERFORMANCE', `Operation "${operation}" exceeded critical time: ${duration.toFixed(2)}ms`, { operation, duration });
+        logger.log('SYSTEM', `Operation "${operation}" exceeded critical time: ${duration.toFixed(2)}ms`, { operation, duration });
       } else if (duration > THRESHOLDS.timing.warning) {
-        logger.warning('PERFORMANCE', `Operation "${operation}" exceeded warning time: ${duration.toFixed(2)}ms`, { operation, duration });
+        logger.log('SYSTEM', `Operation "${operation}" exceeded warning time: ${duration.toFixed(2)}ms`, { operation, duration });
       }
       
       this.saveHistoricalData();
@@ -189,9 +189,9 @@ class PerformanceMonitor {
     
     // Check thresholds
     if (snapshot.used > THRESHOLDS.memory.critical) {
-      logger.error('PERFORMANCE', `Memory usage critical: ${snapshot.used}MB`, snapshot);
+      logger.log('SYSTEM', `Memory usage critical: ${snapshot.used}MB`, snapshot);
     } else if (snapshot.used > THRESHOLDS.memory.warning) {
-      logger.warning('PERFORMANCE', `Memory usage high: ${snapshot.used}MB`, snapshot);
+      logger.log('SYSTEM', `Memory usage high: ${snapshot.used}MB`, snapshot);
     }
     
     this.saveHistoricalData();
@@ -242,7 +242,7 @@ class PerformanceMonitor {
       ...baseline,
       timestamp: Date.now(),
     }));
-    logger.info('PERFORMANCE', 'Baseline set');
+    logger.log('SYSTEM', 'Baseline set');
   }
 
   // Compare current stats against baseline
@@ -376,7 +376,7 @@ class PerformanceMonitor {
     this.timings = [];
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(BASELINE_KEY);
-    logger.info('PERFORMANCE', 'All data cleared');
+    logger.log('SYSTEM', 'All data cleared');
   }
 
   // Private methods
@@ -414,7 +414,7 @@ class PerformanceMonitor {
         this.timings = parsed.timings || [];
       }
     } catch (e) {
-      logger.warning('PERFORMANCE', 'Failed to load historical data');
+      logger.log('SYSTEM', 'Failed to load historical data');
     }
   }
 
@@ -450,7 +450,7 @@ export function useRenderTime(componentName: string): void {
   requestAnimationFrame(() => {
     const duration = performance.now() - start;
     if (duration > 16) { // Log if slower than 60fps
-      logger.warning('PERFORMANCE', `${componentName} render took ${duration.toFixed(2)}ms`, { component: componentName, duration });
+      logger.log('SYSTEM', `${componentName} render took ${duration.toFixed(2)}ms`, { component: componentName, duration });
     }
   });
 }

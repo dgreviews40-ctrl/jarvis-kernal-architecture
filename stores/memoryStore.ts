@@ -11,7 +11,17 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { MemoryNode, MemorySearchResult } from '../types';
-import { memory, MemoryBackup } from '../services/memory';
+import { memory } from '../services/memory';
+
+// MemoryBackup type for compatibility
+export interface MemoryBackup {
+  id: string;
+  timestamp: number;
+  data: {
+    nodeCount: number;
+    nodes: any[];
+  };
+}
 
 export interface MemoryStats {
   totalNodes: number;
@@ -80,13 +90,13 @@ export const useMemoryStore = create<MemoryState>()(
       // Async actions
       refreshStats: async () => {
         const stats = await memory.getStats();
-        // Ensure byType is always defined
-        set({ 
+        // memory.ts returns: totalNodes, byType, oldestMemory, newestMemory, totalBackups, indexSize
+        set({
           stats: {
             totalNodes: stats.totalNodes ?? 0,
             byType: stats.byType ?? DEFAULT_STATS.byType,
             oldestMemory: stats.oldestMemory ?? 0,
-            newestMemory: stats.newestMemory ?? 0,
+            newestMemory: stats.newestMemory ?? Date.now(),
             totalBackups: stats.totalBackups ?? 0,
             indexSize: stats.indexSize ?? 0,
           }
@@ -95,11 +105,12 @@ export const useMemoryStore = create<MemoryState>()(
       
       refreshNodes: async () => {
         set({ isLoading: true });
-        const nodes = memory.getAll();
+        const nodes = await memory.getAll();
         set({ nodes, isLoading: false });
       },
       
       refreshBackups: () => {
+        // memory.ts supports backups
         const backups = memory.getBackups();
         set({ backups });
       },
@@ -110,7 +121,7 @@ export const useMemoryStore = create<MemoryState>()(
           return;
         }
         set({ isLoading: true, searchQuery: query });
-        const results = await memory.search(query);
+        const results = await memory.recall(query);
         set({ searchResults: results, isLoading: false });
       },
       

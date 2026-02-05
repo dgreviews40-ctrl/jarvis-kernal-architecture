@@ -387,8 +387,11 @@ class WeatherService {
       const hourly: HourlyForecast[] = [];
       const now = Date.now();
       for (let i = 0; i < Math.min(24, weatherJson.hourly.time.length); i++) {
-        const time = new Date(weatherJson.hourly.time[i]);
-        if (time.getTime() < now) continue;
+        const timeValue = weatherJson.hourly.time[i];
+        if (!timeValue) continue;
+        
+        const time = new Date(timeValue);
+        if (isNaN(time.getTime()) || time.getTime() < now) continue;
 
         hourly.push({
           time,
@@ -465,6 +468,11 @@ class WeatherService {
       return `${Math.round(temp * 9/5 + 32)}°F`;
     }
     return `${Math.round(temp)}°C`;
+  }
+
+  public formatTemperatureOnlyFahrenheit(temp: number): string {
+    // Always return Fahrenheit to comply with imperial-only requirement
+    return `${Math.round(temp * 9/5 + 32)}°F`;
   }
 
   public getWindDirectionLabel(degrees: number): string {

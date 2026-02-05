@@ -12,6 +12,7 @@ import { piperLauncher } from "./piperLauncher";
 import { optimizer } from "./performance";
 import { inputValidator } from "./inputValidator";
 import { whisperSTT } from "./whisperSTT";
+import EnhancedTTSService, { enhancedTTS } from "./enhancedTTS";
 
 const DEFAULT_CONFIG: VoiceConfig = {
   wakeWord: "jarvis",
@@ -84,27 +85,41 @@ class VoiceCoreOptimized {
   private silenceStartTime: number = 0;
   private speechStartTime: number = 0;
 
-  // NEW: Flag to prevent audio feedback loop
+  // NEW: Flags to prevent audio feedback loop and duplicate processing
   private isCurrentlySpeaking: boolean = false;
-  
+  private lastSpokenText: string = '';
+  private lastSpokenTimestamp: number = 0;
+
   // Audio queue for smooth playback
   private audioQueue: AudioBuffer[] = [];
-  
+
   // Wake word detection timing - IMPROVED
   private wakeWordDetectedTime: number = 0;
   private readonly WAKE_WORD_GRACE_PERIOD = 10000; // 10 seconds to give command after wake word (more comfortable)
-  
+
   // NEW: Response preloading
   private preloadedResponse: string | null = null;
   private isPlayingAudio: boolean = false;
-  
+
   // Pre-initialized audio context pool
   private audioContextPool: AudioContext[] = [];
   private maxAudioContexts = 2;
-  
+
   // Whisper fallback
   private useWhisperFallback: boolean = false;
   private whisperAvailable: boolean = false;
+
+  // Duplicate command prevention
+  private lastProcessedText: string = '';
+  private lastProcessedTime: number = 0;
+  private recentCommands: {text: string, timestamp: number}[] = [];
+
+  // Additional duplicate prevention for voice commands
+  private voiceCommandHashes: Map<string, number> = new Map(); // Map of hash -> timestamp
+  private readonly DUPLICATE_COMMAND_WINDOW = 5000; // 5 seconds
+
+  // Web Worker for wake word detection
+  private wakeWordWorker: Worker | null = null;
 
   constructor() {
     const saved = localStorage.getItem('jarvis_voice_config');
@@ -173,18 +188,16 @@ class VoiceCoreOptimized {
           const lowerTranscript = transcript.toLowerCase().trim();
           const lowerWakeWord = wakeWord.toLowerCase();
 
-          // Exact matches
-          const exactMatches = ['jarvis', 'jarvis', lowerWakeWord];
-          for (const ww of exactMatches) {
-            if (lowerTranscript.includes(ww)) return true;
-          }
+          // Exact matches - avoid duplicates
+          if (lowerTranscript.includes('jarvis')) return true;
+          if (lowerTranscript.includes(lowerWakeWord)) return true;
 
           // Common transcription variations of "Jarvis"
           const variations = [
             'jarves', 'jarvice', 'jarviss', 'jarvess', 'jarviz',
             'jarvus', 'jarv', 'jarvish', 'jervis', 'jerviss',
             'garvis', 'garves', 'carvis', 'charvis', 'jarveis',
-            'jarvess', 'jarvies', 'jarviss', 'jarviss'
+            'jarvies'
           ];
 
           for (const variation of variations) {
@@ -210,10 +223,25 @@ class VoiceCoreOptimized {
       `;
 
       const blob = new Blob([workerCode], { type: 'application/javascript' });
-      this.wakeWordWorker = new Worker(URL.createObjectURL(blob));
+      const blobUrl = URL.createObjectURL(blob);
+      this.wakeWordWorker = new Worker(blobUrl);
+      // Revoke the blob URL after worker is created to prevent memory leak
+      URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.warn('[VOICE] Web Worker not supported, using main thread for wake word detection:', error);
     }
+
+    // Initialize enhanced TTS with JARVIS-specific settings
+    enhancedTTS.updateConfig({
+      rate: 0.80,  // Slower for better clarity and more natural flow
+      pitch: 1.05, // Slightly higher for friendliness
+      intonationVariation: 0.6,  // Higher variation for more natural feel
+      stressLevel: 0.4,          // Slightly lower emphasis to reduce choppy feeling
+      rhythmVariation: 0.5,      // Higher timing variations for smoother flow
+      baseTone: 'professional',  // Professional but friendly tone
+      emotionalRange: 0.5,       // Slightly higher emotional expression
+      ssmlSupported: false       // Disable SSML tags to prevent literal reading
+    });
 
     // Pre-initialize audio contexts
     this.initAudioContextPool();
@@ -237,13 +265,27 @@ class VoiceCoreOptimized {
         return ctx;
       }
     }
-    
-    // Create new if pool exhausted
-    try {
-      return new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-    } catch (e) {
-      return null;
+
+    // Create new if pool not at max capacity (prevents memory leak from unlimited contexts)
+    if (this.audioContextPool.length < this.maxAudioContexts) {
+      try {
+        const newCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        this.audioContextPool.push(newCtx);
+        return newCtx;
+      } catch (e) {
+        console.warn('[VOICE] Failed to create additional audio context:', e);
+        return null;
+      }
     }
+
+    // Pool exhausted and at max capacity - try to resume a closed context
+    for (const ctx of this.audioContextPool) {
+      if (ctx.state === 'closed') {
+        console.warn('[VOICE] All audio contexts exhausted, attempting to reuse closed context');
+      }
+    }
+
+    return null;
   }
 
   private initRecognition() {
@@ -404,6 +446,7 @@ class VoiceCoreOptimized {
 
   private setState(newState: VoiceState) {
     if (this.state === newState) return;
+    console.log(`[VOICE] State changing from ${VoiceState[this.state]} to ${VoiceState[newState]}`);
     this.state = newState;
     this.observers.forEach(cb => cb(newState));
   }
@@ -519,16 +562,36 @@ class VoiceCoreOptimized {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
+
+    // Properly clean up speech recognition
     if (this.recognition) {
-      this.recognition.onend = () => {};
-      this.recognition.abort();
+      try {
+        this.recognition.onend = () => {};
+        this.recognition.onerror = () => {};
+        this.recognition.onresult = () => {};
+        this.recognition.abort();
+      } catch (e) {
+        console.warn('[VOICE] Error aborting recognition:', e);
+      }
       this.recognition = null;
     }
-    // Stop Whisper recording if active
+
+    // Stop Whisper recording if active (use stopWhisperSTT for proper error handling)
     if (this.useWhisperFallback) {
-      whisperSTT.stopRecording();
-      this.useWhisperFallback = false;
+      await this.stopWhisperSTT();
     }
+    
+    // Remove all event listeners from recognition to prevent memory leaks
+    if (this.recognition) {
+      this.recognition.onstart = null;
+      this.recognition.onresult = null;
+      this.recognition.onerror = null;
+      this.recognition.onend = null;
+      this.recognition.onaudiostart = null;
+      this.recognition.onsoundstart = null;
+      this.recognition.onspeechstart = null;
+    }
+
     this.stopVAD();
 
     // Properly close audio contexts to prevent memory leaks
@@ -543,7 +606,7 @@ class VoiceCoreOptimized {
 
     // Close all pooled audio contexts
     for (const ctx of this.audioContextPool) {
-      if (ctx.state !== 'closed') {
+      if (ctx && ctx.state !== 'closed') {
         try {
           await ctx.close();
         } catch (e) {
@@ -555,17 +618,41 @@ class VoiceCoreOptimized {
 
     // Clean up Web Worker
     if (this.wakeWordWorker) {
-      this.wakeWordWorker.terminate();
+      try {
+        this.wakeWordWorker.terminate();
+      } catch (e) {
+        console.warn('[VOICE] Error terminating wake word worker:', e);
+      }
       this.wakeWordWorker = null;
     }
 
+    // Clean up any remaining audio resources
     this.audioQueue = [];
     this.isPlayingAudio = false;
+
+    // Reset all state flags
+    this.isCurrentlySpeaking = false;
+    this.ignoreInputUntil = 0;
+    this.isSpeaking = false;
+    this.silenceStartTime = 0;
+    this.speechStartTime = 0;
+    this.wakeWordDetectedTime = 0;
+    this.sessionStartTime = 0;
+    this.lastManualActivation = 0;
+    this.hasProcessedSpeech = false;
+    this.consecutiveShortSessions = 0;
+    this.isRestarting = false;
+
+    // Clear any remaining timeouts/intervals
+    if (this.vadInterval) {
+      clearInterval(this.vadInterval);
+      this.vadInterval = null;
+    }
   }
 
-  private startListening() {
+  private async startListening(): Promise<void> {
     console.log('[VOICE] startListening called, current state:', this.state, 'isRestarting:', this.isRestarting);
-    
+
     if (this.restartTimer) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
@@ -585,6 +672,9 @@ class VoiceCoreOptimized {
         try { this.recognition.abort(); } catch(e) { }
         this.recognition = null;
       }
+
+      // Stop Whisper STT if it's running (await to ensure proper cleanup)
+      await this.stopWhisperSTT();
       
       // Store timeout ID for cleanup
       this.restartTimer = window.setTimeout(() => {
@@ -638,37 +728,75 @@ class VoiceCoreOptimized {
     this.isPlayingAudio = false;
     // Clear the speaking flag when interrupted
     this.isCurrentlySpeaking = false;
+    // Clear the deaf period to allow input after interruption
+    this.ignoreInputUntil = 0;
   }
 
   private onSpeakComplete() {
     this.setState(VoiceState.IDLE);
     conversation.addTurn('JARVIS', "Interrupted");
+    // Clear the deaf period to allow input after speaking completes
+    this.ignoreInputUntil = 0;
   }
 
   // ==================== OPTIMIZED TTS ====================
 
+  // Flag to temporarily ignore input to prevent audio feedback
+  private ignoreInputUntil: number = 0;
+
   public async speak(text: string) {
     if (this.state === VoiceState.MUTED || this.state === VoiceState.ERROR) return;
+
+    // Prevent duplicate responses within a short timeframe
+    const now = Date.now();
+    if (this.lastSpokenText === text && (now - this.lastSpokenTimestamp) < 3000) {
+      console.log('[VOICE] Duplicate response prevented:', text.substring(0, 50) + '...');
+      return;
+    }
 
     this.interrupt();
     this.setState(VoiceState.SPEAKING);
 
-    // Set flag to prevent audio feedback loop
+    // Set flag to prevent audio feedback loop - SET BEFORE starting to speak
     this.isCurrentlySpeaking = true;
 
-    // OPTIMIZED: Start speaking faster with shorter initial chunks
-    const chunks = this.splitTextIntoChunks(text, 150); // Reduced from 200
+    // Set a temporary deaf period to prevent audio feedback (500ms)
+    this.ignoreInputUntil = Date.now() + 500;
 
-    if (this.config.voiceType === 'SYSTEM') {
-      await this.speakWithSystemVoice(chunks);
-    } else if (this.config.voiceType === 'PIPER') {
-      await this.speakWithPiper(text);
-    } else {
-      await this.speakWithNeural(chunks);
+    // Store the spoken text and timestamp
+    this.lastSpokenText = text;
+    this.lastSpokenTimestamp = now;
+
+    try {
+      // OPTIMIZED: Start speaking faster with shorter initial chunks
+      const chunks = this.splitTextIntoChunks(text, 150); // Reduced from 200
+
+      if (this.config.voiceType === 'SYSTEM') {
+        await this.speakWithSystemVoice(chunks);
+      } else if (this.config.voiceType === 'PIPER') {
+        await this.speakWithPiper(text);
+      } else {
+        await this.speakWithNeural(chunks);
+      }
+    } catch (error) {
+      console.error('[VOICE] Error during speech:', error);
+      // Still reset the speaking flag even if there's an error
+      this.isCurrentlySpeaking = false;
+      // Set state back to IDLE in case of error
+      if (this.state === VoiceState.SPEAKING) {
+        this.setState(VoiceState.IDLE);
+      }
+      throw error; // Re-throw to let caller handle the error
     }
 
-    // Clear the flag after speaking is complete
+    // Clear the speaking flag after speaking is complete
     this.isCurrentlySpeaking = false;
+
+    // Ensure state is properly reset after speaking
+    // Only set to IDLE if we're still in SPEAKING state (not interrupted)
+    if (this.state === VoiceState.SPEAKING) {
+      this.setState(VoiceState.IDLE);
+    }
   }
   
   /**
@@ -710,10 +838,23 @@ class VoiceCoreOptimized {
 
   private async speakWithSystemVoice(chunks: string[]): Promise<void> {
     for (const chunk of chunks) {
+      // Enhance the text for more natural speech
+      const enhancedText = enhancedTTS.enhanceTextForNaturalSpeech(chunk);
+
+      // Clean SSML tags to prevent them from being read literally
+      const cleanText = enhancedTTS.cleanSSML(enhancedText);
+
       await new Promise<void>((resolve) => {
-        const utterance = new SpeechSynthesisUtterance(chunk);
-        utterance.rate = this.config.rate;
-        utterance.pitch = this.config.pitch;
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+
+        // Apply enhanced parameters
+        const params = enhancedTTS.generateSpeechParameters();
+        utterance.rate = params.rate;
+        utterance.pitch = params.pitch;
+        utterance.volume = params.volume;
+
+        // Ensure the rate is appropriately slowed down for natural speech
+        utterance.rate = Math.min(0.9, params.rate); // Cap at 0.9 for natural flow
 
         const voices = this.synthesis.getVoices();
         const preferredVoice = voices.find(v => v.name === this.config.voiceName) || voices[0];
@@ -732,14 +873,19 @@ class VoiceCoreOptimized {
       });
     }
 
-    // Clear the speaking flag when done
-    this.isCurrentlySpeaking = false;
-    this.setState(VoiceState.IDLE);
-    conversation.addTurn('JARVIS', chunks.join(' '));
+    // Don't change global state flags here - let the main speak() function handle that
+    // NOTE: conversation.addTurn('JARVIS', ...) is called in App.tsx processKernelRequest
+    // to avoid duplicate conversation entries
   }
 
   private async speakWithPiper(text: string): Promise<void> {
     console.log('[VOICE] Attempting to speak with Piper TTS');
+
+    // Enhance the text for more natural speech
+    const enhancedText = enhancedTTS.enhanceTextForNaturalSpeech(text);
+
+    // Clean SSML tags to prevent them from being read literally
+    const cleanText = enhancedTTS.cleanSSML(enhancedText);
 
     const launcherStatus = piperLauncher.getStatus();
     console.log('[VOICE] Piper launcher status:', launcherStatus);
@@ -749,7 +895,7 @@ class VoiceCoreOptimized {
       const started = await piperLauncher.startServer();
       if (!started) {
         console.warn('[VOICE] Piper auto-start failed, falling back to system voice');
-        await this.speakWithSystemVoice([text]);
+        await this.speakWithSystemVoice([cleanText]);
         return;
       }
 
@@ -763,16 +909,15 @@ class VoiceCoreOptimized {
 
     if (!isAvailable) {
       console.warn('[VOICE] Piper server is not responding, falling back to system voice');
-      await this.speakWithSystemVoice([text]);
+      await this.speakWithSystemVoice([cleanText]);
       return;
     }
 
     let success = false;
     try {
-      success = await piperTTS.speak(text, () => {
-        // Clear the speaking flag when done
-        this.isCurrentlySpeaking = false;
-        this.setState(VoiceState.IDLE);
+      success = await piperTTS.speak(cleanText, () => {
+        // The callback is called when speaking is done, but don't change global state here
+        // Let the main speak() function handle state management
       });
     } catch (error) {
       console.error('[VOICE] Piper TTS error:', error);
@@ -783,10 +928,10 @@ class VoiceCoreOptimized {
 
     if (!success) {
       console.warn('[VOICE] Piper TTS failed, falling back to system voice');
-      await this.speakWithSystemVoice([text]);
-    } else {
-      conversation.addTurn('JARVIS', text);
+      await this.speakWithSystemVoice([cleanText]);
     }
+    // NOTE: conversation.addTurn('JARVIS', ...) is called in App.tsx processKernelRequest
+    // to avoid duplicate conversation entries
   }
 
   private async speakWithNeural(chunks: string[]): Promise<void> {
@@ -799,7 +944,7 @@ class VoiceCoreOptimized {
 
     try {
       let apiKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
-      
+
       if (!apiKey) {
         const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
         if (storedKey) {
@@ -817,11 +962,17 @@ class VoiceCoreOptimized {
       }
 
       const ai = new GoogleGenAI({ apiKey });
-      
+
       for (const chunk of chunks) {
+        // Enhance the text for more natural speech
+        const enhancedText = enhancedTTS.enhanceTextForNaturalSpeech(chunk);
+
+        // Clean SSML tags to prevent them from being read literally
+        const cleanText = enhancedTTS.cleanSSML(enhancedText);
+
         const response = await ai.models.generateContent({
           model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: `Say naturally: ${chunk}` }] }],
+          contents: [{ parts: [{ text: `Say naturally with emotion: ${cleanText}` }] }],
           config: {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
@@ -850,26 +1001,32 @@ class VoiceCoreOptimized {
         await this.playAudioBuffer(audioBuffer, audioCtx);
       }
 
-      // Clear the speaking flag when done
-      this.isCurrentlySpeaking = false;
-      this.setState(VoiceState.IDLE);
-      conversation.addTurn('JARVIS', chunks.join(' '));
+      // NOTE: conversation.addTurn('JARVIS', ...) is called in App.tsx processKernelRequest
+      // to avoid duplicate conversation entries
 
     } catch (e: any) {
       console.error("Neural TTS Failed:", e);
-      // Clear the speaking flag even if there's an error
-      this.isCurrentlySpeaking = false;
+      // Don't change the speaking flag here - let the main speak() function handle that
       await this.speakWithSystemVoice(chunks);
     }
   }
 
   private playAudioBuffer(buffer: AudioBuffer, ctx: AudioContext): Promise<void> {
-    return new Promise((resolve) => {
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      source.onended = () => resolve();
-      source.start();
+    return new Promise((resolve, reject) => {
+      try {
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.onended = () => resolve();
+        source.onerror = (err) => {
+          console.error('[VOICE] Audio playback error:', err);
+          reject(err);
+        };
+        source.start();
+      } catch (err) {
+        console.error('[VOICE] Failed to start audio playback:', err);
+        reject(err);
+      }
     });
   }
 
@@ -877,8 +1034,8 @@ class VoiceCoreOptimized {
 
   private handleResult(event: SpeechRecognitionEvent) {
     // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
-    if (this.isCurrentlySpeaking) {
-      console.log('[VOICE] Ignoring audio input - JARVIS is currently speaking');
+    if (this.isCurrentlySpeaking || Date.now() < this.ignoreInputUntil) {
+      console.log('[VOICE] Ignoring audio input - JARVIS is currently speaking or in deaf period');
       return;
     }
 
@@ -901,15 +1058,40 @@ class VoiceCoreOptimized {
     this.emitTranscript(transcript, !!finalTranscript);
 
     // Handle interruptions
+    // IMPORTANT: Don't process interrupt phrases when JARVIS is speaking to avoid audio feedback
+    // If JARVIS is speaking, any transcript is likely audio feedback of its own voice
     if (this.state === VoiceState.SPEAKING && finalTranscript) {
-      const interruptPhrases = ['stop', 'cancel', 'shut up', 'be quiet', 'enough', 'okay stop', 'jarvis stop'];
-      const shouldInterrupt = interruptPhrases.some(phrase => transcript.includes(phrase));
+      console.log('[VOICE] Audio feedback detected - ignoring transcript while speaking:', transcript);
+      return;
+    }
+
+    // Only process interrupt phrases when not speaking
+    if (this.state !== VoiceState.SPEAKING && finalTranscript) {
+      const interruptPhrases = [
+        'stop',
+        'cancel',
+        'shut up',
+        'be quiet',
+        'enough',
+        'okay stop',
+        'jarvis stop',
+        'jarvis cancel',
+        'cancel that',
+        'never mind',
+        'stop talking',
+        'hold on'
+      ];
+
+      // Convert transcript to lowercase for case-insensitive matching
+      const lowerTranscript = transcript.toLowerCase();
+      const shouldInterrupt = interruptPhrases.some(phrase => lowerTranscript.includes(phrase.toLowerCase()));
+
       if (shouldInterrupt) {
         this.interrupt();
         this.setState(VoiceState.LISTENING);
+        console.log('[VOICE] Interrupted by user command');
         return;
       }
-      return;
     }
 
     // Handle wake word detection - IMPROVED with fuzzy matching
@@ -964,10 +1146,66 @@ class VoiceCoreOptimized {
         // Use sanitized text
         cleanText = validation.sanitized;
 
+        // Prevent duplicate command callbacks for the same text within a short timeframe
+        const now = Date.now();
+
+        // Create a hash for the command to prevent duplicates
+        const commandHash = this.createCommandHash(cleanText);
+
+        // Check if this command was recently processed (within 2 seconds)
+        const recentMatch = this.recentCommands.find(
+          cmd => cmd.text === cleanText && (now - cmd.timestamp) < 2000
+        );
+
+        // Also check the hash-based duplicate prevention
+        const isDuplicateHash = this.voiceCommandHashes.has(commandHash) &&
+                               (now - this.lastProcessedTime) < this.DUPLICATE_COMMAND_WINDOW;
+
+        if (recentMatch || isDuplicateHash) {
+          console.log('[VOICE] Duplicate command ignored:', cleanText);
+          return;
+        }
+
+        // Add this command to the recent commands list
+        this.recentCommands.push({ text: cleanText, timestamp: now });
+
+        // Add the command hash to prevent future duplicates
+        this.voiceCommandHashes.set(commandHash, now);
+
+        // Clean up old commands (older than 3 seconds)
+        this.recentCommands = this.recentCommands.filter(
+          cmd => (now - cmd.timestamp) < 3000
+        );
+
+        // Clean up old command hashes periodically
+        this.cleanupOldCommandHashes(now);
+
+        this.lastProcessedText = cleanText;
+        this.lastProcessedTime = now;
+
         this.setState(VoiceState.PROCESSING);
-        console.log('[VOICE] Adding turn to conversation and calling command callback:', cleanText);
-        conversation.addTurn('USER', cleanText);
-        this.onCommandCallback?.(cleanText);
+        console.log('[VOICE] Calling command callback:', cleanText);
+        // NOTE: conversation.addTurn('USER', cleanText) is called in App.tsx processKernelRequest
+        // to avoid duplicate conversation entries
+
+        // Store the command callback to prevent duplicate calls
+        const commandCallback = this.onCommandCallback;
+        if (commandCallback) {
+          // Call the command callback with the clean text
+          commandCallback(cleanText);
+        }
+
+        // Add a small delay to ensure the command is fully processed before accepting new ones
+        setTimeout(() => {
+          // Clean up old commands again after delay
+          const laterTime = Date.now();
+          this.recentCommands = this.recentCommands.filter(
+            cmd => (laterTime - cmd.timestamp) < 3000
+          );
+
+          // Clean up old command hashes based on time
+          this.cleanupOldCommandHashes(laterTime);
+        }, 1500);
       } else {
         // Only wake word was said, no command - stay in LISTENING for a bit
         console.log('[VOICE] Only wake word detected, waiting for command...');
@@ -1084,23 +1322,20 @@ class VoiceCoreOptimized {
   private async tryWhisperFallback(): Promise<boolean> {
     console.log('[VOICE] Checking Whisper availability...');
     const available = await whisperSTT.isAvailable();
-    
+
     if (available) {
       console.log('[VOICE] Whisper server available! Switching to Whisper STT.');
       this.whisperAvailable = true;
       this.useWhisperFallback = true;
-      
-      // Stop browser recognition
-      if (this.recognition) {
-        try { this.recognition.abort(); } catch(e) {}
-        this.recognition = null;
-      }
-      
+
+      // Ensure browser recognition is stopped
+      this.stopBrowserRecognition();
+
       // Start Whisper recording
       const started = await whisperSTT.startRecording((text, isFinal) => {
         this.handleWhisperTranscript(text, isFinal);
       });
-      
+
       if (started) {
         console.log('[VOICE] Whisper STT started successfully');
         this.networkErrorCount = 0; // Reset error count
@@ -1115,23 +1350,84 @@ class VoiceCoreOptimized {
       return false;
     }
   }
+
+  /**
+   * Ensure browser recognition is properly stopped
+   */
+  private stopBrowserRecognition(): void {
+    if (this.recognition) {
+      try {
+        this.recognition.onend = () => {}; // Clear event handlers
+        this.recognition.abort();
+      } catch(e) {
+        console.warn('[VOICE] Error stopping browser recognition:', e);
+      }
+      this.recognition = null;
+    }
+  }
+
+  /**
+   * Ensure Whisper STT is properly stopped
+   */
+  private async stopWhisperSTT(): Promise<void> {
+    try {
+      await whisperSTT.stopRecording();
+      this.useWhisperFallback = false;
+    } catch(e) {
+      console.warn('[VOICE] Error stopping Whisper STT:', e);
+    }
+  }
   
   /**
    * Handle transcript from Whisper
    */
   private handleWhisperTranscript(text: string, isFinal: boolean): void {
-    // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
-    if (this.isCurrentlySpeaking) {
-      console.log('[VOICE] Ignoring Whisper input - JARVIS is currently speaking');
+    const transcript = text.toLowerCase().trim();
+    if (!transcript) return;
+
+    // Check for interrupt commands even if JARVIS is speaking
+    const interruptPhrases = [
+      'stop',
+      'cancel',
+      'shut up',
+      'be quiet',
+      'enough',
+      'okay stop',
+      'jarvis stop',
+      'jarvis cancel',
+      'cancel that',
+      'never mind',
+      'stop talking',
+      'hold on'
+    ];
+
+    const shouldInterrupt = interruptPhrases.some(phrase => transcript.includes(phrase.toLowerCase()));
+
+    // Handle interrupt commands, but NOT when JARVIS is speaking to avoid audio feedback
+    // If JARVIS is speaking, any transcript is likely audio feedback of its own voice
+    if (shouldInterrupt && this.isCurrentlySpeaking) {
+      console.log('[VOICE] Audio feedback detected - ignoring interrupt while speaking:', transcript);
+      return;
+    }
+
+    // Handle interrupt commands only when not speaking
+    if (shouldInterrupt && !this.isCurrentlySpeaking) {
+      console.log('[VOICE] Interrupt command detected');
+      this.interrupt();
+      this.setState(VoiceState.LISTENING);
+      console.log('[VOICE] Interrupted by user command');
+      return;
+    }
+
+    // Prevent processing other audio when JARVIS is speaking to avoid feedback loop
+    if (this.isCurrentlySpeaking || Date.now() < this.ignoreInputUntil) {
+      console.log('[VOICE] Ignoring Whisper input - JARVIS is currently speaking or in deaf period');
       return;
     }
 
     console.log('[VOICE] Whisper transcript:', text, 'isFinal:', isFinal);
 
     if (!isFinal) return; // Only process final transcripts
-
-    const transcript = text.toLowerCase().trim();
-    if (!transcript) return;
 
     // Emit for UI display
     this.emitTranscript(transcript, true);
@@ -1174,20 +1470,65 @@ class VoiceCoreOptimized {
           return;
         }
 
-        cleanText = validation.sanitized;
+        // Get current timestamp for duplicate detection
+        const now = Date.now();
+
+        // Create a hash for the command to prevent duplicates
+        const commandHash = this.createCommandHash(cleanText);
+
+        // Check if this command was recently processed (within 2 seconds)
+        const recentMatch = this.recentCommands.find(
+          cmd => cmd.text === cleanText && (now - cmd.timestamp) < 2000
+        );
+
+        // Also check the hash-based duplicate prevention
+        const existingHashTime = this.voiceCommandHashes.get(commandHash);
+        const isDuplicateHash = existingHashTime !== undefined &&
+                               (now - existingHashTime) < this.DUPLICATE_COMMAND_WINDOW;
+
+        if (recentMatch || isDuplicateHash) {
+          console.log('[VOICE] Duplicate command ignored:', cleanText);
+          return;
+        }
+
+        // Add this command to the recent commands list
+        this.recentCommands.push({ text: cleanText, timestamp: now });
+
+        // Add the command hash to prevent future duplicates
+        this.voiceCommandHashes.set(commandHash, now);
+
+        // Clean up old commands (older than 3 seconds)
+        this.recentCommands = this.recentCommands.filter(
+          cmd => (now - cmd.timestamp) < 3000
+        );
+
+        // Clean up old command hashes periodically
+        this.cleanupOldCommandHashes(now);
+
+        this.lastProcessedText = cleanText;
+        this.lastProcessedTime = now;
+
         this.setState(VoiceState.PROCESSING);
-        console.log('[VOICE] Adding turn and calling callback:', cleanText);
-        conversation.addTurn('USER', cleanText);
+        console.log('[VOICE] Calling callback:', cleanText);
+        // NOTE: conversation.addTurn('USER', cleanText) is called in App.tsx processKernelRequest
+        // to avoid duplicate conversation entries
         this.onCommandCallback?.(cleanText);
+
+        // Add a small delay to ensure the command is fully processed before accepting new ones
+        setTimeout(() => {
+          // Clean up old commands again after delay
+          const laterTime = Date.now();
+          this.recentCommands = this.recentCommands.filter(
+            cmd => (laterTime - cmd.timestamp) < 3000
+          );
+
+          // Clean up old command hashes based on time
+          this.cleanupOldCommandHashes(laterTime);
+        }, 1500);
       }
     }
   }
   
-  private wakeWordWorker: Worker | null = null;
-
-  // Initialize the Web Worker for wake word detection - this was added to the original constructor
-  // The Web Worker functionality has been moved to the original constructor at line 105
-
   /**
    * IMPROVED: Fuzzy wake word detection to handle transcription variations
    * Handles cases like "jarvis", "jarvis", "jarvis", "jarves", "jarvice", etc.
@@ -1196,8 +1537,8 @@ class VoiceCoreOptimized {
     const lowerTranscript = transcript.toLowerCase().trim();
     const lowerWakeWord = this.config.wakeWord.toLowerCase();
 
-    // Exact matches
-    const exactMatches = ['jarvis', 'jarvis', lowerWakeWord];
+    // Exact matches - use Set to avoid duplicates
+    const exactMatches = new Set(['jarvis', lowerWakeWord]);
     for (const ww of exactMatches) {
       if (lowerTranscript.includes(ww)) return true;
     }
@@ -1207,7 +1548,7 @@ class VoiceCoreOptimized {
       'jarves', 'jarvice', 'jarviss', 'jarvess', 'jarviz',
       'jarvus', 'jarv', 'jarvish', 'jervis', 'jerviss',
       'garvis', 'garves', 'carvis', 'charvis', 'jarveis',
-      'jarvess', 'jarvies', 'jarviss', 'jarviss'
+      'jarvies'
     ];
 
     for (const variation of variations) {
@@ -1265,6 +1606,44 @@ class VoiceCoreOptimized {
 
   
   /**
+   * Create a hash for a command to prevent duplicates
+   */
+  private createCommandHash(text: string): string {
+    // Simple hash function to create a unique identifier for the command
+    let hash = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0; // Convert to 32bit integer
+    }
+    return hash.toString();
+  }
+
+  /**
+   * Clean up old command hashes based on time
+   */
+  private cleanupOldCommandHashes(now: number): void {
+    // Clean up command hashes that are older than the duplicate window
+    for (const [hash, timestamp] of this.voiceCommandHashes.entries()) {
+      if (now - timestamp > this.DUPLICATE_COMMAND_WINDOW) {
+        this.voiceCommandHashes.delete(hash);
+      }
+    }
+
+    // Also limit the total number of hashes to prevent memory buildup
+    if (this.voiceCommandHashes.size > 100) {
+      // Remove oldest entries if we exceed the limit
+      const entries = Array.from(this.voiceCommandHashes.entries())
+        .sort((a, b) => a[1] - b[1]) // Sort by timestamp (oldest first)
+        .slice(0, Math.floor(this.voiceCommandHashes.size / 2)); // Remove oldest half
+
+      entries.forEach(([hash, _]) => {
+        this.voiceCommandHashes.delete(hash);
+      });
+    }
+  }
+
+  /**
    * Check if Whisper is being used as fallback
    */
   public isUsingWhisper(): boolean {
@@ -1300,8 +1679,7 @@ class VoiceCoreOptimized {
     
     // Stop current STT
     if (this.useWhisperFallback) {
-      whisperSTT.stopRecording();
-      this.useWhisperFallback = false;
+      await this.stopWhisperSTT();
     }
     if (this.recognition) {
       try { this.recognition.abort(); } catch(e) {}
@@ -1334,3 +1712,6 @@ class VoiceCoreOptimized {
 }
 
 export const voice = new VoiceCoreOptimized();
+
+// Export for use in other modules
+export default voice;

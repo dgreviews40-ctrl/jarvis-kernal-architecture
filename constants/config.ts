@@ -495,6 +495,124 @@ export const UI = {
   VIRTUAL_LIST_OVERSCAN: 5,
 } as const;
 
+// ==================== VECTOR DB (v1.4.0) ====================
+
+export const VECTOR_DB = {
+  /** Embedding dimension (384 for all-MiniLM-L6-v2) */
+  EMBEDDING_DIMENSION: 384,
+  
+  /** Maximum vectors in memory cache */
+  MAX_CACHE_SIZE: 1000,
+  
+  /** Similarity threshold for semantic search */
+  SIMILARITY_THRESHOLD: 0.7,
+  
+  /** HNSW index parameters */
+  HNSW: {
+    M: 16,              // Number of bi-directional links
+    efConstruction: 200, // Size of dynamic candidate list
+    efSearch: 100,      // Size of search candidate list
+  },
+  
+  /** Memory compression age (days) */
+  COMPRESSION_AGE_DAYS: 30,
+  
+  /** Archive age (days) */
+  ARCHIVE_AGE_DAYS: 365,
+  
+  /** IndexedDB database name */
+  DB_NAME: 'jarvis_vector_db_v1',
+  
+  /** IndexedDB store name */
+  STORE_NAME: 'vectors',
+  
+  /** IndexedDB version */
+  DB_VERSION: 1,
+  
+  /** Batch size for bulk operations */
+  BATCH_SIZE: 100,
+  
+  /** Sync interval (ms) */
+  SYNC_INTERVAL_MS: 30000,
+} as const;
+
+// ==================== CONTEXT WINDOW (v1.4.0) ====================
+
+export const CONTEXT_WINDOW = {
+  /** Gemini 2.0 Flash context limit */
+  GEMINI_FLASH_LIMIT: 1_000_000,
+  
+  /** Gemini 2.5 Flash context limit */
+  GEMINI_25_FLASH_LIMIT: 1_000_000,
+  
+  /** Ollama default context limit */
+  OLLAMA_DEFAULT_LIMIT: 8192,
+  
+  /** Reserved tokens for system prompt */
+  SYSTEM_PROMPT_RESERVE: 1000,
+  
+  /** Reserved tokens for response */
+  RESPONSE_RESERVE: 2000,
+  
+  /** Token estimation ratio (chars per token) */
+  CHARS_PER_TOKEN: 4,
+  
+  /** Summary trigger threshold (0-1) */
+  SUMMARY_THRESHOLD: 0.8,
+  
+  /** Max summary length (tokens) */
+  MAX_SUMMARY_TOKENS: 500,
+  
+  /** Conversation turn priority decay */
+  TURN_DECAY_FACTOR: 0.9,
+  
+  /** Minimum turns to keep */
+  MIN_TURNS: 2,
+  
+  /** Maximum turns before forced summary */
+  MAX_TURNS_BEFORE_SUMMARY: 20,
+} as const;
+
+// ==================== AGENT SYSTEM (v1.4.2) ====================
+
+export const AGENT = {
+  /** Maximum concurrent tasks */
+  MAX_CONCURRENT_TASKS: 3,
+  
+  /** Default max retries per task */
+  DEFAULT_MAX_RETRIES: 3,
+  
+  /** Base retry delay (ms) */
+  RETRY_DELAY_MS: 1000,
+  
+  /** Maximum retry delay (ms) */
+  MAX_RETRY_DELAY_MS: 30000,
+  
+  /** Enable parallel task execution */
+  ENABLE_PARALLEL_EXECUTION: true,
+  
+  /** Progress update interval (ms) */
+  PROGRESS_UPDATE_INTERVAL_MS: 2000,
+  
+  /** Require confirmation for high/critical priority */
+  REQUIRE_CONFIRMATION_FOR: ['high', 'critical'] as const,
+  
+  /** Maximum goal execution time (ms) */
+  MAX_GOAL_EXECUTION_TIME_MS: 5 * 60 * 1000, // 5 minutes
+  
+  /** Task decomposition max tasks */
+  MAX_DECOMPOSED_TASKS: 10,
+  
+  /** Task decomposition min tasks */
+  MIN_DECOMPOSED_TASKS: 1,
+  
+  /** Enable agent for complex queries */
+  ENABLE_AUTO_AGENT_DETECTION: true,
+  
+  /** Complexity threshold for auto-agent */
+  COMPLEXITY_THRESHOLD: 0.7,
+} as const;
+
 // ==================== EXPORT ALL ====================
 
 export const CONFIG = {

@@ -194,31 +194,64 @@ class WhisperSTTService {
   /**
    * Stop recording
    */
-  public stopRecording(): void {
+  public async stopRecording(): Promise<void> {
     this.isRecording = false;
-    
+
     // Clear restart interval
     if (this.restartInterval) {
       clearInterval(this.restartInterval);
       this.restartInterval = null;
     }
-    
+
+    // Stop media recorder properly
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
+      try {
+        this.mediaRecorder.stop();
+      } catch (e) {
+        console.warn('[WHISPER] Error stopping media recorder:', e);
+      }
     }
-    
+
     // Stop all tracks to release microphone
-    if (this.mediaRecorder?.stream) {
-      this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    if (this.stream) {
+      try {
+        this.stream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {
+            console.warn('[WHISPER] Error stopping track:', e);
+          }
+        });
+      } catch (e) {
+        console.warn('[WHISPER] Error stopping stream tracks:', e);
+      }
+      this.stream = null;
     }
-    
+
+    // Clean up worklet node
+    if (this.workletNode) {
+      try {
+        this.workletNode.disconnect();
+      } catch (e) {
+        console.warn('[WHISPER] Error disconnecting worklet node:', e);
+      }
+      this.workletNode = null;
+    }
+
     // Clean up audio context
     if (this.audioContext) {
-      this.audioContext.close().catch(() => {});
+      try {
+        await this.audioContext.close();
+      } catch (e) {
+        console.warn('[WHISPER] Error closing audio context:', e);
+      }
       this.audioContext = null;
     }
-    
+
+    // Null out mediaRecorder to release reference
+    this.mediaRecorder = null;
     this.previousChunk = null;
+    this.audioChunks = [];
     console.log('[WHISPER] Recording stopped');
   }
 

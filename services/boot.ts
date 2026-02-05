@@ -1,7 +1,7 @@
 /**
- * Boot Orchestrator - Kernel v1.2
- * Enhanced 8-phase boot sequence with v1.2 features
- * 
+ * Boot Orchestrator - Kernel v1.3
+ * Enhanced 8-phase boot sequence with v1.3 features
+ *
  * Phases:
  * 0. SYSTEM CHECK - Hardware and environment validation
  * 1. KERNEL MOUNT - Core services initialization
@@ -44,7 +44,7 @@ export const BOOT_PHASES_V12: BootPhase[] = [
       "Initializing Event Bus...",
       "Mounting Logger (level: DEBUG)",
       "Loading Exception Handlers",
-      "Version Check: v1.2.0"
+      "Version Check: v1.5.0"
     ] 
   },
   { 
@@ -116,7 +116,7 @@ export const BOOT_PHASES_V12: BootPhase[] = [
       "Registering API Endpoints...",
       "Setting up Authentication",
       "Configuring Rate Limiting",
-      "Kernel API: v1.2.0 READY"
+      "Kernel API: v1.5.0 READY"
     ] 
   },
   { 
@@ -150,7 +150,7 @@ export const BOOT_PHASES_V12: BootPhase[] = [
       "Opening Localhost HTTP Server...",
       "Binding WebSocket Port 8080...",
       "Unlocking Dashboard UI",
-      "JARVIS Kernel v1.2.0 ONLINE"
+      "JARVIS Kernel v1.5.0 ONLINE"
     ] 
   }
 ];
@@ -247,7 +247,7 @@ class BootOrchestrator {
     this.notify(BOOT_PHASES_V12[BOOT_PHASES_V12.length - 1], BootState.RUNNING);
     this.isBooting = false;
     
-    console.log(`[Boot] JARVIS Kernel v1.2.0 booted in ${totalBootTime}ms`);
+    console.log(`[Boot] JARVIS Kernel v1.5.0 booted in ${totalBootTime}ms`);
   }
 
   public getBootProgress(): number {
@@ -321,7 +321,7 @@ class BootOrchestrator {
     const store = useKernelStore.getState();
     
     // Verify version compatibility
-    if (STORE_VERSION.major !== 1 || STORE_VERSION.minor !== 2) {
+    if (STORE_VERSION.major !== 1 || STORE_VERSION.minor !== 3) {
       phaseLog('KERNEL MOUNT', 'WARNING: Store version mismatch');
     }
   }

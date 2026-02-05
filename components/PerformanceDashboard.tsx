@@ -99,7 +99,7 @@ export const PerformanceDashboard: React.FC = () => {
   const handleSetBaseline = () => {
     performanceMonitor.setBaseline();
     refreshStats();
-    logger.info('[PERFORMANCE] Baseline set from dashboard', { source: 'PERFORMANCE' });
+    logger.log('SYSTEM', 'Performance baseline set from dashboard', 'info');
   };
 
   // Export data

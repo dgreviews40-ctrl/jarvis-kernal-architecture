@@ -9,8 +9,13 @@ export default defineConfig(({ mode }) => {
     
     return {
       server: {
-        port: 3000,
+        port: 3001,
         host: '0.0.0.0',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       },
       plugins: [
         react(),
@@ -22,7 +27,8 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.VITE_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY)
+        'process.env.VITE_API_KEY': JSON.stringify(env.VITE_GEMINI_API_KEY),
+        'process.env.VITE_OPENAI_API_KEY': JSON.stringify(env.VITE_OPENAI_API_KEY)
       },
       resolve: {
         alias: {
@@ -32,6 +38,13 @@ export default defineConfig(({ mode }) => {
       build: {
         rollupOptions: {
           output: {
+            entryFileNames: 'assets/[name]-[hash]-v2.js',
+            chunkFileNames: 'assets/[name]-[hash]-v2.js',
+            assetFileNames: (assetInfo) => {
+              const info = assetInfo.name.split('.');
+              const ext = info[info.length - 1];
+              return `assets/[name]-[hash]-v2[extname]`;
+            },
             manualChunks: {
               // Core vendor chunks
               'vendor-react': ['react', 'react-dom'],

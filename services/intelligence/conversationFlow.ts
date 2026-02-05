@@ -214,9 +214,76 @@ export class ConversationFlowManager {
     type: 'direct' | 'exploratory' | 'clarifying' | 'concluding' | 're-engaging';
     tone: 'enthusiastic' | 'neutral' | 'supportive' | 'concise';
   }): string {
-    // This would integrate with the AI response
-    // For now, return strategic guidance
-    return `[${strategy.type.toUpperCase()}|${strategy.tone.toUpperCase()}]`;
+    // Generate more sophisticated responses that match Iron Man JARVIS
+    const responses: Record<string, string[]> = {
+      'direct_enthusiastic': [
+        "Certainly, sir. I'm on it.",
+        "Right away, sir. I'll handle that immediately.",
+        "Of course, sir. Processing now.",
+        "Understood, sir. I'll take care of that for you.",
+        "Affirmative, sir. Executing now."
+      ],
+      'direct_neutral': [
+        "I understand, sir. I'll proceed.",
+        "Acknowledged, sir. Working on it.",
+        "Noted, sir. I'll take care of that.",
+        "Understood, sir. I'll handle that.",
+        "Very well, sir. I'll process that."
+      ],
+      'direct_supportive': [
+        "I'm here to assist, sir. Proceeding.",
+        "As you wish, sir. I'll take care of it.",
+        "I'll handle that for you, sir.",
+        "Consider it done, sir.",
+        "I'm on it, sir. Right away."
+      ],
+      'direct_concise': [
+        "Understood.",
+        "Processing.",
+        "Affirmative.",
+        "Acknowledged.",
+        "Done."
+      ],
+      'exploratory_enthusiastic': [
+        "That's an interesting angle, sir. Would you like me to explore related possibilities?",
+        "Fascinating, sir. Shall I investigate further?",
+        "I see potential here, sir. Would you like me to expand on this?",
+        "That's quite intriguing, sir. May I suggest some related approaches?",
+        "Excellent point, sir. Should I look into additional implications?"
+      ],
+      'exploratory_neutral': [
+        "I can see several directions we might take, sir. Which would you prefer?",
+        "There are multiple approaches to consider, sir. What's your preference?",
+        "I've identified several possibilities, sir. How shall we proceed?",
+        "There are related aspects we could examine, sir. What interests you most?",
+        "I can extend this analysis, sir. What direction would you like to pursue?"
+      ],
+      'exploratory_supportive': [
+        "I'd be happy to delve deeper, sir. What aspect interests you most?",
+        "I can certainly expand on this, sir. What would you like to know?",
+        "I'm glad to explore this further, sir. What direction appeals to you?",
+        "I'd be pleased to investigate further, sir. What would you like to examine?",
+        "I'm ready to dig deeper, sir. What aspect should we focus on?"
+      ],
+      're-engaging_enthusiastic': [
+        "Welcome back, sir. I trust I may be of assistance?",
+        "Good to have your attention again, sir. How may I serve?",
+        "I hope I can be of use, sir. What's on your mind?",
+        "At your service again, sir. How can I help?",
+        "I'm ready when you are, sir. What would you like to accomplish?"
+      ],
+      'concluding_supportive': [
+        "Is there anything else I can assist with, sir?",
+        "Let me know if there's more I can do for you, sir.",
+        "I'm here if you need anything further, sir.",
+        "Please don't hesitate to ask if you require additional assistance, sir.",
+        "I await your further instructions, sir."
+      ]
+    };
+
+    const key = `${strategy.type}_${strategy.tone}`;
+    const availableResponses = responses[key] || responses['direct_neutral'];
+    return availableResponses[Math.floor(Math.random() * availableResponses.length)];
   }
 
   /**

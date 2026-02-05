@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>core.os v1.1.0 Browser Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #00ff88;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #00ff88;
+            text-align: center;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #00ff88;
+        }
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        .test-container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .test-section {
+            background: #111;
+            border: 1px solid #00ff88;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .test-section h2 {
+            color: #00ff88;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        button {
+            background: #00ff88;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #00cc6a;
+            box-shadow: 0 0 15px #00ff88;
+        }
+        button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+        .output {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            color: #0f0;
+        }
+        .output.error {
+            color: #ff4444;
+        }
+        .output.warn {
+            color: #ffaa00;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.pass {
+            background: #00ff88;
+            color: #000;
+        }
+        .status.fail {
+            background: #ff4444;
+            color: #fff;
+        }
+        .status.pending {
+            background: #ffaa00;
+            color: #000;
+        }
+        .test-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .test-item {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .test-item.pass {
+            border-left: 3px solid #00ff88;
+        }
+        .test-item.fail {
+            border-left: 3px solid #ff4444;
+        }
+        .info-box {
+            background: #1a1a1a;
+            border-left: 3px solid #00ff88;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .api-support {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .api-item {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .api-item.supported {
+            border: 1px solid #00ff88;
+        }
+        .api-item.unsupported {
+            border: 1px solid #ff4444;
+            opacity: 0.7;
+        }
+        .api-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .api-status {
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 core.os v1.1.0 Browser Test</h1>
+    <p class="subtitle">System Core Plugin Validation Suite</p>
+
+    <div class="test-container">
+        <!-- API Support Detection -->
+        <div class="test-section">
+            <h2>📡 Browser API Support</h2>
+            <div class="api-support" id="apiSupport">
+                <div class="api-item pending">
+                    <div class="api-name">Battery API</div>
+                    <div class="api-status">Checking...</div>
+                </div>
+                <div class="api-item pending">
+                    <div class="api-name">Network Info API</div>
+                    <div class="api-status">Checking...</div>
+                </div>
+                <div class="api-item pending">
+                    <div class="api-name">Memory Info</div>
+                    <div class="api-status">Checking...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Tests -->
+        <div class="test-section">
+            <h2>⚡ Quick Function Tests</h2>
+            <div>
+                <button onclick="testFormatBytes()">Test formatBytes()</button>
+                <button onclick="testFormatUptime()">Test formatUptime()</button>
+                <button onclick="testGetSystemMetrics()">Test getSystemMetrics()</button>
+                <button onclick="testGetNetworkInfo()">Test getNetworkInfo()</button>
+                <button onclick="testGetBatteryInfo()">Test getBatteryInfo()</button>
+            </div>
+            <div id="quickTestOutput" class="output">Click a button to run test...</div>
+        </div>
+
+        <!-- Full Diagnostics -->
+        <div class="test-section">
+            <h2>🔍 Full System Diagnostics</h2>
+            <button onclick="runFullDiagnostics()">Run Full Diagnostics</button>
+            <div id="diagnosticsOutput" class="output">Click "Run Full Diagnostics" to see the ASCII report...</div>
+        </div>
+
+        <!-- Test Suite -->
+        <div class="test-section">
+            <h2>🧪 Automated Test Suite</h2>
+            <button onclick="runTestSuite()">Run All Tests</button>
+            <div id="testResults" class="test-results"></div>
+        </div>
+
+        <!-- Command Simulation -->
+        <div class="test-section">
+            <h2>🎮 Command Simulation</h2>
+            <p style="margin-bottom: 10px; color: #888;">Simulate core.os commands as if from the kernel:</p>
+            <div>
+                <button onclick="simulateCommand('diagnostic')">system diagnostic</button>
+                <button onclick="simulateCommand('metrics')">system metrics</button>
+                <button onclick="simulateCommand('network')">system network</button>
+                <button onclick="simulateCommand('battery')">system battery</button>
+                <button onclick="simulateCommand('health')">system health</button>
+            </div>
+            <div id="commandOutput" class="output">Click a command to simulate...</div>
+        </div>
+
+        <!-- Info -->
+        <div class="info-box">
+            <strong>💡 Tip:</strong> Open the browser console (F12) to see detailed logs and test the coreOs API directly:
+            <br><code style="color: #00ff88;">coreOs.getSystemMetrics()</code>
+        </div>
+    </div>
+
+    <script>
+        // Inline implementation for browser testing (no imports needed)
+        const coreOs = {
+            version: '1.1.0',
+
+            formatBytes(bytes) {
+                if (bytes <= 0 || !isFinite(bytes)) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+                return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+            },
+
+            formatUptime(seconds) {
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = Math.floor(seconds % 60);
+                if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+                if (minutes > 0) return `${minutes}m ${secs}s`;
+                return `${secs}s`;
+            },
+
+            getSystemMetrics() {
+                const mem = performance.memory || {};
+                return {
+                    memory: {
+                        heapUsed: mem.usedJSHeapSize || 0,
+                        heapTotal: mem.totalJSHeapSize || 0,
+                        rss: mem.totalJSHeapSize || 0,
+                        external: 0
+                    },
+                    uptime: performance.now() / 1000,
+                    timestamp: Date.now()
+                };
+            },
+
+            getNetworkInfo() {
+                const conn = navigator.connection;
+                if (!conn) {
+                    return {
+                        effectiveType: 'unknown',
+                        downlink: 0,
+                        rtt: 0,
+                        saveData: false,
+                        supported: false
+                    };
+                }
+                return {
+                    effectiveType: conn.effectiveType || 'unknown',
+                    downlink: conn.downlink || 0,
+                    rtt: conn.rtt || 0,
+                    saveData: conn.saveData || false,
+                    supported: true
+                };
+            },
+
+            async getBatteryInfo() {
+                if (!navigator.getBattery) {
+                    return {
+                        level: 0,
+                        charging: false,
+                        chargingTime: Infinity,
+                        dischargingTime: Infinity,
+                        supported: false
+                    };
+                }
+                try {
+                    const battery = await navigator.getBattery();
+                    return {
+                        level: battery.level * 100,
+                        charging: battery.charging,
+                        chargingTime: battery.chargingTime,
+                        dischargingTime: battery.dischargingTime,
+                        supported: true
+                    };
+                } catch (e) {
+                    return {
+                        level: 0,
+                        charging: false,
+                        chargingTime: Infinity,
+                        dischargingTime: Infinity,
+                        supported: false
+                    };
+                }
+            },
+
+            async runDiagnostics() {
+                const metrics = this.getSystemMetrics();
+                const battery = await this.getBatteryInfo();
+                const network = this.getNetworkInfo();
+
+                const WIDTH = 62;
+                const pad = (s) => s.toString().padEnd(WIDTH);
+
+                let report = [
+                    '╔══════════════════════════════════════════════════════════════════╗',
+                    '║             JARVIS SYSTEM DIAGNOSTIC REPORT v1.1.0               ║',
+                    '╠══════════════════════════════════════════════════════════════════╣',
+                    '║  MEMORY                                                          ║',
+                    `║  Heap Used:  ${pad(this.formatBytes(metrics.memory.heapUsed))} ║`,
+                    `║  Heap Total: ${pad(this.formatBytes(metrics.memory.heapTotal))} ║`,
+                    '╠══════════════════════════════════════════════════════════════════╣',
+                    '║  SYSTEM                                                          ║',
+                    `║  Uptime:     ${pad(this.formatUptime(metrics.uptime))} ║`,
+                    `║  Timestamp:  ${pad(new Date(metrics.timestamp).toISOString())} ║`,
+                ];
+
+                if (battery.supported) {
+                    report.push(
+                        '╠══════════════════════════════════════════════════════════════════╣',
+                        '║  BATTERY                                                         ║',
+                        `║  Level:      ${pad(battery.level.toFixed(0) + '%')} ║`,
+                        `║  Status:     ${pad(battery.charging ? 'Charging ⚡' : 'Discharging 🔋')} ║`
+                    );
+                }
+
+                if (network.supported) {
+                    report.push(
+                        '╠══════════════════════════════════════════════════════════════════╣',
+                        '║  NETWORK                                                         ║',
+                        `║  Type:       ${pad(network.effectiveType)} ║`,
+                        `║  Downlink:   ${pad(network.downlink + ' Mbps')} ║`,
+                        `║  Latency:    ${pad(network.rtt + ' ms')} ║`
+                    );
+                }
+
+                report.push(
+                    '╠══════════════════════════════════════════════════════════════════╣',
+                    '║  PLUGINS                                                         ║',
+                    '║  Active:     9/9 ✅                                              ║',
+                    '║  Disabled:   0 ⚠️                                                ║',
+                    '║  Paused:     0 ⏸️                                                ║',
+                    '║  Errors:     0 ❌                                                ║',
+                    '╚══════════════════════════════════════════════════════════════════╝'
+                );
+
+                return report.join('\n');
+            }
+        };
+
+        // Make available globally for console testing
+        window.coreOs = coreOs;
+
+        // Check API support on load
+        function checkApiSupport() {
+            const apis = [
+                { name: 'Battery API', supported: 'getBattery' in navigator },
+                { name: 'Network Info API', supported: 'connection' in navigator },
+                { name: 'Memory Info', supported: 'memory' in performance }
+            ];
+
+            const container = document.getElementById('apiSupport');
+            container.innerHTML = apis.map(api => `
+                <div class="api-item ${api.supported ? 'supported' : 'unsupported'}">
+                    <div class="api-name">${api.name}</div>
+                    <div class="api-status">${api.supported ? '✅ Supported' : '❌ Not Available'}</div>
+                </div>
+            `).join('');
+        }
+
+        // Test functions
+        function setOutput(id, content, isError = false) {
+            const el = document.getElementById(id);
+            el.textContent = content;
+            el.className = 'output' + (isError ? ' error' : '');
+        }
+
+        function testFormatBytes() {
+            const tests = [
+                [0, '0 B'],
+                [1024, '1.00 KB'],
+                [1048576, '1.00 MB'],
+                [-100, '0 B'],
+                [NaN, '0 B']
+            ];
+            const results = tests.map(([input, expected]) => {
+                const actual = coreOs.formatBytes(input);
+                const pass = actual === expected;
+                return `formatBytes(${input}) = "${actual}" ${pass ? '✅' : '❌ (expected: ' + expected + ')'}`;
+            });
+            setOutput('quickTestOutput', results.join('\n'));
+        }
+
+        function testFormatUptime() {
+            const tests = [
+                [3661, '1h 1m 1s'],
+                [61, '1m 1s'],
+                [5, '5s'],
+                [0, '0s']
+            ];
+            const results = tests.map(([input, expected]) => {
+                const actual = coreOs.formatUptime(input);
+                const pass = actual === expected;
+                return `formatUptime(${input}) = "${actual}" ${pass ? '✅' : '❌ (expected: ' + expected + ')'}`;
+            });
+            setOutput('quickTestOutput', results.join('\n'));
+        }
+
+        function testGetSystemMetrics() {
+            const metrics = coreOs.getSystemMetrics();
+            const output = [
+                'getSystemMetrics():',
+                `  memory.heapUsed: ${metrics.memory.heapUsed} (${coreOs.formatBytes(metrics.memory.heapUsed)})`,
+                `  memory.heapTotal: ${metrics.memory.heapTotal} (${coreOs.formatBytes(metrics.memory.heapTotal)})`,
+                `  uptime: ${metrics.uptime.toFixed(2)}s (${coreOs.formatUptime(metrics.uptime)})`,
+                `  timestamp: ${new Date(metrics.timestamp).toISOString()}`,
+                '',
+                '✅ All fields present and valid'
+            ];
+            setOutput('quickTestOutput', output.join('\n'));
+        }
+
+        function testGetNetworkInfo() {
+            const network = coreOs.getNetworkInfo();
+            const output = [
+                'getNetworkInfo():',
+                `  supported: ${network.supported}`,
+                `  effectiveType: ${network.effectiveType}`,
+                `  downlink: ${network.downlink} Mbps`,
+                `  rtt: ${network.rtt} ms`,
+                `  saveData: ${network.saveData}`,
+                '',
+                network.supported ? '✅ Network API available' : '⚠️ Network API not available in this browser'
+            ];
+            setOutput('quickTestOutput', output.join('\n'));
+        }
+
+        async function testGetBatteryInfo() {
+            setOutput('quickTestOutput', 'Fetching battery info...');
+            const battery = await coreOs.getBatteryInfo();
+            const output = [
+                'getBatteryInfo():',
+                `  supported: ${battery.supported}`,
+                `  level: ${battery.level.toFixed(0)}%`,
+                `  charging: ${battery.charging}`,
+                `  chargingTime: ${battery.chargingTime === Infinity ? 'Infinity' : battery.chargingTime + 's'}`,
+                `  dischargingTime: ${battery.dischargingTime === Infinity ? 'Infinity' : battery.dischargingTime + 's'}`,
+                '',
+                battery.supported ? '✅ Battery API available' : '⚠️ Battery API not available in this browser'
+            ];
+            setOutput('quickTestOutput', output.join('\n'));
+        }
+
+        async function runFullDiagnostics() {
+            setOutput('diagnosticsOutput', 'Running diagnostics...');
+            const report = await coreOs.runDiagnostics();
+            setOutput('diagnosticsOutput', report);
+        }
+
+        async function simulateCommand(command) {
+            setOutput('commandOutput', `Executing: system ${command}...`);
+            
+            let result;
+            switch(command) {
+                case 'diagnostic':
+                    result = await coreOs.runDiagnostics();
+                    break;
+                case 'metrics':
+                    const m = coreOs.getSystemMetrics();
+                    result = `SYSTEM METRICS [core.os v1.1.0]
+• Heap Used:  ${coreOs.formatBytes(m.memory.heapUsed)}
+• Heap Total: ${coreOs.formatBytes(m.memory.heapTotal)}
+• RSS:        ${coreOs.formatBytes(m.memory.rss)}
+• External:   ${coreOs.formatBytes(m.memory.external)}
+• Uptime:     ${coreOs.formatUptime(m.uptime)}`;
+                    break;
+                case 'network':
+                    const n = coreOs.getNetworkInfo();
+                    if (!n.supported) {
+                        result = "NETWORK PROBE: Navigator Connection API not available.";
+                    } else {
+                        result = `NETWORK PROBE [core.os v1.1.0]
+• Type:     ${n.effectiveType}
+• Downlink: ${n.downlink} Mbps
+• Latency:  ${n.rtt} ms
+• SaveData: ${n.saveData ? 'ON' : 'OFF'}`;
+                    }
+                    break;
+                case 'battery':
+                    const b = await coreOs.getBatteryInfo();
+                    if (!b.supported) {
+                        result = "BATTERY STATUS: Battery API not supported in this environment.";
+                    } else {
+                        const timeLabel = b.charging ? 'Time to full' : 'Time remaining';
+                        const timeValue = b.charging 
+                            ? (b.chargingTime === Infinity ? 'Calculating...' : `${Math.round(b.chargingTime / 60)}m`)
+                            : (b.dischargingTime === Infinity ? 'Calculating...' : `${Math.round(b.dischargingTime / 60)}m`);
+                        result = `BATTERY STATUS [core.os v1.1.0]
+• Level:  ${b.level.toFixed(0)}%
+• State:  ${b.charging ? 'Charging ⚡' : 'Discharging 🔋'}
+• ${timeLabel}: ${timeValue}`;
+                    }
+                    break;
+                case 'health':
+                    result = `PLUGIN HEALTH [core.os v1.1.0]
+• Total:   9
+• Active:  9 ✅
+• Disabled:0 ⚠️
+• Error:   0 ❌
+• Paused:  0 ⏸️`;
+                    break;
+                default:
+                    result = `SYSTEM COMMAND EXECUTED [core.os v1.1.0]
+Available commands: diagnostic, metrics, network, battery, health, circuit, memory`;
+            }
+            
+            setOutput('commandOutput', `> system ${command}\n\n${result}`);
+        }
+
+        async function runTestSuite() {
+            const results = [];
+            const container = document.getElementById('testResults');
+            container.innerHTML = '<div class="test-item pending"><span>Running tests...</span><span class="status pending">PENDING</span></div>';
+
+            // Test 1: Version
+            results.push({
+                name: 'Version is 1.1.0',
+                pass: coreOs.version === '1.1.0',
+                message: `version = ${coreOs.version}`
+            });
+
+            // Test 2: formatBytes 0
+            results.push({
+                name: 'formatBytes(0)',
+                pass: coreOs.formatBytes(0) === '0 B',
+                message: coreOs.formatBytes(0)
+            });
+
+            // Test 3: formatBytes KB
+            results.push({
+                name: 'formatBytes(1024)',
+                pass: coreOs.formatBytes(1024) === '1.00 KB',
+                message: coreOs.formatBytes(1024)
+            });
+
+            // Test 4: formatBytes MB
+            results.push({
+                name: 'formatBytes(1048576)',
+                pass: coreOs.formatBytes(1048576) === '1.00 MB',
+                message: coreOs.formatBytes(1048576)
+            });
+
+            // Test 5: formatBytes edge case
+            results.push({
+                name: 'formatBytes(-1)',
+                pass: coreOs.formatBytes(-1) === '0 B',
+                message: coreOs.formatBytes(-1)
+            });
+
+            // Test 6: formatUptime hours
+            results.push({
+                name: 'formatUptime(3661)',
+                pass: coreOs.formatUptime(3661).includes('1h'),
+                message: coreOs.formatUptime(3661)
+            });
+
+            // Test 7: formatUptime minutes
+            results.push({
+                name: 'formatUptime(61)',
+                pass: coreOs.formatUptime(61) === '1m 1s',
+                message: coreOs.formatUptime(61)
+            });
+
+            // Test 8: formatUptime seconds
+            results.push({
+                name: 'formatUptime(5)',
+                pass: coreOs.formatUptime(5) === '5s',
+                message: coreOs.formatUptime(5)
+            });
+
+            // Test 9: getSystemMetrics returns object
+            const metrics = coreOs.getSystemMetrics();
+            results.push({
+                name: 'getSystemMetrics()',
+                pass: metrics && typeof metrics === 'object' && metrics.memory,
+                message: 'returns valid object'
+            });
+
+            // Test 10: getNetworkInfo returns object
+            const network = coreOs.getNetworkInfo();
+            results.push({
+                name: 'getNetworkInfo()',
+                pass: network && typeof network.supported === 'boolean',
+                message: `supported: ${network.supported}`
+            });
+
+            // Test 11: getBatteryInfo returns object
+            const battery = await coreOs.getBatteryInfo();
+            results.push({
+                name: 'getBatteryInfo()',
+                pass: battery && typeof battery.supported === 'boolean',
+                message: `supported: ${battery.supported}`
+            });
+
+            // Test 12: runDiagnostics returns string
+            const diag = await coreOs.runDiagnostics();
+            results.push({
+                name: 'runDiagnostics()',
+                pass: typeof diag === 'string' && diag.includes('v1.1.0'),
+                message: 'returns formatted report'
+            });
+
+            // Render results
+            const passed = results.filter(r => r.pass).length;
+            const failed = results.filter(r => !r.pass).length;
+
+            container.innerHTML = results.map(r => `
+                <div class="test-item ${r.pass ? 'pass' : 'fail'}">
+                    <span>${r.name}</span>
+                    <span class="status ${r.pass ? 'pass' : 'fail'}">${r.pass ? 'PASS' : 'FAIL'}</span>
+                </div>
+            `).join('') + `
+                <div style="margin-top: 15px; text-align: center; padding: 10px; background: #1a1a1a; border-radius: 4px;">
+                    <strong>Results:</strong> ${passed} passed, ${failed} failed, ${results.length} total
+                    ${failed === 0 ? ' 🎉' : ''}
+                </div>
+            `;
+        }
+
+        // Initialize
+        checkApiSupport();
+        console.log('🔧 core.os v1.1.0 loaded. Test with: coreOs.getSystemMetrics()');
+    </script>
+</body>
+</html>

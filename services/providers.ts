@@ -50,7 +50,7 @@ export class GeminiProvider implements IAIProvider {
     }
   }
 
-  private getApiKey(): string | null {
+  public getApiKey(): string | null {
     // Check environment variables first (VITE_ prefixed), then localStorage
     let apiKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
 
@@ -101,14 +101,20 @@ export class GeminiProvider implements IAIProvider {
     const start = Date.now();
     let response;
     const config = providerManager.getAIConfig();
+    const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
 
     try {
-      // Wrap the actual API call with the circuit breaker
+      // Wrap the actual API call with the circuit breaker (with per-request timeout)
       response = await this.circuitBreaker.call(async () => {
         if (request.images && request.images.length > 0) {
           const parts: any[] = [];
 
           request.images.forEach(imgBase64 => {
+            // Validate that the image is a proper base64 string
+            if (!imgBase64 || typeof imgBase64 !== 'string') {
+              throw new Error('Invalid image data provided');
+            }
+
             parts.push({
               inlineData: {
                 mimeType: 'image/jpeg',
@@ -128,7 +134,7 @@ export class GeminiProvider implements IAIProvider {
                 temperature: request.temperature ?? config.temperature,
               }
             }),
-            REQUEST_TIMEOUT_MS,
+            timeoutMs,
             'Gemini Vision API'
           );
         } else {
@@ -141,11 +147,11 @@ export class GeminiProvider implements IAIProvider {
                 temperature: request.temperature ?? config.temperature,
               }
             }),
-            REQUEST_TIMEOUT_MS,
+            timeoutMs,
             'Gemini API'
           );
         }
-      });
+      }, timeoutMs);
 
       const latency = Date.now() - start;
 
@@ -160,6 +166,11 @@ export class GeminiProvider implements IAIProvider {
           context: { endpoint: 'generateContent' }
       });
 
+      // Validate response before returning
+      if (!response || !response.text) {
+        throw new Error('Gemini API returned invalid response');
+      }
+
       return {
         text: response.text || "",
         provider: AIProvider.GEMINI,
@@ -168,6 +179,8 @@ export class GeminiProvider implements IAIProvider {
       };
 
     } catch (error: any) {
+        const latency = Date.now() - start;
+
         // Track error for rate limiting
         geminiRateLimiter.trackError(error);
 
@@ -175,7 +188,7 @@ export class GeminiProvider implements IAIProvider {
             sourceId: this.sourceId,
             type: HealthEventType.API_ERROR,
             impact: ImpactLevel.MEDIUM,
-            latencyMs: Date.now() - start,
+            latencyMs: latency,
             context: { errorMessage: error?.message || 'Unknown error' }
         });
 
@@ -227,6 +240,11 @@ export class OllamaProvider implements IAIProvider {
     const start = Date.now();
     const config = providerManager.getOllamaConfig();
 
+    // Validate request parameters
+    if (!config.url || !config.model) {
+      throw new Error('Ollama configuration is incomplete. Please check your settings.');
+    }
+
     // Vision processing with Ollama (requires vision-capable model like llava, bakllava, moondream)
     if (request.images && request.images.length > 0) {
       try {
@@ -243,38 +261,59 @@ export class OllamaProvider implements IAIProvider {
           };
         }
 
-        // Wrap the API call with circuit breaker
+        // Validate image data
+        for (const img of request.images) {
+          if (!img || typeof img !== 'string') {
+            throw new Error('Invalid image data provided to Ollama');
+          }
+        }
+
+        // Wrap the API call with circuit breaker (with per-request timeout)
         const result = await this.circuitBreaker.call(async () => {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-          const res = await fetch(`${config.url}/api/generate`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
-            },
-            body: JSON.stringify({
-              model: config.model,
-              prompt: request.prompt || 'Describe this image in detail.',
-              images: request.images, // Ollama accepts base64 images directly
-              system: request.systemInstruction || 'You are JARVIS. Analyze images accurately and concisely.',
-              stream: false,
-              options: {
-                temperature: request.temperature ?? config.temperature
-              }
-            }),
-            signal: controller.signal
-          });
+          try {
+            const res = await fetch(`${config.url}/api/generate`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
+              },
+              body: JSON.stringify({
+                model: config.model,
+                prompt: request.prompt || 'Describe this image in detail.',
+                images: request.images, // Ollama accepts base64 images directly
+                system: request.systemInstruction || 'You are JARVIS. Analyze images accurately and concisely.',
+                stream: false,
+                options: {
+                  temperature: request.temperature ?? config.temperature
+                }
+              }),
+              signal: controller.signal
+            });
 
-          clearTimeout(timeoutId);
+            clearTimeout(timeoutId);
 
-          if (!res.ok) {
-            throw new Error(`Ollama API error: ${res.status} ${res.statusText}`);
+            if (!res.ok) {
+              throw new Error(`Ollama API error: ${res.status} ${res.statusText}`);
+            }
+
+            const data = await res.json();
+            if (!data || typeof data !== 'object') {
+              throw new Error('Ollama returned invalid response format');
+            }
+
+            return data;
+          } catch (fetchError) {
+            clearTimeout(timeoutId);
+            throw fetchError;
           }
+        }, timeoutMs);
 
-          return await res.json();
-        });
+        if (!result || !result.response) {
+          throw new Error('Ollama returned empty response');
+        }
 
         return {
           text: result.response,
@@ -314,37 +353,54 @@ export class OllamaProvider implements IAIProvider {
     }
 
     try {
-      // Wrap the API call with circuit breaker
+      // Use request timeout if provided, otherwise default
+      const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
+      
+      // Wrap the API call with circuit breaker (pass timeout to circuit breaker)
       const result = await this.circuitBreaker.call(async () => {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-        const res = await fetch(`${config.url}/api/generate`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
-          },
-          body: JSON.stringify({
-            model: config.model,
-            prompt: finalPrompt,
-            system: request.systemInstruction,
-            stream: false,
-            options: {
-              temperature: config.temperature
-            }
-          }),
-          signal: controller.signal
-        });
+        try {
+          const res = await fetch(`${config.url}/api/generate`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
+            },
+            body: JSON.stringify({
+              model: config.model,
+              prompt: finalPrompt,
+              system: request.systemInstruction,
+              stream: false,
+              options: {
+                temperature: request.temperature ?? config.temperature
+              }
+            }),
+            signal: controller.signal
+          });
 
-        clearTimeout(timeoutId);
+          clearTimeout(timeoutId);
 
-        if (!res.ok) {
-          throw new Error(`Ollama API error: ${res.status} ${res.statusText}`);
+          if (!res.ok) {
+            throw new Error(`Ollama API error: ${res.status} ${res.statusText}`);
+          }
+
+          const data = await res.json();
+          if (!data || typeof data !== 'object') {
+            throw new Error('Ollama returned invalid response format');
+          }
+
+          return data;
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          throw fetchError;
         }
+      }, timeoutMs);
 
-        return await res.json();
-      });
+      if (!result || !result.response) {
+        throw new Error('Ollama returned empty response');
+      }
 
       return {
         text: result.response,
@@ -355,6 +411,7 @@ export class OllamaProvider implements IAIProvider {
 
     } catch (e) {
       console.error('[OLLAMA] Request failed:', e);
+      // Add a small delay before returning fallback
       await new Promise(r => setTimeout(r, 800));
       return {
         text: `[SIMULATED] Local kernel fallback active. You requested: "${request.prompt}". (Error: ${e instanceof Error ? e.message : 'Unknown'})`,
@@ -460,6 +517,10 @@ class ProviderManager {
 
   register(provider: IAIProvider) {
     this.providers.set(provider.id, provider);
+  }
+
+  getProvider(id: AIProvider): IAIProvider | undefined {
+    return this.providers.get(id);
   }
 
   public setForcedMode(mode: AIProvider | null) {

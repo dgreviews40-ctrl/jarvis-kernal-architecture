@@ -14,6 +14,7 @@ import { SystemDocs } from './SystemDocs';
 import { EncryptionSetup } from './EncryptionSetup';
 import { SettingsBackup } from './SettingsBackup';
 import { apiKeyManager } from '../services/apiKeyManager';
+import { GeneralTab } from './settings/GeneralTab';
 
 interface SettingsInterfaceProps {
   onClose: () => void;
@@ -181,6 +182,8 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
     return () => {
         unsubVision();
         window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        // Clean up speechSynthesis event listener to prevent memory leak
+        window.speechSynthesis.onvoiceschanged = null;
     };
   }, []);
 
@@ -449,16 +452,24 @@ const neuralVoices = [
   { name: 'Sulafat', style: 'Warm - Friendly, cozy' }
 ];
 
+  // Text style constants
+  const textStyle = {
+    sectionHeader: 'text-xl font-bold tracking-wider',
+    bodySecondary: 'text-sm',
+    button: 'text-sm font-medium',
+    buttonSmall: 'text-xs font-medium'
+  };
+
   return (
     <div className="flex flex-col h-full text-gray-300">
       <div className="flex items-center justify-between mb-8 pb-4 border-b border-[#333]">
-        <h2 className="text-xl font-bold flex items-center gap-2 text-white">
+        <h2 className={`${textStyle.sectionHeader} flex items-center gap-2 text-white`}>
           <Settings className="text-gray-400" />
           SYSTEM CONFIGURATION
         </h2>
         <div className="flex gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white border border-[#333] rounded hover:bg-[#111] uppercase font-bold tracking-widest">Cancel</button>
-            <button onClick={handleSave} className="px-4 py-2 text-sm font-bold bg-cyan-900/50 text-cyan-400 border border-cyan-800 rounded hover:bg-cyan-900 flex items-center gap-2 uppercase tracking-widest">
+            <button onClick={onClose} className={`px-4 py-2 ${textStyle.bodySecondary} text-gray-400 hover:text-white border border-[#333] rounded hover:bg-[#111]`}>Cancel</button>
+            <button onClick={handleSave} className={`px-4 py-2 ${textStyle.button} bg-cyan-900/50 text-cyan-400 border border-cyan-800 rounded hover:bg-cyan-900 flex items-center gap-2`}>
                 <Save size={14} /> Save Protocols
             </button>
         </div>
@@ -481,7 +492,7 @@ const neuralVoices = [
             <button 
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`text-left px-4 py-3 rounded flex items-center gap-3 text-xs font-bold transition-all border ${activeTab === tab.id ? 'bg-cyan-900/20 text-white border-cyan-500/50 translate-x-1 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
+              className={`text-left px-4 py-3 rounded flex items-center gap-3 ${textStyle.buttonSmall} transition-all border ${activeTab === tab.id ? 'bg-cyan-900/20 text-white border-cyan-500/50 translate-x-1 shadow-[0_0_10px_rgba(6,182,212,0.1)]' : 'text-gray-500 border-transparent hover:text-gray-300'}`}
             >
               {tab.icon} {tab.label}
             </button>
@@ -492,33 +503,7 @@ const neuralVoices = [
         <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar">
           
           {/* GENERAL TAB */}
-          {activeTab === 'GENERAL' && (
-             <div className="space-y-6">
-                <div className="p-5 border border-cyan-900/20 rounded-lg bg-[#0a0a0a]">
-                   <h3 className="font-bold text-cyan-500 mb-4 flex items-center gap-2 text-xs uppercase tracking-widest"><Key size={14} /> Gemini API Configuration</h3>
-                   <div className="space-y-4">
-                     <div>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-2 block tracking-tight">API Key</label>
-                        <input 
-                          type="password" 
-                          value={apiKey} 
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="Enter your Gemini API key here..." 
-                          className="w-full bg-black border border-cyan-900/30 rounded px-3 py-2 text-sm text-cyan-400 font-mono focus:border-cyan-500 outline-none transition-all"
-                        />
-                        <div className="text-[9px] text-gray-600 mt-2 font-mono">
-                          Get your API key from: <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-cyan-500 hover:underline">https://aistudio.google.com/app/apikey</a>
-                        </div>
-                     </div>
-                     <div className="flex items-center gap-4">
-                       <span className={`text-[10px] font-bold px-3 py-2 rounded border flex items-center gap-2 ${apiKey ? 'border-green-500/50 text-green-500 bg-green-500/10' : 'border-red-500/50 text-red-500 bg-red-500/10'}`}>
-                          {apiKey ? <><CheckCircle2 size={12} /> API_KEY_DETECTED</> : <><XCircle size={12} /> NO_KEY_CONFIGURED</>}
-                       </span>
-                     </div>
-                   </div>
-                </div>
-             </div>
-          )}
+          {activeTab === 'GENERAL' && <GeneralTab apiKey={apiKey} setApiKey={setApiKey} />}
 
           {/* AI ENGINE TAB */}
           {activeTab === 'AI' && (
@@ -541,6 +526,7 @@ const neuralVoices = [
                         <label className="text-[10px] font-bold text-gray-500 uppercase mb-3 block tracking-wider">Model Selection</label>
                         <div className="flex flex-col gap-2">
                            {[
+                             { id: 'gemini-3-pro-preview', label: 'GEMINI 3.0 PRO', sub: 'Latest - Most intelligent (preview)' },
                              { id: 'gemini-2.0-flash', label: 'GEMINI 2.0 FLASH', sub: 'Fastest multimodal (recommended)' },
                              { id: 'gemini-2.5-flash', label: 'GEMINI 2.5 FLASH', sub: 'Speed optimized & efficient' },
                              { id: 'gemini-1.5-flash', label: 'GEMINI 1.5 FLASH', sub: 'Standard fast (1M context)' }
@@ -560,7 +546,7 @@ const neuralVoices = [
                         </div>
                         <div className="mt-4 p-3 bg-yellow-950/20 border border-yellow-900/30 rounded">
                           <div className="text-[9px] text-yellow-600 font-mono">
-                            ⚠️ Note: gemini-1.5-pro is not compatible with the current SDK version. Use gemini-2.5-flash for best quality.
+                            ⚠️ Note: gemini-3-pro-preview requires a paid API key with access to the latest models. Use gemini-2.0-flash for best compatibility.
                           </div>
                         </div>
                       </div>

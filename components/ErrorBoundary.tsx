@@ -70,7 +70,7 @@ export class JARVISErrorBoundary extends Component<Props, State> {
     });
 
     // Log to structured logger
-    logger.log('ERROR_BOUNDARY', `Component error: ${error.message}`, 'error', {
+    logger.log('ERROR', `Component error: ${error.message}`, 'error', {
       stack: error.stack,
       componentStack: errorInfo.componentStack,
       timestamp: now
@@ -83,8 +83,7 @@ export class JARVISErrorBoundary extends Component<Props, State> {
       impact: ImpactLevel.HIGH,
       latencyMs: 0,
       context: {
-        errorMessage: error.message,
-        errorName: error.name,
+        errorMessage: `${error.name}: ${error.message}`,
         componentStack: errorInfo.componentStack?.substring(0, 500)
       }
     });
@@ -101,7 +100,7 @@ export class JARVISErrorBoundary extends Component<Props, State> {
    * Attempt to recover from error
    */
   handleRetry = () => {
-    logger.log('ERROR_BOUNDARY', 'User initiated recovery retry', 'info');
+    logger.log('ERROR', 'User initiated recovery retry', 'info');
     
     this.setState({
       hasError: false,
@@ -114,7 +113,7 @@ export class JARVISErrorBoundary extends Component<Props, State> {
    * Hard reset - clear all state and reload
    */
   handleReset = () => {
-    logger.log('ERROR_BOUNDARY', 'User initiated hard reset', 'warning');
+    logger.log('ERROR', 'User initiated hard reset', 'warning');
     
     // Clear caches and storage
     localStorage.removeItem('jarvis_memory_banks_v2');
@@ -128,7 +127,7 @@ export class JARVISErrorBoundary extends Component<Props, State> {
    * Safe mode - disable advanced features
    */
   handleSafeMode = () => {
-    logger.log('ERROR_BOUNDARY', 'User initiated safe mode', 'warning');
+    logger.log('ERROR', 'User initiated safe mode', 'warning');
     
     // Set safe mode flag
     localStorage.setItem('JARVIS_SAFE_MODE', 'true');
@@ -352,7 +351,7 @@ const ErrorRecoveryScreen: React.FC<ErrorRecoveryScreenProps> = ({
 
         {/* Footer */}
         <div className="mt-8 text-center text-xs text-gray-600">
-          <p>J.A.R.V.I.S. Kernel v1.3 • Error Recovery Mode</p>
+          <p>J.A.R.V.I.S. Kernel v1.5.0 • Error Recovery Mode</p>
           <p className="mt-1">
             Error ID: {Math.random().toString(36).substring(2, 10).toUpperCase()}
           </p>

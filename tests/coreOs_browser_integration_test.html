@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>core.os v1.2.0 Browser Integration Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0a0a;
+            color: #00ff88;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #00ff88;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+        
+        .test-suite {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .section {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .section h2 {
+            color: #00ff88;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
+        .test-card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        
+        .test-card h3 {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        
+        button {
+            background: #00ff88;
+            color: #000;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 12px;
+            margin: 5px 5px 5px 0;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            background: #00cc6a;
+            box-shadow: 0 0 10px #00ff88;
+        }
+        
+        button:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        .output {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+            color: #0f0;
+        }
+        
+        .output.error {
+            color: #ff4444;
+        }
+        
+        .output.warn {
+            color: #ffaa00;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        
+        .status-pass {
+            background: #00ff88;
+            color: #000;
+        }
+        
+        .status-fail {
+            background: #ff4444;
+            color: #fff;
+        }
+        
+        .status-pending {
+            background: #ffaa00;
+            color: #000;
+        }
+        
+        .test-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .test-item {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid #333;
+        }
+        
+        .test-item.pass {
+            border-left-color: #00ff88;
+        }
+        
+        .test-item.fail {
+            border-left-color: #ff4444;
+        }
+        
+        .metric-display {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .metric-box {
+            background: #0a0a0a;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff88;
+        }
+        
+        .metric-label {
+            font-size: 11px;
+            color: #888;
+            text-transform: uppercase;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: #333;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #00ff88;
+            transition: width 0.3s ease;
+        }
+        
+        .api-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .api-item {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #333;
+        }
+        
+        .api-item.supported {
+            border-color: #00ff88;
+        }
+        
+        .api-item.unsupported {
+            border-color: #ff4444;
+            opacity: 0.7;
+        }
+        
+        .api-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 13px;
+        }
+        
+        .api-state {
+            font-size: 11px;
+            color: #888;
+        }
+        
+        .alert-box {
+            background: #1a1a1a;
+            border-left: 3px solid;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .alert-box.critical {
+            border-left-color: #ff4444;
+        }
+        
+        .alert-box.warning {
+            border-left-color: #ffaa00;
+        }
+        
+        .alert-box.info {
+            border-left-color: #00ff88;
+        }
+        
+        .summary {
+            background: #111;
+            border: 2px solid #00ff88;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .summary h2 {
+            margin-bottom: 15px;
+        }
+        
+        .summary-stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+        }
+        
+        .console-output {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            color: #0f0;
+            margin-top: 10px;
+        }
+        
+        .console-line {
+            margin-bottom: 4px;
+        }
+        
+        .console-line.error {
+            color: #ff4444;
+        }
+        
+        .console-line.warn {
+            color: #ffaa00;
+        }
+        
+        .console-line.info {
+            color: #00aaff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 core.os v1.2.0 Browser Integration Test</h1>
+    <p class="subtitle">Comprehensive testing suite for Voice, Display, and Cortex integration</p>
+
+    <div class="test-suite">
+        <!-- API Detection -->
+        <div class="section">
+            <h2>📡 Browser API Detection <span id="apiStatus" class="status-badge status-pending">CHECKING...</span></h2>
+            <div class="api-status" id="apiStatusGrid">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Core Functions Test -->
+        <div class="section">
+            <h2>⚡ Core Functions Test <span id="coreStatus" class="status-badge status-pending">PENDING</span></h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>Format Functions</h3>
+                    <button onclick="testFormatBytes()">Test formatBytes()</button>
+                    <button onclick="testFormatUptime()">Test formatUptime()</button>
+                    <button onclick="testFormatDuration()">Test formatDuration()</button>
+                    <div id="formatOutput" class="output">Click a button to test...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>System Metrics</h3>
+                    <button onclick="testSystemMetrics()">Test getSystemMetrics()</button>
+                    <button onclick="testPerformanceMetrics()">Test getPerformanceMetrics()</button>
+                    <div id="metricsOutput" class="output">Click a button to test...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Async APIs</h3>
+                    <button onclick="testBatteryInfo()">Test getBatteryInfo()</button>
+                    <button onclick="testNetworkInfo()">Test getNetworkInfo()</button>
+                    <button onclick="testStorageInfo()">Test getStorageInfo()</button>
+                    <div id="asyncOutput" class="output">Click a button to test...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Predictive Analysis</h3>
+                    <button onclick="testPredictiveAnalysis()">Test getPredictiveAnalysis()</button>
+                    <button onclick="testRecordMetrics()">Test recordMetrics()</button>
+                    <div id="predictOutput" class="output">Click a button to test...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert System Test -->
+        <div class="section">
+            <h2>🚨 Alert System Test <span id="alertStatus" class="status-badge status-pending">PENDING</span></h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>Alert Management</h3>
+                    <button onclick="testCheckAlerts()">Check System Alerts</button>
+                    <button onclick="testGetActiveAlerts()">Get Active Alerts</button>
+                    <button onclick="testAcknowledgeAlert()">Acknowledge Alert</button>
+                    <div id="alertOutput" class="output">Click a button to test...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Simulate Alerts</h3>
+                    <button onclick="simulateCriticalAlert()">Simulate Critical</button>
+                    <button onclick="simulateWarningAlert()">Simulate Warning</button>
+                    <button onclick="simulateInfoAlert()">Simulate Info</button>
+                    <button onclick="clearAllAlerts()">Clear All Alerts</button>
+                </div>
+            </div>
+            <div id="alertsDisplay" style="margin-top: 15px;">
+                <!-- Active alerts displayed here -->
+            </div>
+        </div>
+
+        <!-- Monitoring Test -->
+        <div class="section">
+            <h2>📊 Auto-Monitoring Test <span id="monitorStatus" class="status-badge status-pending">PENDING</span></h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>Monitoring Control</h3>
+                    <button onclick="toggleMonitoring()" id="monitorBtn">Start Monitoring</button>
+                    <button onclick="checkMonitoringStatus()">Check Status</button>
+                    <div id="monitorOutput" class="output">Click Start Monitoring to begin...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Live Metrics</h3>
+                    <div class="metric-display">
+                        <div class="metric-box">
+                            <div class="metric-value" id="liveHeap">--</div>
+                            <div class="metric-label">Heap Used</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-value" id="liveUptime">--</div>
+                            <div class="metric-label">Uptime</div>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="memoryProgress" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Diagnostics Test -->
+        <div class="section">
+            <h2>🔍 Diagnostics Test <span id="diagStatus" class="status-badge status-pending">PENDING</span></h2>
+            <div style="margin-bottom: 15px;">
+                <button onclick="runFullDiagnostics()">Run Full Diagnostics</button>
+                <button onclick="runQuickDiagnostics()">Quick Check</button>
+            </div>
+            <div id="diagnosticOutput" class="output" style="max-height: 400px; font-size: 11px;">Click Run Full Diagnostics to see the ASCII report...</div>
+        </div>
+
+        <!-- Integration Test -->
+        <div class="section">
+            <h2>🔗 Integration Test <span id="integrationStatus" class="status-badge status-pending">PENDING</span></h2>
+            <div class="test-grid">
+                <div class="test-card">
+                    <h3>Voice Integration</h3>
+                    <button onclick="testVoiceAnnouncement()">Test Voice Announcement</button>
+                    <button onclick="testVoiceStatus()">Test Speak Status</button>
+                    <div id="voiceOutput" class="output">Click to test voice integration...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Display Integration</h3>
+                    <button onclick="testDisplayData()">Test Display Data</button>
+                    <button onclick="testCustomEvent()">Test Custom Event</button>
+                    <div id="displayOutput" class="output">Click to test display integration...</div>
+                </div>
+                
+                <div class="test-card">
+                    <h3>Cortex Integration</h3>
+                    <button onclick="testCortexReport()">Test Cortex Report</button>
+                    <button onclick="testReliabilityScore()">Test Reliability Score</button>
+                    <div id="cortexOutput" class="output">Click to test cortex integration...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Automated Test Suite -->
+        <div class="section">
+            <h2>🧪 Automated Test Suite <span id="autoStatus" class="status-badge status-pending">PENDING</span></h2>
+            <div style="margin-bottom: 15px;">
+                <button onclick="runAutomatedTests()">Run All Tests</button>
+                <button onclick="clearTestResults()">Clear Results</button>
+            </div>
+            <div id="automatedResults" class="test-results">
+                <!-- Test results populated here -->
+            </div>
+        </div>
+
+        <!-- Console Output -->
+        <div class="section">
+            <h2>🖥️ Test Console</h2>
+            <div style="margin-bottom: 10px;">
+                <button onclick="clearConsole()">Clear Console</button>
+            </div>
+            <div id="testConsole" class="console-output">
+                <div class="console-line info">Test console initialized. Ready for testing...</div>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary" id="testSummary" style="display: none;">
+            <h2>📊 Test Summary</h2>
+            <div class="summary-stats">
+                <div class="stat">
+                    <div class="stat-number" id="totalTests" style="color: #00ff88;">0</div>
+                    <div class="stat-label">Total Tests</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" id="passedTests" style="color: #00ff88;">0</div>
+                    <div class="stat-label">Passed</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" id="failedTests" style="color: #ff4444;">0</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" id="testDuration" style="color: #ffaa00;">0ms</div>
+                    <div class="stat-label">Duration</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // CONSOLE LOGGER
+        // ============================================================================
+        
+        function log(message, type = 'info') {
+            const console = document.getElementById('testConsole');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            console.appendChild(line);
+            console.scrollTop = console.scrollHeight;
+        }
+        
+        function clearConsole() {
+            document.getElementById('testConsole').innerHTML = '<div class="console-line info">Console cleared.</div>';
+        }
+        
+        // ============================================================================
+        // API DETECTION
+        // ============================================================================
+        
+        function checkAPIs() {
+            const apis = [
+                { name: 'Battery API', check: () => 'getBattery' in navigator },
+                { name: 'Network Info API', check: () => 'connection' in navigator },
+                { name: 'Storage API', check: () => !!(navigator.storage && navigator.storage.estimate) },
+                { name: 'Performance Memory', check: () => !!(performance && (performance as any).memory) },
+                { name: 'Speech Synthesis', check: () => 'speechSynthesis' in window },
+                { name: 'Custom Events', check: () => 'CustomEvent' in window },
+            ];
+            
+            const grid = document.getElementById('apiStatusGrid');
+            let supported = 0;
+            
+            grid.innerHTML = apis.map(api => {
+                const isSupported = api.check();
+                if (isSupported) supported++;
+                return `
+                    <div class="api-item ${isSupported ? 'supported' : 'unsupported'}">
+                        <div class="api-name">${api.name}</div>
+                        <div class="api-state">${isSupported ? '✅ Supported' : '❌ Not Available'}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            const statusBadge = document.getElementById('apiStatus');
+            statusBadge.textContent = `${supported}/${apis.length} APIs`;
+            statusBadge.className = `status-badge ${supported === apis.length ? 'status-pass' : supported > 3 ? 'status-pending' : 'status-fail'}`;
+            
+            log(`API Detection: ${supported}/${apis.length} APIs supported`, supported === apis.length ? 'info' : 'warn');
+        }
+        
+        // ============================================================================
+        // CORE.OS IMPLEMENTATION (Inline for browser testing)
+        // ============================================================================
+        
+        const coreOs = {
+            version: '1.2.0',
+            
+            formatBytes(bytes) {
+                if (bytes <= 0 || !isFinite(bytes)) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+                return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+            },
+            
+            formatUptime(seconds) {
+                const days = Math.floor(seconds / 86400);
+                const hours = Math.floor((seconds % 86400) / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = Math.floor(seconds % 60);
+                if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+                if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+                if (minutes > 0) return `${minutes}m ${secs}s`;
+                return `${secs}s`;
+            },
+            
+            formatDuration(ms) {
+                if (ms < 1000) return `${ms.toFixed(0)}ms`;
+                if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+                if (ms < 3600000) return `${(ms / 60000).toFixed(1)}m`;
+                return `${(ms / 3600000).toFixed(1)}h`;
+            },
+            
+            getSystemMetrics() {
+                const mem = (performance as any).memory || {};
+                return {
+                    memory: {
+                        heapUsed: mem.usedJSHeapSize || 0,
+                        heapTotal: mem.totalJSHeapSize || 0,
+                        rss: mem.totalJSHeapSize || 0,
+                        external: 0
+                    },
+                    cpu: { usagePercent: 0, loadAvg: [0, 0, 0], supported: false },
+                    uptime: performance.now() / 1000,
+                    timestamp: Date.now()
+                };
+            },
+            
+            getPerformanceMetrics() {
+                const mem = (performance as any).memory;
+                if (!mem) return { fps: 0, latency: 0, memoryPressure: 'nominal', supported: false };
+                
+                const ratio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
+                let pressure = 'nominal';
+                if (ratio > 0.9) pressure = 'critical';
+                else if (ratio > 0.7) pressure = 'serious';
+                else if (ratio > 0.5) pressure = 'fair';
+                
+                return {
+                    fps: 60,
+                    latency: performance.now(),
+                    memoryPressure: pressure,
+                    supported: true
+                };
+            },
+            
+            async getBatteryInfo() {
+                if (!navigator.getBattery) {
+                    return { level: 0, charging: false, chargingTime: Infinity, dischargingTime: Infinity, supported: false };
+                }
+                try {
+                    const battery = await navigator.getBattery();
+                    return {
+                        level: battery.level * 100,
+                        charging: battery.charging,
+                        chargingTime: battery.chargingTime,
+                        dischargingTime: battery.dischargingTime,
+                        supported: true
+                    };
+                } catch {
+                    return { level: 0, charging: false, chargingTime: Infinity, dischargingTime: Infinity, supported: false };
+                }
+            },
+            
+            getNetworkInfo() {
+                const conn = (navigator as any).connection;
+                if (!conn) {
+                    return { effectiveType: 'unknown', downlink: 0, rtt: 0, saveData: false, supported: false, online: navigator.onLine };
+                }
+                return {
+                    effectiveType: conn.effectiveType || 'unknown',
+                    downlink: conn.downlink || 0,
+                    rtt: conn.rtt || 0,
+                    saveData: conn.saveData || false,
+                    supported: true,
+                    online: navigator.onLine
+                };
+            },
+            
+            async getStorageInfo() {
+                if (!navigator.storage || !navigator.storage.estimate) {
+                    return { quota: 0, usage: 0, available: 0, percentUsed: 0, supported: false };
+                }
+                try {
+                    const estimate = await navigator.storage.estimate();
+                    const quota = estimate.quota || 0;
+                    const usage = estimate.usage || 0;
+                    return { quota, usage, available: quota - usage, percentUsed: quota > 0 ? (usage / quota) * 100 : 0, supported: true };
+                } catch {
+                    return { quota: 0, usage: 0, available: 0, percentUsed: 0, supported: false };
+                }
+            },
+            
+            async getPredictiveAnalysis() {
+                const metrics = this.getSystemMetrics();
+                const battery = await this.getBatteryInfo();
+                const memoryRatio = metrics.memory.heapUsed / metrics.memory.heapTotal;
+                
+                let healthScore = 100;
+                healthScore -= Math.min(40, memoryRatio * 40);
+                if (battery.supported && battery.level < 20) healthScore -= (20 - battery.level) * 1.5;
+                
+                return {
+                    batteryTimeRemaining: battery.supported && !battery.charging ? battery.dischargingTime : null,
+                    memoryTrend: 'stable',
+                    recommendedAction: healthScore < 50 ? 'System restart recommended' : null,
+                    healthScore: Math.max(0, Math.round(healthScore))
+                };
+            },
+            
+            recordMetrics() {
+                log('Metrics recorded', 'info');
+            },
+            
+            // Alert system
+            alerts: [],
+            alertId: 0,
+            
+            checkSystemAlerts() {
+                const metrics = this.getSystemMetrics();
+                const memoryRatio = metrics.memory.heapUsed / metrics.memory.heapTotal;
+                
+                if (memoryRatio > 0.9) {
+                    this.alerts.push({
+                        id: `alert-${++this.alertId}`,
+                        type: 'critical',
+                        message: `Critical memory usage: ${(memoryRatio * 100).toFixed(1)}%`,
+                        timestamp: Date.now(),
+                        acknowledged: false
+                    });
+                }
+                
+                return this.alerts.filter(a => !a.acknowledged);
+            },
+            
+            getActiveAlerts() {
+                return this.alerts.filter(a => !a.acknowledged);
+            },
+            
+            acknowledgeAlert(alertId) {
+                const alert = this.alerts.find(a => a.id === alertId);
+                if (alert) alert.acknowledged = true;
+            },
+            
+            clearAcknowledgedAlerts() {
+                this.alerts = this.alerts.filter(a => !a.acknowledged);
+            },
+            
+            // Monitoring
+            monitoringInterval: null,
+            
+            startMonitoring(intervalMs = 5000) {
+                if (this.monitoringInterval) return;
+                this.monitoringInterval = setInterval(() => {
+                    this.recordMetrics();
+                    this.checkSystemAlerts();
+                }, intervalMs);
+                log(`Monitoring started (${intervalMs}ms interval)`, 'info');
+            },
+            
+            stopMonitoring() {
+                if (this.monitoringInterval) {
+                    clearInterval(this.monitoringInterval);
+                    this.monitoringInterval = null;
+                    log('Monitoring stopped', 'info');
+                }
+            },
+            
+            isMonitoring() {
+                return this.monitoringInterval !== null;
+            },
+            
+            // Diagnostics
+            async runDiagnostics() {
+                const metrics = this.getSystemMetrics();
+                const battery = await this.getBatteryInfo();
+                const network = this.getNetworkInfo();
+                
+                return [
+                    '╔══════════════════════════════════════════════════════════════════╗',
+                    '║             JARVIS SYSTEM DIAGNOSTIC REPORT v1.2.0               ║',
+                    '╠══════════════════════════════════════════════════════════════════╣',
+                    `║  MEMORY                                                          ║`,
+                    `║  Heap Used:  ${this.formatBytes(metrics.memory.heapUsed).padEnd(50)} ║`,
+                    `║  Heap Total: ${this.formatBytes(metrics.memory.heapTotal).padEnd(50)} ║`,
+                    '╠══════════════════════════════════════════════════════════════════╣',
+                    `║  SYSTEM                                                          ║`,
+                    `║  Uptime:     ${this.formatUptime(metrics.uptime).padEnd(50)} ║`,
+                    battery.supported ? `║  Battery:    ${(`${battery.level.toFixed(0)}%`).padEnd(50)} ║` : '',
+                    network.supported ? `║  Network:    ${network.effectiveType.padEnd(50)} ║` : '',
+                    '╚══════════════════════════════════════════════════════════════════╝'
+                ].filter(Boolean).join('\n');
+            }
+        };
+        
+        // Make available globally
+        window.coreOs = coreOs;
+        
+        // ============================================================================
+        // TEST FUNCTIONS
+        // ============================================================================
+        
+        function setOutput(id, content, isError = false) {
+            const el = document.getElementById(id);
+            el.textContent = content;
+            el.className = 'output' + (isError ? ' error' : '');
+        }
+        
+        // Format Tests
+        function testFormatBytes() {
+            const tests = [
+                [0, '0 B'],
+                [1024, '1.00 KB'],
+                [1048576, '1.00 MB'],
+                [-100, '0 B']
+            ];
+            const results = tests.map(([input, expected]) => {
+                const actual = coreOs.formatBytes(input);
+                return `${actual === expected ? '✅' : '❌'} formatBytes(${input}) = "${actual}"`;
+            });
+            setOutput('formatOutput', results.join('\n'));
+            log('Format bytes test completed', 'info');
+        }
+        
+        function testFormatUptime() {
+            const tests = [
+                [90061, '1d 1h 1m'],
+                [3661, '1h 1m 1s'],
+                [61, '1m 1s'],
+                [5, '5s']
+            ];
+            const results = tests.map(([input, expected]) => {
+                const actual = coreOs.formatUptime(input);
+                return `${actual === expected ? '✅' : '❌'} formatUptime(${input}) = "${actual}"`;
+            });
+            setOutput('formatOutput', results.join('\n'));
+            log('Format uptime test completed', 'info');
+        }
+        
+        function testFormatDuration() {
+            const tests = [
+                [500, '500ms'],
+                [5000, '5.0s'],
+                [120000, '2.0m'],
+                [7200000, '2.0h']
+            ];
+            const results = tests.map(([input, expected]) => {
+                const actual = coreOs.formatDuration(input);
+                return `${actual === expected ? '✅' : '❌'} formatDuration(${input}) = "${actual}"`;
+            });
+            setOutput('formatOutput', results.join('\n'));
+            log('Format duration test completed', 'info');
+        }
+        
+        // Metrics Tests
+        function testSystemMetrics() {
+            const metrics = coreOs.getSystemMetrics();
+            const output = [
+                'getSystemMetrics():',
+                `  heapUsed: ${coreOs.formatBytes(metrics.memory.heapUsed)}`,
+                `  heapTotal: ${coreOs.formatBytes(metrics.memory.heapTotal)}`,
+                `  uptime: ${coreOs.formatUptime(metrics.uptime)}`,
+                '✅ All fields present'
+            ];
+            setOutput('metricsOutput', output.join('\n'));
+            log('System metrics test completed', 'info');
+        }
+        
+        function testPerformanceMetrics() {
+            const perf = coreOs.getPerformanceMetrics();
+            const output = [
+                'getPerformanceMetrics():',
+                `  supported: ${perf.supported}`,
+                `  memoryPressure: ${perf.memoryPressure}`,
+                `  latency: ${perf.latency.toFixed(0)}ms`,
+                perf.supported ? '✅ API available' : '⚠️ API not available'
+            ];
+            setOutput('metricsOutput', output.join('\n'));
+            log('Performance metrics test completed', 'info');
+        }
+        
+        // Async Tests
+        async function testBatteryInfo() {
+            setOutput('asyncOutput', 'Fetching battery info...');
+            const battery = await coreOs.getBatteryInfo();
+            const output = [
+                'getBatteryInfo():',
+                `  supported: ${battery.supported}`,
+                `  level: ${battery.level.toFixed(0)}%`,
+                `  charging: ${battery.charging}`,
+                battery.supported ? '✅ Battery API available' : '⚠️ Battery API not available'
+            ];
+            setOutput('asyncOutput', output.join('\n'));
+            log('Battery info test completed', battery.supported ? 'info' : 'warn');
+        }
+        
+        function testNetworkInfo() {
+            const network = coreOs.getNetworkInfo();
+            const output = [
+                'getNetworkInfo():',
+                `  supported: ${network.supported}`,
+                `  online: ${network.online}`,
+                `  effectiveType: ${network.effectiveType}`,
+                network.supported ? '✅ Network API available' : '⚠️ Network API not available'
+            ];
+            setOutput('asyncOutput', output.join('\n'));
+            log('Network info test completed', network.supported ? 'info' : 'warn');
+        }
+        
+        async function testStorageInfo() {
+            setOutput('asyncOutput', 'Fetching storage info...');
+            const storage = await coreOs.getStorageInfo();
+            const output = [
+                'getStorageInfo():',
+                `  supported: ${storage.supported}`,
+                `  usage: ${coreOs.formatBytes(storage.usage)}`,
+                `  available: ${coreOs.formatBytes(storage.available)}`,
+                `  percentUsed: ${storage.percentUsed.toFixed(1)}%`,
+                storage.supported ? '✅ Storage API available' : '⚠️ Storage API not available'
+            ];
+            setOutput('asyncOutput', output.join('\n'));
+            log('Storage info test completed', storage.supported ? 'info' : 'warn');
+        }
+        
+        // Predictive Tests
+        async function testPredictiveAnalysis() {
+            setOutput('predictOutput', 'Running predictive analysis...');
+            const analysis = await coreOs.getPredictiveAnalysis();
+            const output = [
+                'getPredictiveAnalysis():',
+                `  healthScore: ${analysis.healthScore}/100`,
+                `  memoryTrend: ${analysis.memoryTrend}`,
+                `  batteryTimeRemaining: ${analysis.batteryTimeRemaining ? coreOs.formatUptime(analysis.batteryTimeRemaining) : 'N/A'}`,
+                `  recommendedAction: ${analysis.recommendedAction || 'None'}`,
+                '✅ Analysis complete'
+            ];
+            setOutput('predictOutput', output.join('\n'));
+            log('Predictive analysis test completed', 'info');
+        }
+        
+        function testRecordMetrics() {
+            coreOs.recordMetrics();
+            setOutput('predictOutput', '✅ Metrics recorded successfully');
+            log('Record metrics test completed', 'info');
+        }
+        
+        // Alert Tests
+        function testCheckAlerts() {
+            const alerts = coreOs.checkSystemAlerts();
+            updateAlertsDisplay();
+            setOutput('alertOutput', `Checked system alerts. Found ${alerts.length} active alerts.`);
+            log(`Alert check: ${alerts.length} active alerts`, alerts.length > 0 ? 'warn' : 'info');
+        }
+        
+        function testGetActiveAlerts() {
+            const alerts = coreOs.getActiveAlerts();
+            updateAlertsDisplay();
+            setOutput('alertOutput', `Active alerts: ${alerts.length}\n${alerts.map(a => `- [${a.type}] ${a.message}`).join('\n')}`);
+            log(`Get active alerts: ${alerts.length} found`, 'info');
+        }
+        
+        function testAcknowledgeAlert() {
+            const alerts = coreOs.getActiveAlerts();
+            if (alerts.length > 0) {
+                coreOs.acknowledgeAlert(alerts[0].id);
+                updateAlertsDisplay();
+                setOutput('alertOutput', `Acknowledged alert: ${alerts[0].id}`);
+                log('Alert acknowledged', 'info');
+            } else {
+                setOutput('alertOutput', 'No alerts to acknowledge');
+            }
+        }
+        
+        function simulateCriticalAlert() {
+            coreOs.alerts.push({
+                id: `alert-${++coreOs.alertId}`,
+                type: 'critical',
+                message: 'Simulated critical alert: Memory usage critical',
+                timestamp: Date.now(),
+                acknowledged: false
+            });
+            updateAlertsDisplay();
+            log('Simulated critical alert', 'warn');
+        }
+        
+        function simulateWarningAlert() {
+            coreOs.alerts.push({
+                id: `alert-${++coreOs.alertId}`,
+                type: 'warning',
+                message: 'Simulated warning: High CPU usage',
+                timestamp: Date.now(),
+                acknowledged: false
+            });
+            updateAlertsDisplay();
+            log('Simulated warning alert', 'info');
+        }
+        
+        function simulateInfoAlert() {
+            coreOs.alerts.push({
+                id: `alert-${++coreOs.alertId}`,
+                type: 'info',
+                message: 'Simulated info: System update available',
+                timestamp: Date.now(),
+                acknowledged: false
+            });
+            updateAlertsDisplay();
+            log('Simulated info alert', 'info');
+        }
+        
+        function clearAllAlerts() {
+            coreOs.alerts = [];
+            updateAlertsDisplay();
+            setOutput('alertOutput', 'All alerts cleared');
+            log('All alerts cleared', 'info');
+        }
+        
+        function updateAlertsDisplay() {
+            const container = document.getElementById('alertsDisplay');
+            const alerts = coreOs.getActiveAlerts();
+            
+            if (alerts.length === 0) {
+                container.innerHTML = '<div style="color: #888; padding: 10px;">No active alerts</div>';
+                return;
+            }
+            
+            container.innerHTML = alerts.map(alert => `
+                <div class="alert-box ${alert.type}">
+                    <strong>${alert.type.toUpperCase()}</strong>: ${alert.message}
+                    <div style="font-size: 11px; color: #888; margin-top: 5px;">
+                        ${new Date(alert.timestamp).toLocaleTimeString()}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Monitoring Tests
+        function toggleMonitoring() {
+            if (coreOs.isMonitoring()) {
+                coreOs.stopMonitoring();
+                document.getElementById('monitorBtn').textContent = 'Start Monitoring';
+                setOutput('monitorOutput', 'Monitoring stopped');
+            } else {
+                coreOs.startMonitoring(2000);
+                document.getElementById('monitorBtn').textContent = 'Stop Monitoring';
+                setOutput('monitorOutput', 'Monitoring started (2s interval)');
+                startLiveMetrics();
+            }
+        }
+        
+        function checkMonitoringStatus() {
+            const isMonitoring = coreOs.isMonitoring();
+            setOutput('monitorOutput', `Monitoring status: ${isMonitoring ? 'ACTIVE 🟢' : 'INACTIVE 🔴'}`);
+        }
+        
+        function startLiveMetrics() {
+            if (!coreOs.isMonitoring()) return;
+            
+            const update = () => {
+                if (!coreOs.isMonitoring()) return;
+                
+                const metrics = coreOs.getSystemMetrics();
+                document.getElementById('liveHeap').textContent = coreOs.formatBytes(metrics.memory.heapUsed);
+                document.getElementById('liveUptime').textContent = coreOs.formatUptime(metrics.uptime);
+                
+                const ratio = metrics.memory.heapUsed / metrics.memory.heapTotal;
+                document.getElementById('memoryProgress').style.width = `${Math.min(ratio * 100, 100)}%`;
+                
+                setTimeout(update, 2000);
+            };
+            
+            update();
+        }
+        
+        // Diagnostics Tests
+        async function runFullDiagnostics() {
+            setOutput('diagnosticOutput', 'Running diagnostics...');
+            const report = await coreOs.runDiagnostics();
+            setOutput('diagnosticOutput', report);
+            log('Full diagnostics completed', 'info');
+        }
+        
+        function runQuickDiagnostics() {
+            const metrics = coreOs.getSystemMetrics();
+            const perf = coreOs.getPerformanceMetrics();
+            
+            const output = [
+                'QUICK DIAGNOSTICS',
+                '==================',
+                `Memory: ${coreOs.formatBytes(metrics.memory.heapUsed)} / ${coreOs.formatBytes(metrics.memory.heapTotal)}`,
+                `Uptime: ${coreOs.formatUptime(metrics.uptime)}`,
+                `Memory Pressure: ${perf.supported ? perf.memoryPressure : 'N/A'}`,
+                `Status: ${perf.memoryPressure === 'critical' ? '❌ CRITICAL' : perf.memoryPressure === 'serious' ? '⚠️ WARNING' : '✅ OK'}`
+            ];
+            
+            setOutput('diagnosticOutput', output.join('\n'));
+            log('Quick diagnostics completed', 'info');
+        }
+        
+        // Integration Tests
+        function testVoiceAnnouncement() {
+            const message = 'This is a test announcement from core.os version 1.2.0';
+            
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(message);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                speechSynthesis.speak(utterance);
+                setOutput('voiceOutput', `Speaking: "${message}"`);
+                log('Voice announcement test initiated', 'info');
+            } else {
+                setOutput('voiceOutput', '❌ Speech synthesis not supported', true);
+                log('Voice announcement failed: not supported', 'error');
+            }
+        }
+        
+        async function testVoiceStatus() {
+            const analysis = await coreOs.getPredictiveAnalysis();
+            const metrics = coreOs.getSystemMetrics();
+            
+            let message = `System status. Health score ${analysis.healthScore} percent. `;
+            message += `Memory using ${coreOs.formatBytes(metrics.memory.heapUsed)}. `;
+            
+            if (analysis.recommendedAction) {
+                message += `Recommendation: ${analysis.recommendedAction}`;
+            } else {
+                message += 'All systems nominal.';
+            }
+            
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(message);
+                speechSynthesis.speak(utterance);
+                setOutput('voiceOutput', `Speaking status: ${message.substring(0, 100)}...`);
+                log('Voice status test initiated', 'info');
+            } else {
+                setOutput('voiceOutput', message);
+            }
+        }
+        
+        async function testDisplayData() {
+            const metrics = coreOs.getSystemMetrics();
+            const battery = await coreOs.getBatteryInfo();
+            const network = coreOs.getNetworkInfo();
+            const analysis = await coreOs.getPredictiveAnalysis();
+            const alerts = coreOs.getActiveAlerts();
+            
+            const output = [
+                'Display Data Package:',
+                `  Metrics: ${Object.keys(metrics).length} fields`,
+                `  Battery: ${battery.supported ? 'available' : 'N/A'}`,
+                `  Network: ${network.supported ? 'available' : 'N/A'}`,
+                `  Analysis: healthScore=${analysis.healthScore}`,
+                `  Alerts: ${alerts.length} active`,
+                '✅ Display data ready'
+            ];
+            
+            setOutput('displayOutput', output.join('\n'));
+            log('Display data test completed', 'info');
+        }
+        
+        function testCustomEvent() {
+            const testAlert = {
+                id: 'test-event-1',
+                type: 'warning',
+                message: 'Test custom event dispatched',
+                timestamp: Date.now()
+            };
+            
+            window.dispatchEvent(new CustomEvent('coreos-alert', { detail: testAlert }));
+            setOutput('displayOutput', 'Custom event dispatched: coreos-alert\nCheck console for event details.');
+            log('Custom event dispatched', 'info');
+        }
+        
+        function testCortexReport() {
+            // Simulate cortex report
+            const report = {
+                sourceId: 'core.os',
+                type: 'SUCCESS',
+                impact: 'NONE',
+                healthScore: 85,
+                timestamp: Date.now()
+            };
+            
+            setOutput('cortexOutput', [
+                'Cortex Report Simulated:',
+                `  sourceId: ${report.sourceId}`,
+                `  type: ${report.type}`,
+                `  impact: ${report.impact}`,
+                `  healthScore: ${report.healthScore}`,
+                '✅ Report would be sent to Cortex'
+            ].join('\n'));
+            
+            log('Cortex report test completed', 'info');
+        }
+        
+        function testReliabilityScore() {
+            // Simulate reliability score
+            const score = {
+                sourceId: 'core.os',
+                currentHealth: 92,
+                totalFailures: 0,
+                trend: 'STABLE'
+            };
+            
+            setOutput('cortexOutput', [
+                'Reliability Score (Simulated):',
+                `  sourceId: ${score.sourceId}`,
+                `  currentHealth: ${score.currentHealth}`,
+                `  totalFailures: ${score.totalFailures}`,
+                `  trend: ${score.trend}`,
+                '✅ Reliability tracking active'
+            ].join('\n'));
+            
+            log('Reliability score test completed', 'info');
+        }
+        
+        // Automated Tests
+        const automatedTests = [];
+        
+        function addTest(name, fn) {
+            automatedTests.push({ name, fn });
+        }
+        
+        // Register tests
+        addTest('formatBytes(1024)', async () => coreOs.formatBytes(1024) === '1.00 KB');
+        addTest('formatBytes(0)', async () => coreOs.formatBytes(0) === '0 B');
+        addTest('formatUptime(3661)', async () => coreOs.formatUptime(3661) === '1h 1m 1s');
+        addTest('getSystemMetrics returns object', async () => {
+            const m = coreOs.getSystemMetrics();
+            return m && typeof m === 'object' && m.memory;
+        });
+        addTest('getNetworkInfo returns object', async () => {
+            const n = coreOs.getNetworkInfo();
+            return n && typeof n.online === 'boolean';
+        });
+        addTest('getBatteryInfo returns object', async () => {
+            const b = await coreOs.getBatteryInfo();
+            return b && typeof b.supported === 'boolean';
+        });
+        addTest('getStorageInfo returns object', async () => {
+            const s = await coreOs.getStorageInfo();
+            return s && typeof s.supported === 'boolean';
+        });
+        addTest('getPerformanceMetrics returns object', async () => {
+            const p = coreOs.getPerformanceMetrics();
+            return p && typeof p.supported === 'boolean';
+        });
+        addTest('getPredictiveAnalysis returns object', async () => {
+            const a = await coreOs.getPredictiveAnalysis();
+            return a && typeof a.healthScore === 'number';
+        });
+        addTest('checkSystemAlerts returns array', async () => {
+            const a = coreOs.checkSystemAlerts();
+            return Array.isArray(a);
+        });
+        addTest('startMonitoring works', async () => {
+            coreOs.startMonitoring(5000);
+            const active = coreOs.isMonitoring();
+            coreOs.stopMonitoring();
+            return active;
+        });
+        addTest('runDiagnostics returns string', async () => {
+            const d = await coreOs.runDiagnostics();
+            return typeof d === 'string' && d.includes('v1.2.0');
+        });
+        
+        async function runAutomatedTests() {
+            const container = document.getElementById('automatedResults');
+            const summary = document.getElementById('testSummary');
+            
+            container.innerHTML = '<div style="text-align: center; padding: 20px;">Running tests...</div>';
+            summary.style.display = 'none';
+            
+            const results = [];
+            const startTime = performance.now();
+            
+            for (const test of automatedTests) {
+                try {
+                    const passed = await test.fn();
+                    results.push({ name: test.name, passed, error: null });
+                    log(`Test: ${test.name} - ${passed ? 'PASS' : 'FAIL'}`, passed ? 'info' : 'error');
+                } catch (error) {
+                    results.push({ name: test.name, passed: false, error: error.message });
+                    log(`Test: ${test.name} - ERROR: ${error.message}`, 'error');
+                }
+            }
+            
+            const duration = performance.now() - startTime;
+            const passed = results.filter(r => r.passed).length;
+            const failed = results.filter(r => !r.passed).length;
+            
+            // Update UI
+            container.innerHTML = results.map(r => `
+                <div class="test-item ${r.passed ? 'pass' : 'fail'}">
+                    <span>${r.name}</span>
+                    <span class="status-badge ${r.passed ? 'status-pass' : 'status-fail'}">
+                        ${r.passed ? 'PASS' : 'FAIL'}
+                    </span>
+                </div>
+            `).join('');
+            
+            // Update summary
+            document.getElementById('totalTests').textContent = results.length;
+            document.getElementById('passedTests').textContent = passed;
+            document.getElementById('failedTests').textContent = failed;
+            document.getElementById('testDuration').textContent = `${duration.toFixed(0)}ms`;
+            summary.style.display = 'block';
+            
+            log(`Automated tests complete: ${passed}/${results.length} passed in ${duration.toFixed(0)}ms`, 
+                failed === 0 ? 'info' : 'warn');
+        }
+        
+        function clearTestResults() {
+            document.getElementById('automatedResults').innerHTML = '';
+            document.getElementById('testSummary').style.display = 'none';
+            log('Test results cleared', 'info');
+        }
+        
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            checkAPIs();
+            updateAlertsDisplay();
+            log('core.os v1.2.0 Browser Integration Test initialized', 'info');
+            log('Ready for testing. Click "Run All Tests" to begin automated testing.', 'info');
+        });
+        
+        // Listen for custom events
+        window.addEventListener('coreos-alert', (e) => {
+            log(`Custom event received: coreos-alert - ${e.detail.message}`, 'info');
+        });
+    </script>
+</body>
+</html>

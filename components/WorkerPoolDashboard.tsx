@@ -1,5 +1,5 @@
 /**
- * Worker Pool Dashboard - Kernel v1.2
+ * Worker Pool Dashboard - Kernel v1.3
  * Visualizes worker pool activity, task queue, and performance metrics
  */
 
@@ -178,7 +178,7 @@ export const WorkerPoolDashboard: React.FC = () => {
           <Cpu className="text-cyan-500" size={24} />
           <div>
             <h2 className="text-lg font-bold text-white">WORKER POOL</h2>
-            <p className="text-xs text-cyan-600">Kernel v1.2 • Background Task Management</p>
+            <p className="text-xs text-cyan-600">Kernel v1.5.0 • Background Task Management</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

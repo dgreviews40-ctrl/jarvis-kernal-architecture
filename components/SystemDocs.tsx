@@ -16,7 +16,7 @@ export const SystemDocs: React.FC = () => {
     <div className="space-y-6 text-gray-300 font-mono text-sm">
       
       {/* 1. ARCHITECTURE DIAGRAM */}
-      <Section title="SYSTEM ARCHITECTURE v1.3" icon={<GitBranch size={18} />}>
+      <Section title="SYSTEM ARCHITECTURE v1.5.0" icon={<GitBranch size={18} />}>
         <div className="bg-[#050505] p-4 rounded border border-[#333] overflow-x-auto">
           <pre className="text-xs leading-relaxed text-green-400/80 font-mono whitespace-pre">
 {`

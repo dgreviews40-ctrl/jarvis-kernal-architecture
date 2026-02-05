@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { haService, HAEntity } from '../services/home_assistant';
+import { textStyle, textColor, fontFamily } from '../constants/typography';
 import {
   getWhitelistState,
   toggleEntity,
@@ -293,10 +294,10 @@ const HomeAssistantDashboard: React.FC = () => {
     return (
       <div className="p-6 bg-gray-900/50 backdrop-blur-sm rounded-lg border border-gray-700">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-white">Home Assistant Dashboard</h3>
+          <h3 className={`${textStyle.sectionHeader} text-white`}>Home Assistant Dashboard</h3>
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-yellow-500 rounded-full animate-pulse"></div>
-            <span className="text-gray-400 text-sm">Loading...</span>
+            <span className={`${textStyle.bodySecondary} text-gray-400`}>Loading...</span>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -321,7 +322,7 @@ const HomeAssistantDashboard: React.FC = () => {
           <div className="flex bg-gray-800 rounded-lg p-1">
             <button
               onClick={() => setViewMode('dashboard')}
-              className={`px-3 py-1 rounded-md text-sm transition-colors ${
+              className={`px-3 py-1 rounded-md ${textStyle.bodySecondary} transition-colors ${
                 viewMode === 'dashboard' 
                   ? 'bg-cyan-600 text-white' 
                   : 'text-gray-400 hover:text-white'
@@ -331,7 +332,7 @@ const HomeAssistantDashboard: React.FC = () => {
             </button>
             <button
               onClick={() => setViewMode('whitelist')}
-              className={`px-3 py-1 rounded-md text-sm transition-colors ${
+              className={`px-3 py-1 rounded-md ${textStyle.bodySecondary} transition-colors ${
                 viewMode === 'whitelist' 
                   ? 'bg-cyan-600 text-white' 
                   : 'text-gray-400 hover:text-white'
@@ -367,11 +368,11 @@ const HomeAssistantDashboard: React.FC = () => {
               <div className={`w-2 h-2 rounded-full ${
                 connectionStatus.connected ? 'bg-green-400' : 'bg-red-400'
               }`}></div>
-              <span className="text-sm">
+              <span className={textStyle.bodySecondary}>
                 {connectionStatus.connected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
-            <div className="text-gray-400 text-sm">
+            <div className={`${textStyle.bodySecondary} text-gray-400`}>
               {connectionStatus.entitiesCount} entities
             </div>
           </div>
@@ -380,9 +381,9 @@ const HomeAssistantDashboard: React.FC = () => {
 
       {!connectionStatus.connected ? (
         <div className="text-center py-8">
-          <div className="text-red-400 mb-2">⚠️ Connection Error</div>
-          <div className="text-gray-400 text-sm">{connectionStatus.error}</div>
-          <div className="mt-4 text-gray-500 text-sm">
+          <div className={`${textStyle.bodyPrimary} text-red-400 mb-2`}>⚠️ Connection Error</div>
+          <div className={`${textStyle.bodySecondary} text-gray-400`}>{connectionStatus.error}</div>
+          <div className={`mt-4 ${textStyle.bodySecondary} text-gray-500`}>
             Please check your Home Assistant configuration in Settings
           </div>
         </div>
@@ -391,7 +392,7 @@ const HomeAssistantDashboard: React.FC = () => {
         <div>
           {/* Mode Selection */}
           <div className="mb-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-            <h4 className="text-lg font-semibold text-cyan-400 mb-3">Jarvis Access Mode</h4>
+            <h4 className={`${textStyle.sectionHeader} text-cyan-400 mb-3`}>Jarvis Access Mode</h4>
             <div className="flex flex-wrap gap-3 mb-4">
               <button
                 onClick={() => handleModeChange('all')}
@@ -401,8 +402,8 @@ const HomeAssistantDashboard: React.FC = () => {
                     : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:text-white'
                 }`}
               >
-                <div className="font-medium">🌐 All Entities</div>
-                <div className="text-xs opacity-75">Jarvis can access everything</div>
+                <div className={textStyle.bodyPrimary}>🌐 All Entities</div>
+                <div className={`${textStyle.bodySecondary} opacity-75`}>Jarvis can access everything</div>
               </button>
               <button
                 onClick={() => handleModeChange('whitelist')}
@@ -412,8 +413,8 @@ const HomeAssistantDashboard: React.FC = () => {
                     : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:text-white'
                 }`}
               >
-                <div className="font-medium">✓ Whitelist</div>
-                <div className="text-xs opacity-75">Only selected entities</div>
+                <div className={textStyle.bodyPrimary}>✓ Whitelist</div>
+                <div className={`${textStyle.bodySecondary} opacity-75`}>Only selected entities</div>
               </button>
               <button
                 onClick={() => handleModeChange('blacklist')}
@@ -423,8 +424,8 @@ const HomeAssistantDashboard: React.FC = () => {
                     : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:text-white'
                 }`}
               >
-                <div className="font-medium">✕ Blacklist</div>
-                <div className="text-xs opacity-75">Exclude selected entities</div>
+                <div className={textStyle.bodyPrimary}>✕ Blacklist</div>
+                <div className={`${textStyle.bodySecondary} opacity-75`}>Exclude selected entities</div>
               </button>
             </div>
 
@@ -432,15 +433,15 @@ const HomeAssistantDashboard: React.FC = () => {
             <div className="grid grid-cols-3 gap-4 text-center">
               <div className="p-3 bg-gray-700/30 rounded-lg">
                 <div className="text-2xl font-bold text-white">{stats.total}</div>
-                <div className="text-xs text-gray-400">Total Entities</div>
+                <div className={`${textStyle.label} text-gray-400`}>Total Entities</div>
               </div>
               <div className="p-3 bg-green-900/20 rounded-lg">
                 <div className="text-2xl font-bold text-green-400">{stats.enabled}</div>
-                <div className="text-xs text-gray-400">Accessible to Jarvis</div>
+                <div className={`${textStyle.label} text-gray-400`}>Accessible to Jarvis</div>
               </div>
               <div className="p-3 bg-red-900/20 rounded-lg">
                 <div className="text-2xl font-bold text-red-400">{stats.disabled}</div>
-                <div className="text-xs text-gray-400">Hidden from Jarvis</div>
+                <div className={`${textStyle.label} text-gray-400`}>Hidden from Jarvis</div>
               </div>
             </div>
           </div>
@@ -451,7 +452,7 @@ const HomeAssistantDashboard: React.FC = () => {
               <button
                 key={category}
                 onClick={() => handleCategorySelect(category)}
-                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                className={`px-3 py-1 rounded-full ${textStyle.bodySecondary} transition-colors ${
                   selectedCategory === category
                     ? 'bg-cyan-600 text-white'
                     : 'bg-gray-700 text-gray-400 hover:text-white'
@@ -467,13 +468,13 @@ const HomeAssistantDashboard: React.FC = () => {
             <div className="mb-4 flex gap-2">
               <button
                 onClick={() => handleSelectAllInCategory(selectedCategory, true)}
-                className="px-3 py-1 bg-green-600/30 text-green-400 rounded-lg text-sm hover:bg-green-600/50"
+                className={`px-3 py-1 bg-green-600/30 text-green-400 rounded-lg ${textStyle.bodySecondary} hover:bg-green-600/50`}
               >
                 Enable All in Category
               </button>
               <button
                 onClick={() => handleSelectAllInCategory(selectedCategory, false)}
-                className="px-3 py-1 bg-red-600/30 text-red-400 rounded-lg text-sm hover:bg-red-600/50"
+                className={`px-3 py-1 bg-red-600/30 text-red-400 rounded-lg ${textStyle.bodySecondary} hover:bg-red-600/50`}
               >
                 Disable All in Category
               </button>
@@ -485,25 +486,23 @@ const HomeAssistantDashboard: React.FC = () => {
             {filteredEntities.map((entity) => (
               <div
                 key={entity.entity_id}
-                className={`p-3 rounded-lg border transition-all ${
+                className={`p-3 rounded-lg border transition-all overflow-hidden ${
                   entity.enabled
                     ? 'bg-cyan-900/20 border-cyan-500/50'
                     : 'bg-gray-800/30 border-gray-700 opacity-60'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center min-w-0">
-                    <span className="text-xl mr-2">{entity.icon}</span>
-                    <div className="min-w-0">
-                      <div className="font-medium text-white text-sm truncate">
-                        {entity.friendly_name}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">{entity.entity_id}</div>
+                <div className="flex items-start gap-2">
+                  <span className="text-xl flex-shrink-0 mt-0.5">{entity.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className={`${textStyle.bodyPrimary} text-white truncate`} title={entity.friendly_name}>
+                      {entity.friendly_name}
                     </div>
+                    <div className={`${textStyle.timestamp} text-gray-500 truncate`} title={entity.entity_id}>{entity.entity_id}</div>
                   </div>
                   <button
                     onClick={() => handleWhitelistToggle(entity.entity_id)}
-                    className={`ml-2 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                    className={`flex-shrink-0 px-2 py-1 rounded-lg ${textStyle.tag} transition-colors ${
                       entity.enabled
                         ? 'bg-green-600 text-white hover:bg-green-700'
                         : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
@@ -512,16 +511,16 @@ const HomeAssistantDashboard: React.FC = () => {
                     {entity.enabled ? '✓ On' : '✕ Off'}
                   </button>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-xs">
-                  <span className="text-gray-500">{getCategoryLabel(entity.category)}</span>
-                  <span className={getStateColor(entity.state)}>{entity.state}</span>
+                <div className={`mt-2 flex items-center justify-between ${textStyle.timestamp} pl-6`}>
+                  <span className="text-gray-500 truncate">{getCategoryLabel(entity.category)}</span>
+                  <span className={`flex-shrink-0 ml-2 ${getStateColor(entity.state)}`}>{entity.state}</span>
                 </div>
               </div>
             ))}
           </div>
 
           {filteredEntities.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
+            <div className={`text-center py-8 ${textStyle.bodySecondary} text-gray-500`}>
               No entities match your filters
             </div>
           )}
@@ -530,7 +529,7 @@ const HomeAssistantDashboard: React.FC = () => {
           <div className="mt-6 text-center">
             <button
               onClick={handleClearWhitelist}
-              className="px-4 py-2 text-red-400 hover:text-red-300 text-sm"
+              className={`px-4 py-2 text-red-400 hover:text-red-300 ${textStyle.bodySecondary}`}
             >
               Reset All Settings
             </button>
@@ -542,7 +541,7 @@ const HomeAssistantDashboard: React.FC = () => {
           {/* Show message if whitelist is active */}
           {whitelistMode !== 'all' && (
             <div className="mb-4 p-3 bg-cyan-900/20 border border-cyan-500/30 rounded-lg">
-              <div className="text-sm text-cyan-400">
+              <div className={`${textStyle.bodySecondary} text-cyan-400`}>
                 🔒 Showing only {stats.enabled} enabled entities. 
                 <button 
                   onClick={() => setViewMode('whitelist')}
@@ -556,32 +555,30 @@ const HomeAssistantDashboard: React.FC = () => {
 
           {/* Controllable Devices */}
           <div className="mb-8">
-            <h4 className="text-lg font-semibold text-cyan-400 mb-4 flex items-center">
+            <h4 className={`${textStyle.sectionHeader} text-cyan-400 mb-4 flex items-center`}>
               <span className="mr-2">⚡</span> Controllable Devices
-              <span className="ml-2 text-sm text-gray-500">({getControllableEntities().length})</span>
+              <span className={`ml-2 ${textStyle.bodySecondary} text-gray-500`}>({getControllableEntities().length})</span>
             </h4>
             {getControllableEntities().length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
                 {getControllableEntities().map((entity) => (
                   <div
                     key={entity.entity_id}
-                    className={`p-4 rounded-lg border transition-all duration-200 cursor-pointer hover:scale-[1.02] ${getDomainColor(entity.domain)}`}
+                    className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer hover:scale-[1.02] ${getDomainColor(entity.domain)} overflow-hidden`}
                     onClick={() => handleEntityToggle(entity.entity_id, entity.state)}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center">
-                        <span className="text-xl mr-3">{entity.icon}</span>
-                        <div>
-                          <div className="font-medium text-white">{entity.friendly_name}</div>
-                          <div className="text-xs text-gray-400">{entity.entity_id}</div>
-                        </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-xl flex-shrink-0 mt-0.5">{entity.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className={`${textStyle.bodyPrimary} text-white truncate`} title={entity.friendly_name}>{entity.friendly_name}</div>
+                        <div className={`${textStyle.timestamp} text-gray-400 truncate`} title={entity.entity_id}>{entity.entity_id}</div>
                       </div>
-                      <div className={`font-semibold ${getStateColor(entity.state)}`}>
+                      <div className={`flex-shrink-0 ${textStyle.bodySecondary} px-2 py-0.5 rounded bg-black/20 ${getStateColor(entity.state)}`}>
                         {entity.state}
                       </div>
                     </div>
                     {entity.attributes.unit_of_measurement && (
-                      <div className="mt-2 text-sm text-gray-300">
+                      <div className={`mt-2 ${textStyle.bodySecondary} text-gray-300 truncate pl-7`}>
                         {entity.attributes.current_temperature || entity.attributes.brightness || entity.state}
                         {entity.attributes.unit_of_measurement}
                       </div>
@@ -590,7 +587,7 @@ const HomeAssistantDashboard: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="text-gray-500 text-center py-4">
+              <div className={`${textStyle.bodySecondary} text-gray-500 text-center py-4`}>
                 {whitelistMode === 'all' 
                   ? 'No controllable devices found' 
                   : 'No enabled controllable devices. Enable some in Jarvis Access.'}
@@ -600,32 +597,32 @@ const HomeAssistantDashboard: React.FC = () => {
 
           {/* Sensors */}
           <div>
-            <h4 className="text-lg font-semibold text-cyan-400 mb-4 flex items-center">
+            <h4 className={`${textStyle.sectionHeader} text-cyan-400 mb-4 flex items-center`}>
               <span className="mr-2">📊</span> Sensors
-              <span className="ml-2 text-sm text-gray-500">({getSensorEntities().length})</span>
+              <span className={`ml-2 ${textStyle.bodySecondary} text-gray-500`}>({getSensorEntities().length})</span>
             </h4>
             {getSensorEntities().length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[40vh] overflow-y-auto pr-2 custom-scrollbar">
                 {getSensorEntities().map((entity) => (
                   <div
                     key={entity.entity_id}
-                    className={`p-4 rounded-lg border ${getDomainColor(entity.domain)}`}
+                    className={`p-3 rounded-lg border ${getDomainColor(entity.domain)} overflow-hidden`}
                   >
-                    <div className="flex items-center">
-                      <span className="text-xl mr-3">{entity.icon}</span>
-                      <div>
-                        <div className="font-medium text-white">{entity.friendly_name}</div>
-                        <div className="text-xs text-gray-400">{entity.entity_id}</div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-xl flex-shrink-0 mt-0.5">{entity.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className={`${textStyle.bodyPrimary} text-white truncate`} title={entity.friendly_name}>{entity.friendly_name}</div>
+                        <div className={`${textStyle.timestamp} text-gray-400 truncate`} title={entity.entity_id}>{entity.entity_id}</div>
                       </div>
                     </div>
-                    <div className="mt-2">
-                      <div className="text-lg font-semibold text-white">
+                    <div className="mt-2 pl-7">
+                      <div className={`${textStyle.bodyPrimary} font-semibold text-white truncate`}>
                         {entity.attributes.unit_of_measurement
                           ? `${entity.state} ${entity.attributes.unit_of_measurement}`
                           : entity.state}
                       </div>
                       {entity.attributes.device_class && (
-                        <div className="text-xs text-gray-400 mt-1 capitalize">
+                        <div className={`${textStyle.timestamp} text-gray-400 mt-0.5 capitalize truncate`}>
                           {entity.attributes.device_class.replace('_', ' ')}
                         </div>
                       )}
@@ -634,7 +631,7 @@ const HomeAssistantDashboard: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="text-gray-500 text-center py-4">
+              <div className={`${textStyle.bodySecondary} text-gray-500 text-center py-4`}>
                 {whitelistMode === 'all' 
                   ? 'No sensors found' 
                   : 'No enabled sensors. Enable some in Jarvis Access.'}

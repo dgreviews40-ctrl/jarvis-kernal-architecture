@@ -98,6 +98,31 @@ const MOCK_MARKETPLACE: PluginListing[] = [
     downloadCount: 3200,
     verified: true,
     updatedAt: '2026-02-01T00:00:00Z'
+  },
+  {
+    manifest: {
+      id: 'display.core',
+      name: 'Display Core',
+      version: '1.0.0',
+      description: 'Core display functionality for JARVIS with intelligent model selection and rich content rendering. Handles diagrams, images, documentation, and interactive elements.',
+      author: 'JARVIS',
+      engineVersion: '1.5.0',
+      dependencies: [],
+      permissions: ['display:render', 'model:selection'],
+      provides: [
+        { name: 'display.content', version: '1.0.0', description: 'Content display service' },
+        { name: 'display.render', version: '1.0.0', description: 'Content rendering service' },
+        { name: 'model.selection', version: '1.0.0', description: 'Intelligent model selection' }
+      ],
+      entry: { ui: 'DisplayDashboard.tsx' },
+      tags: ['display', 'visualization', 'rendering', 'ai', 'content'],
+      license: 'MIT'
+    },
+    downloadUrl: 'builtin://display.core',
+    rating: 4.9,
+    downloadCount: 850,
+    verified: true,
+    updatedAt: '2026-02-03T00:00:00Z'
   }
 ];
 
@@ -215,7 +240,7 @@ export async function installFromMarketplace(
       const registered = await registerPlugin(listing.manifest);
       if (!registered) {
         // Plugin might already be registered, which is fine
-        logger.info('MARKETPLACE', `${pluginId} is already registered or registration skipped`);
+        logger.log('PLUGIN', `${pluginId} is already registered or registration skipped`);
       }
       
       onProgress?.('starting', 90);
@@ -295,7 +320,7 @@ export async function submitRating(
 ): Promise<{ success: boolean; error?: string }> {
   // In production, this would submit to an API
   // For now, just log it
-  logger.info('MARKETPLACE', `Rating submitted for ${pluginId}: ${rating} stars`);
+  logger.log('PLUGIN', `Rating submitted for ${pluginId}: ${rating} stars`);
   return { success: true };
 }
 

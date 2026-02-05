@@ -5,14 +5,14 @@ const CORE_PLUGINS: PluginManifest[] = [
   {
     id: "core.os",
     name: "System Core",
-    version: "1.0.0",
-    description: "Core operating system interface and hardware abstraction layer.",
+    version: "1.2.0",
+    description: "Core operating system interface with real-time system metrics, predictive analytics, storage monitoring, and automated alerting.",
     author: "JARVIS",
     permissions: ["HARDWARE_CONTROL"],
-    provides: ["os_level_control", "filesystem", "system_diagnostics"],
+    provides: ["os_level_control", "filesystem", "system_diagnostics", "system_metrics", "battery_status", "network_info", "storage_info", "performance_metrics", "predictive_analysis", "system_alerts"],
     requires: [],
     priority: 100,
-    capabilities: ["system_diagnostics", "process_management"]
+    capabilities: ["system_diagnostics", "process_management", "metrics_collection", "health_monitoring", "battery_monitoring", "network_monitoring", "storage_monitoring", "performance_tracking", "predictive_analytics", "automated_alerting"]
   },
   {
     id: "core.network",
@@ -29,14 +29,14 @@ const CORE_PLUGINS: PluginManifest[] = [
   {
     id: "core.memory",
     name: "Memory Core",
-    version: "1.0.0",
-    description: "Long-term memory storage with semantic search capabilities.",
+    version: "2.0.0",
+    description: "Long-term memory storage with vector database semantic search capabilities.",
     author: "JARVIS",
     permissions: ["READ_MEMORY", "WRITE_MEMORY"],
-    provides: ["memory_read", "memory_write", "semantic_search"],
+    provides: ["memory_read", "memory_write", "semantic_search", "vector_embeddings"],
     requires: ["filesystem"],
     priority: 80,
-    capabilities: ["memory_read", "memory_write", "context_recall"]
+    capabilities: ["memory_read", "memory_write", "context_recall", "vector_search", "semantic_matching"]
   },
   {
     id: "core.ai",
@@ -97,12 +97,24 @@ const CORE_PLUGINS: PluginManifest[] = [
     requires: ["network"],
     priority: 55,
     capabilities: ["current_weather", "hourly_forecast", "daily_forecast", "air_quality", "location_search"]
+  },
+  {
+    id: "display.core",
+    name: "Display Core",
+    version: "1.0.0",
+    description: "Core display functionality for JARVIS with intelligent model selection and rich content rendering.",
+    author: "JARVIS",
+    permissions: ["DISPLAY_RENDER", "MODEL_SELECTION"],
+    provides: ["display.content", "display.render", "model.selection"],
+    requires: ["ai_inference", "os_level_control"],
+    priority: 75,
+    capabilities: ["display.content", "display.render", "model.selection", "interactive.elements", "content.generation"]
   }
 ];
 
 // Version to force cache clear when plugins change
 // Bump this number whenever CORE_PLUGINS changes to clear localStorage
-const REGISTRY_VERSION = 10;
+const REGISTRY_VERSION = 15; // Bumped for core.os v1.2.0 upgrade
 
 class PluginRegistry {
   private plugins: Map<string, RuntimePlugin> = new Map();

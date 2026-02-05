@@ -30,7 +30,7 @@ export class EnhancedCircuitBreaker {
     this.halfOpenSuccessThreshold = options.halfOpenSuccessThreshold ?? 1;
   }
 
-  async call<T>(fn: () => Promise<T>): Promise<T> {
+  async call<T>(fn: () => Promise<T>, timeoutMs?: number): Promise<T> {
     if (this.state === 'OPEN') {
       if (this.lastFailureTime && Date.now() - this.lastFailureTime > this.resetTimeout) {
         console.log('Circuit breaker transitioning to HALF_OPEN');
@@ -42,7 +42,9 @@ export class EnhancedCircuitBreaker {
     }
 
     try {
-      const result = await this.withTimeout(fn(), this.timeout);
+      // Use provided timeout if given, otherwise use circuit breaker default
+      const effectiveTimeout = timeoutMs ?? this.timeout;
+      const result = await this.withTimeout(fn(), effectiveTimeout);
       this.onSuccess();
       return result;
     } catch (error) {
@@ -52,22 +54,22 @@ export class EnhancedCircuitBreaker {
   }
 
   private async withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    let timeoutId: NodeJS.Timeout;
+
     const timeoutPromise = new Promise<never>((_, reject) => {
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         reject(new Error(`Operation timed out after ${ms}ms`));
       }, ms);
-      
-      // Clean up the timeout if the main promise resolves first
-      const wrappedPromise = promise.finally(() => clearTimeout(timeoutId));
-      
-      // Return the result of the main promise
-      return wrappedPromise.then(result => {
-        clearTimeout(timeoutId);
-        return result;
-      });
     });
-    
-    return Promise.race([promise, timeoutPromise]);
+
+    try {
+      const result = await Promise.race([promise, timeoutPromise]);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
   }
 
   private onSuccess(): void {

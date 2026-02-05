@@ -104,10 +104,9 @@ export const VoiceHUD: React.FC<VoiceHUDProps> = ({ onToggle }) => {
     `}>
       
       {/* Power Toggle (Absolute Top Right) */}
-      <button 
+      <button
          onClick={() => {
            const newPowerState = isOffline;
-           console.log('[VoiceHUD] Power button clicked, setting power to:', newPowerState);
            voice.setPower(newPowerState);
          }}
          className={`absolute top-2 right-2 p-1.5 rounded-full border hover:scale-110 transition-all ${isOffline ? 'border-red-900 text-red-900' : 'border-green-500/30 text-green-500 bg-green-500/10'}`}
@@ -119,10 +118,8 @@ export const VoiceHUD: React.FC<VoiceHUDProps> = ({ onToggle }) => {
       {/* Top Bar: Status */}
       <div className="flex items-center justify-between mt-2">
         <div className="flex items-center gap-4">
-            <button 
+            <button
             onClick={() => {
-              const currentState = voice.getState();
-              console.log('[VoiceHUD] Mic button clicked, current state:', currentState);
               onToggle();
             }}
             title={state === VoiceState.IDLE ? "Wake Jarvis" : "Stop Listening"}

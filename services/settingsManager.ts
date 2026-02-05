@@ -179,7 +179,7 @@ class SettingsManager {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Export failed';
-      logger.error('SETTINGS', 'Export failed', { error: message });
+      logger.log('SYSTEM', 'Export failed', { error: message });
       return {
         success: false,
         error: message,
@@ -279,7 +279,7 @@ class SettingsManager {
           memory: result.imported.memory,
         });
       } else {
-        logger.warning('SETTINGS', 'Settings imported with errors', {
+        logger.log('SYSTEM', 'Settings imported with errors', {
           errors: result.errors.length,
           warnings: result.warnings.length,
         });
@@ -288,7 +288,7 @@ class SettingsManager {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
-      logger.error('SETTINGS', 'Import failed', { error: message });
+      logger.log('SYSTEM', 'Import failed', { error: message });
       result.errors.push(message);
       return result;
     }
@@ -311,7 +311,7 @@ class SettingsManager {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    logger.info('SETTINGS', `Settings downloaded as ${finalName}`);
+    logger.log('SYSTEM', `Settings downloaded as ${finalName}`);
   }
 
   /**
@@ -321,7 +321,7 @@ class SettingsManager {
     for (const key of STORAGE_KEYS) {
       localStorage.removeItem(key);
     }
-    logger.info('SETTINGS', 'All settings cleared');
+    logger.log('SYSTEM', 'All settings cleared');
   }
 
   /**

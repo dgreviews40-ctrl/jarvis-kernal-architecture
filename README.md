@@ -8,7 +8,17 @@ J.A.R.V.I.S. is an advanced AI kernel architecture that integrates multiple AI p
 - **Home Assistant integration** for smart home control
 - **Voice recognition and synthesis** with wake word detection
 - **Computer vision** with webcam and Home Assistant camera support
-- **Hardware monitoring** and system diagnostics
+- **Hardware monitoring** and system diagnostics (core.os v1.2.0)
+  - Real-time memory metrics (heap, RSS, external)
+  - CPU usage and load average monitoring
+  - Battery status monitoring (via Battery API)
+  - Network connection info (type, downlink, latency)
+  - Storage quota and usage tracking
+  - Performance metrics (memory pressure, latency)
+  - Predictive analytics (trends, health score, recommendations)
+  - Automated system alerts
+  - Plugin health tracking
+  - ASCII-formatted diagnostic reports
 - **Plugin architecture v2** with sandboxing and lifecycle management
 - **Memory storage** and semantic recall system
 - **State management** with Zustand stores
@@ -85,6 +95,59 @@ npm run dev
 │  │  Memory  │ │   HA     │ │  Intelligence (Consolidated)│   │
 │  └──────────┘ └──────────┘ └────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### System Core (core.os v1.2.0)
+
+The System Core plugin provides low-level system monitoring, predictive analytics, and automated alerting:
+
+| Capability | Command | Description |
+|------------|---------|-------------|
+| **System Diagnostics** | `diagnostic`, `scan`, `full` | Full ASCII-formatted diagnostic report |
+| **Memory Metrics** | `metrics`, `stats` | Real-time memory usage (heap, RSS, external) |
+| **CPU Monitoring** | included in metrics | CPU usage %, load average |
+| **Network Info** | `network`, `probe` | Connection type, downlink, latency, online status |
+| **Battery Status** | `battery`, `power` | Battery level, charging state, time estimates |
+| **Storage Info** | `storage`, `disk` | Storage quota, usage, available space |
+| **Performance** | `performance`, `perf` | Memory pressure, latency, health indicators |
+| **Predictive Analysis** | `predict`, `analysis` | Health score, trends, recommendations |
+| **System Alerts** | `alerts`, `warnings` | Active system alerts and warnings |
+| **Auto-Monitoring** | `monitor`, `watch` | Toggle background system monitoring |
+| **Plugin Health** | `health`, `plugins` | Active/disabled/error plugin counts |
+| **System Control** | `circuit`, `reset`, `memory`, `optimize` | Circuit breaker and memory management |
+
+**Usage Example:**
+```typescript
+import { coreOs } from './services/coreOs';
+
+// Get real-time metrics (now includes CPU)
+const metrics = coreOs.getSystemMetrics();
+console.log(`Heap: ${coreOs.formatBytes(metrics.memory.heapUsed)}`);
+console.log(`CPU: ${metrics.cpu.usagePercent}%`);
+
+// Get battery info (async)
+const battery = await coreOs.getBatteryInfo();
+console.log(`Battery: ${battery.level}%`);
+
+// Get storage info (async)
+const storage = await coreOs.getStorageInfo();
+console.log(`Storage: ${storage.percentUsed}% used`);
+
+// Get predictive analysis (async)
+const analysis = await coreOs.getPredictiveAnalysis();
+console.log(`Health Score: ${analysis.healthScore}/100`);
+console.log(`Recommendation: ${analysis.recommendedAction}`);
+
+// Start auto-monitoring
+coreOs.startMonitoring(5000); // Check every 5 seconds
+
+// Check for alerts
+const alerts = coreOs.getActiveAlerts();
+alerts.forEach(alert => console.log(`[${alert.type}] ${alert.message}`));
+
+// Run full diagnostics
+const report = await coreOs.runDiagnostics();
+console.log(report); // ASCII-formatted report with all sections
 ```
 
 ### State Management
@@ -265,6 +328,14 @@ JARVIS_SIMPLE.bat
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for a detailed history of changes, including:
+- core.os v1.1.0 upgrade with real-time system metrics
+- Feature additions and bug fixes
+- Plugin version history
+- Future roadmap
+
 ## Architecture Decisions
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for detailed architecture decision records (ADRs):
@@ -286,6 +357,12 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - The flag is set when `voice.speak()` is called and cleared when speaking completes
 - Applies to both browser-based and Whisper STT systems
 
+### Memory Leaks in Voice Service
+- Fixed audio context memory leaks in the voice service
+- Improved cleanup of audio contexts in all error scenarios
+- Added proper cleanup of Web Workers and VAD intervals
+- Enhanced state management to prevent resource accumulation
+
 ### Whisper Transcription Service 500 Error Fixes
 - Improved error handling in whisper_server.py with better error messages
 - Added proper temporary file cleanup to prevent resource leaks
@@ -304,3 +381,41 @@ python whisper_server_fixed.py
 - Added proper error handling for browser autoplay policies
 - Enhanced fallback mechanism to system voice when Piper fails
 - Added comprehensive debugging to diagnose audio issues
+
+### Memory Recall Enhancement for User Identity
+- Added special handling for user identity queries like "what's my name"
+- Implemented boosted scoring for identity-related memories
+- Added dedicated methods for storing and retrieving user identity
+- Enhanced memory recall algorithm to better recognize identity queries
+- Improved application logic to detect and store identity information properly
+- Added specific handling for identity-related storage and retrieval in the main application flow
+
+### Plugin Integration Enhancement for Weather Queries
+- Added direct routing for weather-related queries to the Weather Station plugin
+- Implemented proper handling for "what's the weather" and similar queries
+- Enhanced application logic to use weather plugin data when available
+- Added specific response formatting for different types of weather queries
+- Improved integration between main application and plugin marketplace services
+
+### Enhanced TTS for Natural Speech
+- Added enhanced TTS service with natural speech patterns
+- Implemented emotional tone and intonation variations
+- Added prosody controls for more fluid speech delivery
+- Integrated enhanced speech processing with all TTS providers (system, Piper, Neural)
+- Added text preprocessing for natural pauses and emphasis
+- Improved speech rhythm and stress patterns for more human-like delivery
+
+### Improved Error Handling and Resource Management
+- Enhanced error handling in AI providers (Gemini and Ollama)
+- Added validation for image data in vision requests
+- Improved cleanup in kernel processor's finalizeResponse
+- Fixed potential race conditions in voice service state management
+- Added proper async handling for voice service operations
+- Enhanced circuit breaker patterns with better error reporting
+- Improved resource cleanup in application lifecycle
+
+### Security Vulnerability Fixes
+- Fixed XSS vulnerability in DisplayArea component by sanitizing SVG content
+- Added dangerous pattern detection for plugin code execution
+- Improved validation for user-generated content rendering
+- Added security checks for dynamic code evaluation

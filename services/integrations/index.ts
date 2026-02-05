@@ -4,10 +4,10 @@
  */
 
 import { calendar } from './calendar';
-import { weather } from './weather';
 import { news } from './news';
 import { webSearch } from './webSearch';
 import { taskAutomation } from './taskAutomation';
+import { weatherService as weather } from '../weather';
 
 export interface IntegrationResult {
   handled: boolean;
@@ -23,6 +23,7 @@ export interface IntegrationConfig {
   searchApiKey?: string;
   searchEngineId?: string;
   userInterests?: string[];
+  speakFunction?: (text: string) => void;
 }
 
 class IntegrationHub {
@@ -31,8 +32,16 @@ class IntegrationHub {
   public configure(config: IntegrationConfig): void {
     this.config = config;
 
-    if (config.weatherApiKey) {
-      weather.configure(config.weatherApiKey, config.defaultLocation);
+    if (config.defaultLocation) {
+      // The real weather service uses geocoding to set location by name
+      // We'll need to search for the location and set it
+      weather.searchLocations(config.defaultLocation).then(locations => {
+        if (locations.length > 0) {
+          weather.setLocation(locations[0]).catch(err => {
+            console.error('Failed to set weather location:', err);
+          });
+        }
+      });
     }
     if (config.newsApiKey) {
       news.configure(config.newsApiKey);
@@ -42,6 +51,11 @@ class IntegrationHub {
     }
     if (config.searchApiKey) {
       webSearch.configure(config.searchApiKey, config.searchEngineId);
+    }
+
+    // Register the speak function for task automation
+    if (config.speakFunction) {
+      taskAutomation.setSpeakFunction(config.speakFunction);
     }
   }
 
@@ -88,15 +102,61 @@ class IntegrationHub {
 
     // 3. Check for weather queries
     if (lower.includes('weather') || lower.match(/\b(hot|cold|rain|snow|sunny|temperature)\b/)) {
-      const query = weather.parseWeatherQuery(input);
       try {
-        const data = await weather.getCurrent(query.location);
-        if (data) {
+        // Check if weather data is available
+        const weatherData = weather.getData();
+        if (weatherData) {
+          // Weather data exists, return current weather
+          const current = weatherData.current;
+          const location = weatherData.location.name;
           return {
             handled: true,
-            response: weather.getNaturalSummary(data),
+            response: `Currently in ${location}, it's ${current.condition.description.toLowerCase()}. The temperature is ${weather.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity. Winds are blowing at ${(current.windSpeed * 0.621371).toFixed(1)} mph from the ${weather.getWindDirectionLabel(current.windDirection)}.`,
             action: 'weather_report',
-            data
+            data: weatherData
+          };
+        } else {
+          // No weather data available, try to get location automatically
+          const locationSet = weather.getLocation();
+
+          if (!locationSet) {
+            // Try to automatically get user's current location if no location is set
+            const locationFound = await weather.useCurrentLocation();
+            if (locationFound) {
+              // Location was successfully set, now try to refresh
+              await weather.refresh();
+              const newData = weather.getData();
+              if (newData) {
+                const current = newData.current;
+                const location = newData.location.name;
+                return {
+                  handled: true,
+                  response: `Currently in ${location}, it's ${current.condition.description.toLowerCase()}. The temperature is ${weather.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity. Winds are blowing at ${(current.windSpeed * 0.621371).toFixed(1)} mph from the ${weather.getWindDirectionLabel(current.windDirection)}.`,
+                  action: 'weather_report',
+                  data: newData
+                };
+              }
+            }
+          } else {
+            // Location was already set, try to refresh
+            await weather.refresh();
+            const newData = weather.getData();
+            if (newData) {
+              const current = newData.current;
+              const location = newData.location.name;
+              return {
+                handled: true,
+                response: `Currently in ${location}, it's ${current.condition.description.toLowerCase()}. The temperature is ${weather.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity. Winds are blowing at ${(current.windSpeed * 0.621371).toFixed(1)} mph from the ${weather.getWindDirectionLabel(current.windDirection)}.`,
+                action: 'weather_report',
+                data: newData
+              };
+            }
+          }
+
+          return {
+            handled: true,
+            response: "I couldn't retrieve weather data. The weather service may be temporarily unavailable or location access was denied.",
+            action: 'weather_error'
           };
         }
       } catch (e) {

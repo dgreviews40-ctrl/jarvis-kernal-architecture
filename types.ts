@@ -9,7 +9,9 @@ export enum ProcessorState {
   ROUTING = 'ROUTING',
   EXECUTING = 'EXECUTING',
   WAITING = 'WAITING',
-  ERROR = 'ERROR'
+  ERROR = 'ERROR',
+  COMPRESSING = 'COMPRESSING', // v1.4.0: Context compression
+  INDEXING = 'INDEXING'        // v1.4.0: Vector indexing
 }
 
 export enum AIProvider {
@@ -71,7 +73,7 @@ export interface KernelAction {
 export interface LogEntry {
   id: string;
   timestamp: Date;
-  source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION' | 'HOME_ASSISTANT';
+  source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION' | 'HOME_ASSISTANT' | 'AGENT' | 'WEBSOCKET' | 'CACHE' | 'SECURITY' | 'RESILIENCE' | 'PREDICTIVE' | 'PERFORMANCE' | 'TESTING' | 'SETTINGS' | 'MARKETPLACE' | 'ERROR' | 'BACKUP';
   message: string;
   details?: Record<string, unknown> | string | number | boolean | object;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -156,6 +158,7 @@ export interface AIRequest {
   systemInstruction?: string;
   temperature?: number;
   stopSequences?: string[];
+  timeout?: number; // Request timeout in milliseconds
 }
 
 export interface AIResponse {
@@ -314,6 +317,57 @@ export interface IPCMessage {
   channel: string;
   payload: unknown;
   status: 'OK' | 'BLOCKED' | 'ERROR';
+}
+
+// =====================================================
+// DISPLAY AREA TYPES - For flexible middle section
+// =====================================================
+
+export type DisplayMode = 'NEURAL' | 'SCHEMATIC' | 'MAP' | 'WEB' | 'IMAGE' | 'CUSTOM';
+
+export interface SchematicContent {
+  imageUrl?: string;
+  svgContent?: string;
+  title?: string;
+  description?: string;
+}
+
+export interface MapContent {
+  center?: [number, number]; // [lat, lng]
+  zoom?: number;
+  markers?: Array<{
+    position: [number, number];
+    label?: string;
+    color?: string;
+  }>;
+  mapType?: 'world' | 'local' | 'satellite';
+}
+
+export interface WebContent {
+  url: string;
+  sandbox?: boolean;
+  title?: string;
+}
+
+export interface ImageContent {
+  src: string;
+  alt?: string;
+  title?: string;
+  fit?: 'contain' | 'cover' | 'fill';
+}
+
+export interface DisplayContent {
+  type: DisplayMode;
+  title?: string;
+  description?: string;
+  // Mode-specific content
+  schematic?: SchematicContent;
+  map?: MapContent;
+  web?: WebContent;
+  image?: ImageContent;
+  custom?: {
+    component: unknown; // React.ReactNode - use unknown to avoid import
+  };
 }
 
 // Extend global window interface for speech recognition and audio context

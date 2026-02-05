@@ -52,7 +52,10 @@ class MemoryCoreOptimized {
   private backupKey = 'jarvis_memory_backups';
   private backupConfigKey = 'jarvis_memory_backup_config';
   private backupIntervalId: number | null = null;
-  
+
+  // Observer pattern for UI updates
+  private observers: (() => void)[] = [];
+
   // Search index for O(1) lookups
   private searchIndex: SearchIndex = {
     wordToNodes: new Map(),
@@ -265,24 +268,25 @@ class MemoryCoreOptimized {
     this.indexNode(newNode);
     this.persistDebounced();
     this.triggerAutoBackup();
-    
+    this.notify();
+
     return newNode;
   }
 
   public async recall(query: string, limit: number = 5): Promise<MemorySearchResult[]> {
     await this.ensureLoaded();
-    
+
     // Check cache first
     const cacheKey = `recall_${query}_${limit}`;
     const cached = optimizer.get<MemorySearchResult[]>('memory', cacheKey, 5000);
     if (cached) return cached;
-    
+
     const queryLower = query.toLowerCase();
     const queryWords = this.tokenize(query);
-    
+
     // Use index for fast candidate selection
     const candidateIds = new Set<string>();
-    
+
     // Add nodes matching query words
     queryWords.forEach(word => {
       const matches = this.searchIndex.wordToNodes.get(word);
@@ -290,74 +294,128 @@ class MemoryCoreOptimized {
         matches.forEach(id => candidateIds.add(id));
       }
     });
-    
+
     // If no word matches, search all nodes (fallback)
     if (candidateIds.size === 0) {
       this.nodes.forEach((_, id) => candidateIds.add(id));
     }
-    
+
+    // Special handling for user identity queries
+    const isIdentityQuery = this.isIdentityQuery(queryLower);
+
     // Score candidates
     const results: MemorySearchResult[] = [];
-    
+
     candidateIds.forEach(id => {
       const node = this.nodes.get(id);
       if (!node) return;
-      
+
       let score = 0;
       const contentLower = node.content.toLowerCase();
-      
+
       // Exact match bonus
       if (contentLower.includes(queryLower)) score += 2.0;
-      
+
       // Word match scoring
       queryWords.forEach(word => {
         if (contentLower.includes(word)) score += 0.5;
         if (node.tags.some(t => t.toLowerCase().includes(word))) score += 0.7;
       });
-      
+
       // Tag match bonus
       node.tags.forEach(tag => {
         if (queryLower.includes(tag.toLowerCase())) score += 0.3;
       });
-      
+
+      // Special boost for user identity if this is an identity query
+      if (isIdentityQuery) {
+        if (node.tags.includes('user_identity') || node.tags.includes('name') || node.tags.includes('identity')) {
+          score += 1.5; // Extra boost for identity-related memories
+        }
+        // Look for keywords that suggest user information
+        if (contentLower.includes('name') || contentLower.includes('called') || contentLower.includes('i am') || contentLower.includes('i\'m')) {
+          score += 1.0;
+        }
+      }
+
       // Recency boost (decay over 30 days)
       const ageDays = (Date.now() - node.created) / (1000 * 60 * 60 * 24);
       score += Math.max(0, 0.2 - (ageDays * 0.01));
-      
+
       // Access frequency boost
       if (node.relevanceScore) {
         score += node.relevanceScore * 0.1;
       }
-      
+
       if (score > 0.1) {
         results.push({ node, score });
       }
     });
-    
+
     const sorted = results
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
-    
+
     // Update relevance scores for accessed memories
     sorted.forEach(({ node }) => {
       node.relevanceScore = (node.relevanceScore || 0) + 0.1;
       node.lastAccessed = Date.now();
     });
-    
+
     // Cache result
     optimizer.set('memory', cacheKey, sorted, 100);
-    
+
     return sorted;
+  }
+
+  /**
+   * Check if the query is asking for user identity information
+   */
+  private isIdentityQuery(query: string): boolean {
+    const identityIndicators = [
+      'my name', 'what is my name', 'who am i', 'identify me',
+      'remember me', 'my identity', 'call me', 'i am', 'i\'m',
+      'what do you know about me', 'personal information'
+    ];
+
+    return identityIndicators.some(indicator => query.includes(indicator));
+  }
+
+  /**
+   * Store user identity information
+   */
+  public async storeIdentity(name: string, additionalInfo: string = ''): Promise<MemoryNode> {
+    const content = additionalInfo ? `${name} - ${additionalInfo}` : name;
+    return await this.store(content, 'PREFERENCE', ['user_identity', 'name', 'identity']);
+  }
+
+  /**
+   * Retrieve user identity information
+   */
+  public async getUserIdentity(): Promise<MemoryNode | null> {
+    const results = await this.recall('user identity');
+    if (results.length > 0) {
+      return results[0].node;
+    }
+
+    // Also try to find by name tag
+    const nameResults = await this.recall('name');
+    if (nameResults.length > 0) {
+      return nameResults[0].node;
+    }
+
+    return null;
   }
 
   public async forget(id: string): Promise<boolean> {
     await this.ensureLoaded();
-    
+
     if (this.nodes.has(id)) {
       this.removeFromIndex(id);
       this.nodes.delete(id);
       this.persistDebounced();
       this.triggerAutoBackup();
+      this.notify();
       return true;
     }
     return false;
@@ -365,15 +423,16 @@ class MemoryCoreOptimized {
 
   public async restore(nodes: MemoryNode[]): Promise<void> {
     await this.ensureLoaded();
-    
+
     this.nodes.clear();
     nodes.forEach(node => {
       this.nodes.set(node.id, node);
     });
-    
+
     this.rebuildIndex();
     this.persist();
     this.triggerAutoBackup();
+    this.notify();
   }
 
   // ==================== EXPORT/IMPORT ====================
@@ -605,6 +664,19 @@ class MemoryCoreOptimized {
       totalBackups: this.getBackups().length,
       indexSize: this.searchIndex.wordToNodes.size
     };
+  }
+
+  // ==================== SUBSCRIPTION ====================
+
+  public subscribe(callback: () => void): () => void {
+    this.observers.push(callback);
+    return () => {
+      this.observers = this.observers.filter(cb => cb !== callback);
+    };
+  }
+
+  private notify(): void {
+    this.observers.forEach(cb => cb());
   }
 }
 

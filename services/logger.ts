@@ -132,6 +132,7 @@ class LoggerService {
 
   private trimLogs(): void {
     if (this.logs.length > this.config.maxLogs) {
+      // Keep only the most recent logs to prevent memory bloat
       this.logs = this.logs.slice(-this.config.maxLogs);
     }
   }

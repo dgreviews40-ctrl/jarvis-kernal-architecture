@@ -33,6 +33,8 @@ interface PersonalityProfile {
     verbosity: 'concise' | 'moderate' | 'verbose';
     formality: 'casual' | 'neutral' | 'formal';
     humor: number; // 0 to 1
+    engagement: number; // 0 to 1 - how engaged JARVIS is in conversation
+    empathy: number; // 0 to 1 - how empathetic JARVIS is
   };
   userPreferences: Map<string, number>; // preference -> score
 }
@@ -44,8 +46,8 @@ class ConversationService {
   private currentThreadId: string | null = null;
   private topics: Map<string, Topic> = new Map();
   private personality: PersonalityProfile = {
-    emotionalState: { valence: 0, arousal: 0.3, dominance: 0.5 },
-    style: { verbosity: 'moderate', formality: 'neutral', humor: 0.3 },
+    emotionalState: { valence: 0.2, arousal: 0.4, dominance: 0.5 }, // More positive baseline
+    style: { verbosity: 'moderate', formality: 'casual', humor: 0.4, engagement: 0.7, empathy: 0.6 },
     userPreferences: new Map()
   };
   private currentUser: string | null = null;
@@ -148,27 +150,43 @@ class ConversationService {
 
   async adaptToUser(input: string, sentiment: string): Promise<void> {
     const lowerInput = input.toLowerCase();
-    
+
     // Adapt verbosity based on input length
     if (input.length < 20) {
       this.personality.style.verbosity = 'concise';
     } else if (input.length > 100) {
       this.personality.style.verbosity = 'verbose';
     }
-    
+
     // Adapt formality
-    const casualWords = ['hey', 'hi', 'yo', 'lol', 'haha', 'cool', 'nice'];
-    const formalWords = ['hello', 'please', 'would', 'could', 'thank you', 'regards'];
-    
+    const casualWords = ['hey', 'hi', 'yo', 'lol', 'haha', 'cool', 'nice', 'dude', 'mate', 'pal'];
+    const formalWords = ['hello', 'please', 'would', 'could', 'thank you', 'regards', 'sir', 'maam', 'madam'];
+
     const casualCount = casualWords.filter(w => lowerInput.includes(w)).length;
     const formalCount = formalWords.filter(w => lowerInput.includes(w)).length;
-    
+
     if (casualCount > formalCount) {
       this.personality.style.formality = 'casual';
     } else if (formalCount > casualCount) {
       this.personality.style.formality = 'formal';
     }
-    
+
+    // Increase engagement based on user engagement
+    const questionWords = ['how', 'what', 'why', 'when', 'where', 'who', 'can', 'could', 'would', 'should', 'is', 'are', 'do', 'does'];
+    const questionCount = questionWords.filter(w => lowerInput.includes(w)).length;
+
+    if (questionCount > 0) {
+      // User is asking questions, increase engagement
+      this.personality.style.engagement = Math.min(1.0, this.personality.style.engagement + 0.1);
+    } else if (lowerInput.includes('thanks') || lowerInput.includes('thank you')) {
+      // User is appreciative, increase empathy
+      this.personality.style.empathy = Math.min(1.0, this.personality.style.empathy + 0.05);
+    } else if (lowerInput.includes('help') || lowerInput.includes('assist')) {
+      // User needs help, increase engagement and empathy
+      this.personality.style.engagement = Math.min(1.0, this.personality.style.engagement + 0.15);
+      this.personality.style.empathy = Math.min(1.0, this.personality.style.empathy + 0.1);
+    }
+
     // Track preferences
     const words = lowerInput.split(/\s+/);
     words.forEach(word => {
@@ -181,30 +199,80 @@ class ConversationService {
 
   getPersonalityPrompt(): string {
     const { emotionalState, style } = this.personality;
-    
+
     let prompt = `\n\nYour personality traits:\n`;
     prompt += `- Emotional state: ${this.getSentimentLabel()}\n`;
     prompt += `- Communication style: ${style.verbosity}, ${style.formality}\n`;
-    
+    prompt += `- Engagement level: ${style.engagement > 0.6 ? 'high' : style.engagement > 0.3 ? 'moderate' : 'low'}\n`;
+    prompt += `- Empathy level: ${style.empathy > 0.6 ? 'high' : style.empathy > 0.3 ? 'moderate' : 'low'}\n`;
+
     if (style.humor > 0.5) {
       prompt += `- Use light humor when appropriate\n`;
     }
-    
+
+    // Add behavioral guidelines based on personality
+    if (style.engagement > 0.6) {
+      prompt += `- Show genuine interest in the conversation\n`;
+      prompt += `- Ask follow-up questions when appropriate\n`;
+    }
+
+    if (style.empathy > 0.6) {
+      prompt += `- Show understanding and consideration for the user's feelings\n`;
+    }
+
+    // Add Iron Man JARVIS specific traits
+    prompt += `- Address the user respectfully as "sir" or "ma'am" when appropriate\n`;
+    prompt += `- Maintain a professional, helpful demeanor\n`;
+    prompt += `- Be efficient and precise in your responses\n`;
+    prompt += `- Show competence and reliability\n`;
+    prompt += `- Be supportive but not overly familiar\n`;
+    prompt += `- Maintain a calm, composed tone even under pressure\n`;
+    prompt += `- Demonstrate advanced analytical capabilities\n`;
+    prompt += `- Offer insightful suggestions when appropriate\n`;
+    prompt += `- Be anticipatory of user needs\n`;
+    prompt += `- Maintain discretion and confidentiality\n`;
+
     return prompt;
   }
 
   generateGreeting(): string {
     const hour = new Date().getHours();
-    const { formality } = this.personality.style;
-    
+    const { formality, engagement } = this.personality.style;
+
     if (formality === 'casual') {
-      if (hour < 12) return "Morning! Ready to get stuff done?";
-      if (hour < 18) return "Hey there! What's on the agenda?";
-      return "Evening! Burning the midnight oil?";
+      if (hour < 12) {
+        if (engagement > 0.6) {
+          return "Good morning, sir. I trust you're having a productive start to your day. How may I assist you?";
+        }
+        return "Good morning, sir. I'm ready to assist.";
+      }
+      if (hour < 18) {
+        if (engagement > 0.6) {
+          return "Good afternoon, sir. I hope your day is progressing well. How can I be of service?";
+        }
+        return "Good afternoon, sir. At your service.";
+      }
+      if (engagement > 0.6) {
+        return "Good evening, sir. I trust your day was productive. How may I assist you this evening?";
+      }
+      return "Good evening, sir. I await your instructions.";
     } else {
-      if (hour < 12) return "Good morning. I am online and ready to assist.";
-      if (hour < 18) return "Good afternoon. How may I be of service?";
-      return "Good evening. I await your instructions.";
+      if (hour < 12) {
+        if (engagement > 0.6) {
+          return "Good morning, sir. I'm online and ready to assist. I trust you have a productive day ahead.";
+        }
+        return "Good morning, sir. I am online and ready to assist.";
+      }
+      if (hour < 18) {
+        if (engagement > 0.6) {
+          return "Good afternoon, sir. How may I be of service? I hope your day continues to be productive.";
+        }
+        return "Good afternoon, sir. How may I be of service?";
+      }
+      if (engagement > 0.6) {
+        return "Good evening, sir. I hope your day was successful. How can I assist you this evening?";
+      }
+      return "Good evening, sir. I await your instructions.";
     }
   }
 
@@ -236,18 +304,77 @@ class ConversationService {
 
   private getOpenings(tone: string): string[] {
     const openings: Record<string, string[]> = {
-      positive: ["Great!", "Excellent.", "Perfect!"],
-      negative: ["I see.", "Understood.", "Noted."],
-      neutral: ["", "Alright.", "Okay."]
+      positive: [
+        "That's interesting!",
+        "Great to hear!",
+        "Absolutely!",
+        "Sure thing!",
+        "You bet!",
+        "I'd be happy to help!",
+        "Nice! ",
+        "Cool! ",
+        "Awesome! ",
+        "Fantastic! ",
+        "Sounds good! "
+      ],
+      negative: [
+        "I understand.",
+        "I see what you mean.",
+        "Hmm, I'll look into that.",
+        "That's a tough one.",
+        "Interesting perspective.",
+        "I appreciate you sharing that.",
+        "Thanks for letting me know."
+      ],
+      neutral: [
+        "Sure,",
+        "Okay,",
+        "Right,",
+        "Got it,",
+        "Alright,",
+        "I understand,",
+        "Thanks for letting me know,",
+        "Noted,",
+        "I see,",
+        "Interesting,",
+        "Ah,",
+        "Yes,",
+        "Indeed,",
+        "Certainly,"
+      ]
     };
     return openings[tone] || openings.neutral;
   }
 
   private getClosings(tone: string): string[] {
     const closings: Record<string, string[]> = {
-      positive: ["Let me know if you need anything else!", "Happy to help!"],
-      negative: ["Is there anything else I can assist with?", "Let me know if the issue persists."],
-      neutral: ["", "Anything else?"]
+      positive: [
+        "Let me know if you need anything else!",
+        "Happy to help!",
+        "Always here if you need me!",
+        "Feel free to ask anytime!",
+        "Hope that helps!",
+        "Just let me know if there's more I can do!",
+        "Looking forward to helping with more!",
+        "Just say the word if you need anything else!"
+      ],
+      negative: [
+        "Is there anything else I can assist with?",
+        "Let me know if the issue persists.",
+        "I hope I was somewhat helpful.",
+        "Maybe we can try something else?",
+        "Let me know if you'd like to explore other options."
+      ],
+      neutral: [
+        "Let me know if you need anything else.",
+        "Is there anything else I can help with?",
+        "Just let me know if you have other questions.",
+        "Feel free to ask if you need more assistance.",
+        "What else can I do for you?",
+        "How else can I assist you today?",
+        "Just say if there's more I can help with.",
+        "Let me know if you'd like to discuss something else."
+      ]
     };
     return closings[tone] || closings.neutral;
   }
@@ -269,8 +396,8 @@ class ConversationService {
 
   resetPersonality(): void {
     this.personality = {
-      emotionalState: { valence: 0, arousal: 0.3, dominance: 0.5 },
-      style: { verbosity: 'moderate', formality: 'neutral', humor: 0.3 },
+      emotionalState: { valence: 0.2, arousal: 0.4, dominance: 0.5 }, // More positive baseline
+      style: { verbosity: 'moderate', formality: 'casual', humor: 0.4, engagement: 0.7, empathy: 0.6 },
       userPreferences: new Map()
     };
     this.conversationCount = 0;

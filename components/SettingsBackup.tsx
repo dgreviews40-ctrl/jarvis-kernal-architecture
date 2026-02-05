@@ -125,7 +125,7 @@ export const SettingsBackup: React.FC<SettingsBackupProps> = ({ onClose }) => {
       if (result.success) {
         logger.success('SETTINGS', 'Settings imported successfully');
       } else {
-        logger.warning('SETTINGS', 'Settings imported with errors');
+        logger.log('SYSTEM', 'Settings imported with errors');
       }
     } catch (error) {
       alert(`Import failed: ${error}`);

@@ -378,7 +378,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
         setStats(getMarketplaceStats());
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load marketplace');
-        logger.error('MARKETPLACE', 'Failed to load marketplace data', { error: e });
+        logger.log('PLUGIN', 'Failed to load marketplace data', { error: e });
       } finally {
         setIsLoading(false);
       }
@@ -399,7 +399,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
       if (result.error) throw new Error(result.error);
       setPlugins(result.plugins);
     } catch (e) {
-      logger.error('MARKETPLACE', 'Search failed', { error: e });
+      logger.log('PLUGIN', 'Search failed', { error: e });
     } finally {
       setIsLoading(false);
     }
@@ -415,7 +415,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
   const handleInstall = async (plugin: PluginListing) => {
     try {
       const result = await installFromMarketplace(plugin.manifest.id, (stage, progress) => {
-        logger.info('MARKETPLACE', `Installing ${plugin.manifest.id}: ${stage} (${progress}%)`);
+        logger.log('PLUGIN', `Installing ${plugin.manifest.id}: ${stage} (${progress}%)`);
       });
 
       if (result.success) {
@@ -431,7 +431,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
         throw new Error(result.error || 'Installation failed');
       }
     } catch (e) {
-      logger.error('MARKETPLACE', `Failed to install ${plugin.manifest.id}`, { error: e });
+      logger.log('PLUGIN', `Failed to install ${plugin.manifest.id}`, { error: e });
       setNotification({ message: `Installation failed: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
       setTimeout(() => setNotification(null), 5000);
     }

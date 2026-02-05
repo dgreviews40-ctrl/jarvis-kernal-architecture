@@ -1,5 +1,5 @@
 /**
- * Event Bus - Kernel v1.2
+ * Event Bus - Kernel v1.3
  * Centralized pub/sub system for inter-service communication
  * 
  * Features:

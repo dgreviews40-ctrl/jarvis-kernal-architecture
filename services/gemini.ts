@@ -17,6 +17,7 @@ interface CachedIntent {
 
 class IntentCache {
   private cache: Map<string, CachedIntent> = new Map();
+  private accessOrder: string[] = []; // Track access order for LRU
   
   private normalizeKey(input: string): string {
     return input.trim().toLowerCase();
@@ -31,8 +32,12 @@ class IntentCache {
     // Check if expired
     if (Date.now() - cached.timestamp > INTENT_CACHE_TTL) {
       this.cache.delete(key);
+      this.removeFromAccessOrder(key);
       return null;
     }
+    
+    // Update access order (move to end = most recently used)
+    this.updateAccessOrder(key);
     
     return cached.result;
   }
@@ -40,18 +45,42 @@ class IntentCache {
   set(input: string, result: ParsedIntent): void {
     const key = this.normalizeKey(input);
     
+    // If key already exists, update it
+    if (this.cache.has(key)) {
+      this.cache.set(key, { result, timestamp: Date.now() });
+      this.updateAccessOrder(key);
+      return;
+    }
+    
     // Enforce LRU size limit
     if (this.cache.size >= INTENT_CACHE_SIZE) {
-      // Delete oldest entry
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) this.cache.delete(firstKey);
+      // Delete oldest entry (first in accessOrder)
+      const oldestKey = this.accessOrder[0];
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        this.accessOrder.shift();
+      }
     }
     
     this.cache.set(key, { result, timestamp: Date.now() });
+    this.accessOrder.push(key);
   }
   
   clear(): void {
     this.cache.clear();
+    this.accessOrder = [];
+  }
+  
+  private removeFromAccessOrder(key: string): void {
+    const index = this.accessOrder.indexOf(key);
+    if (index > -1) {
+      this.accessOrder.splice(index, 1);
+    }
+  }
+  
+  private updateAccessOrder(key: string): void {
+    this.removeFromAccessOrder(key);
+    this.accessOrder.push(key);
   }
 }
 
@@ -205,6 +234,11 @@ Rules:
 - Complexity should reflect the difficulty of the request.`,
         systemInstruction: "You are an intent classifier. Respond ONLY with the requested JSON format. No other text."
       }, AIProvider.OLLAMA);
+
+      // Check if this is a simulated fallback response (Ollama not available)
+      if (response.text.startsWith('[SIMULATED]')) {
+        throw new Error('Ollama returned simulated response - server not available');
+      }
 
       // Try to parse the JSON response
       const jsonString = response.text
@@ -400,7 +434,7 @@ Rules:
     console.error("Gemini Intent Parsing Error:", error);
 
     // Check if it's an invalid API key error - log but still fallback
-    const errorMessage = error?.error?.message || error?.message || '';
+    const errorMessage = (error as any)?.error?.message || (error as Error)?.message || '';
     if (errorMessage.includes("API key not valid") || (error as any)?.error?.code === 400) {
       console.warn("[INTENT] Invalid API key, falling back to local heuristics");
     }

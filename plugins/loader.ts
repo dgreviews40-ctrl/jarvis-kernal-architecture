@@ -100,7 +100,7 @@ export async function fetchPluginCode(url: string, entry: string): Promise<{ cod
   // Check cache
   const cached = pluginCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    logger.info('PLUGIN_LOADER', `Using cached plugin: ${cacheKey}`);
+    logger.log('PLUGIN', `Using cached plugin: ${cacheKey}`);
     return { code: cached.code };
   }
   
@@ -193,6 +193,11 @@ function createWorkerSandbox(pluginId: string, permissions: string[]): PluginSan
       if (type === 'INIT') {
         // Initialize plugin
         try {
+          // Validate code for dangerous patterns before execution
+          if (containsDangerousPatterns(data.code)) {
+            throw new Error('Plugin code contains dangerous patterns');
+          }
+
           const initFunction = new Function(data.code + '; return initialize;');
           const initialize = initFunction();
           self.pluginInstance = initialize(self.api);
@@ -200,6 +205,22 @@ function createWorkerSandbox(pluginId: string, permissions: string[]): PluginSan
         } catch (err) {
           self.postMessage({ type: 'INIT_ERROR', error: err.message });
         }
+      }
+
+      // Helper function to check for dangerous patterns in plugin code
+      function containsDangerousPatterns(code) {
+        const dangerousPatterns = [
+          /\b(import|require|eval|Function|setInterval|setTimeout)\b/,
+          /\b(process|global|window|document|self|parent|top)\b/,
+          /\b(XMLHttpRequest|fetch|navigator)\b/,
+          /\b(document\.cookie|localStorage|sessionStorage)\b/,
+          /\b(console\.log|alert|confirm|prompt)\b/,
+          /\b(atob|btoa|unescape|escape)\b/,
+          /\b(Function\s*\(|eval\s*\(|new\s+Function\s*\()/,
+          /\b(__proto__|constructor|prototype)\b/
+        ];
+
+        return dangerousPatterns.some(pattern => pattern.test(code));
       }
       
       if (type === 'CALL' && self.pluginInstance) {
@@ -347,7 +368,7 @@ export function unloadPlugin(pluginId: string): void {
   if (loaded) {
     loaded.sandbox.destroy();
     loadedPlugins.delete(pluginId);
-    logger.info('PLUGIN_LOADER', `Unloaded plugin: ${pluginId}`);
+    logger.log('PLUGIN', `Unloaded plugin: ${pluginId}`);
   }
 }
 
@@ -390,7 +411,7 @@ export async function checkForUpdate(
  */
 export function clearPluginCache(): void {
   pluginCache.clear();
-  logger.info('PLUGIN_LOADER', 'Plugin cache cleared');
+  logger.log('PLUGIN', 'Plugin cache cleared');
 }
 
 /**

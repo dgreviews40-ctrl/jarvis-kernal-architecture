@@ -17,7 +17,7 @@ import { cortex } from './cortex';
 import { registry } from './registry';
 import { engine } from './execution';
 
-export const KERNEL_VERSION = '1.2.0';
+export const KERNEL_VERSION = '1.5.0';
 
 export interface APIRequest {
   id: string;

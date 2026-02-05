@@ -1,5 +1,5 @@
 /**
- * Plugin Loader - Kernel v1.2
+ * Plugin Loader - Kernel v1.3
  * Dynamic plugin loading with sandboxing and lifecycle management
  * 
  * Features:
@@ -374,7 +374,7 @@ class PluginLoader {
     if (!manifest.permissions) return { valid: false, error: 'Missing permissions' };
 
     // Check engine compatibility
-    const currentEngine = '1.2.0';
+    const currentEngine = '1.5.0';
     if (manifest.engine && !this.checkEngineCompatibility(manifest.engine, currentEngine)) {
       return { valid: false, error: `Engine version ${manifest.engine} incompatible with ${currentEngine}` };
     }
@@ -473,12 +473,33 @@ class PluginLoader {
     };
   }
 
+  // Helper method to check for dangerous patterns in plugin code
+  private containsDangerousPatterns(code: string): boolean {
+    const dangerousPatterns = [
+      /\b(import|require|eval|Function|setInterval|setTimeout)\b/,
+      /\b(process|global|window|document|self|parent|top)\b/,
+      /\b(XMLHttpRequest|fetch|navigator)\b/,
+      /\b(document\.cookie|localStorage|sessionStorage)\b/,
+      /\b(console\.log|alert|confirm|prompt)\b/,
+      /\b(atob|btoa|unescape|escape)\b/,
+      /\b(Function\s*\(|eval\s*\(|new\s+Function\s*\()/,
+      /\b(__proto__|constructor|prototype)\b/
+    ];
+
+    return dangerousPatterns.some(pattern => pattern.test(code));
+  }
+
   private async executeInSandbox(code: string, context: PluginContext): Promise<PluginInstance> {
+    // Validate code for dangerous patterns before execution
+    if (this.containsDangerousPatterns(code)) {
+      throw new Error('Plugin code contains dangerous patterns and cannot be executed');
+    }
+
     // Create sandboxed function
     const sandbox = new Function('context', `
       "use strict";
       const { id, manifest, permissions, api, emit, log } = context;
-      
+
       // Plugin exports
       let exports = {};
       let module = { exports };

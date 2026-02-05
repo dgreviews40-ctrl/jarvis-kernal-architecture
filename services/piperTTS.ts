@@ -47,7 +47,7 @@ export interface PiperConfig {
 const DEFAULT_CONFIG: PiperConfig = {
   serverUrl: 'http://localhost:5000', // Default, can be overridden
   defaultVoice: 'jarvis',
-  lengthScale: 0.75, // OPTIMIZED: Faster speech (was 0.85)
+  lengthScale: 0.90, // Slower speech for better clarity and flow (higher = slower)
   noiseScale: 0.667,
   noiseW: 0.8,
   enableStreaming: true, // NEW: Enable streaming by default
@@ -150,15 +150,30 @@ class PiperTTSService {
   /**
    * Synthesize speech using Piper - OPTIMIZED with streaming
    */
+  private lastSpokenText: string = '';
+  private lastSpokenTimestamp: number = 0;
+
   public async speak(text: string, onComplete?: () => void): Promise<boolean> {
     if (!text.trim()) {
       onComplete?.();
       return true;
     }
 
+    // Prevent duplicate responses within a short timeframe
+    const now = Date.now();
+    if (this.lastSpokenText === text && (now - this.lastSpokenTimestamp) < 3000) {
+      console.log('[PIPER] Duplicate response prevented:', text.substring(0, 50) + '...');
+      onComplete?.();
+      return true;
+    }
+
+    // Store the spoken text and timestamp
+    this.lastSpokenText = text;
+    this.lastSpokenTimestamp = now;
+
     try {
       // NEW: Split text into chunks for streaming
-      const chunks = this.config.enableStreaming 
+      const chunks = this.config.enableStreaming
         ? this.splitTextIntoChunks(text, this.config.chunkSize)
         : [text];
 

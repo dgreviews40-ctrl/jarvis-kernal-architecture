@@ -381,7 +381,7 @@ export const LogsDashboard: React.FC = () => {
       </div>
 
       {/* Logs List */}
-      <div className="flex-1 overflow-y-auto font-mono text-xs">
+      <div className="flex-1 overflow-y-auto font-mono text-xs min-h-0" style={{ maxHeight: 'calc(100vh - 380px)' }}>
         {logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-600">
             <Terminal size={48} className="mb-4 opacity-20" />

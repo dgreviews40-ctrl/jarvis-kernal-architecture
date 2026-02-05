@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { integrationHub } from '../services/integrations';
 import { calendar, CalendarEvent } from '../services/integrations/calendar';
-import { taskAutomation, Task, AutomationRule } from '../services/integrations/taskAutomation';
+import { taskAutomation, Task, AutomationRule, TriggerCondition, AutomationAction } from '../services/integrations/taskAutomation';
 
 interface IntegrationsDashboardProps {
   onClose: () => void;
@@ -18,21 +18,44 @@ export const IntegrationsDashboard: React.FC<IntegrationsDashboardProps> = ({ on
   const [automations, setAutomations] = useState<AutomationRule[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddAutomation, setShowAddAutomation] = useState(false);
+  const [newAutomationType, setNewAutomationType] = useState('');
+  const [newAutomationTime, setNewAutomationTime] = useState('07:40');
+  const [newAutomationRecurrence, setNewAutomationRecurrence] = useState('weekdays');
+  const [weekdaysOnly, setWeekdaysOnly] = useState(false); // Keep for backward compatibility
+  const [selectedDays, setSelectedDays] = useState([false, true, true, true, true, true, false]); // Sun-Sat, default Mon-Fri
 
   useEffect(() => {
     // Load data
     setUpcomingEvents(calendar.getUpcoming(48));
     setTasks(taskAutomation.getTasks({ status: 'pending' }));
-    
+    setAutomations(taskAutomation.getRules());
+
     // Subscribe to updates
     const unsubscribeCalendar = calendar.subscribe((event) => {
-      setUpcomingEvents(prev => [...prev, event].sort((a, b) => 
+      setUpcomingEvents(prev => [...prev, event].sort((a, b) =>
         a.startTime.getTime() - b.startTime.getTime()
       ));
     });
 
+    // Subscribe to task updates
+    const unsubscribeTasks = taskAutomation.subscribe((event, data) => {
+      if (event === 'task_created' || event === 'task_updated' || event === 'task_completed') {
+        setTasks(taskAutomation.getTasks({ status: 'pending' }));
+      }
+    });
+
+    // Subscribe to automation updates
+    const unsubscribeAutomations = taskAutomation.subscribe((event, data) => {
+      if (event === 'automation_created' || event === 'automation_updated' || event === 'automation_deleted') {
+        setAutomations(taskAutomation.getRules());
+      }
+    });
+
     return () => {
       unsubscribeCalendar();
+      unsubscribeTasks();
+      unsubscribeAutomations();
     };
   }, []);
 
@@ -56,6 +79,100 @@ export const IntegrationsDashboard: React.FC<IntegrationsDashboardProps> = ({ on
   const handleCompleteTask = (taskId: string) => {
     taskAutomation.completeTask(taskId);
     setTasks(prev => prev.filter(t => t.id !== taskId));
+  };
+
+  const handleAddAutomation = () => {
+    if (!newAutomationType) return;
+
+    let trigger: TriggerCondition;
+    let actions: AutomationAction[];
+    let name: string;
+
+    if (newAutomationType === 'morning_briefing') {
+      // Create a morning briefing automation
+      trigger = {
+        type: 'time',
+        config: {
+          time: newAutomationTime,
+          recurrence: newAutomationRecurrence,
+          ...(newAutomationRecurrence === 'custom' && { selectedDays })
+        }
+      };
+
+      actions = [{
+        type: 'speak',
+        config: {
+          message: `morning_briefing` // Special indicator for dynamic briefing
+        }
+      }];
+
+      name = `Morning Briefing at ${newAutomationTime}`;
+    } else if (newAutomationType === 'daily_reminder') {
+      // Create a daily reminder automation
+      trigger = {
+        type: 'time',
+        config: {
+          time: newAutomationTime,
+          recurrence: newAutomationRecurrence,
+          ...(newAutomationRecurrence === 'custom' && { selectedDays })
+        }
+      };
+
+      actions = [{
+        type: 'speak',
+        config: {
+          message: "This is your daily reminder."
+        }
+      }];
+
+      name = `Daily Reminder at ${newAutomationTime}`;
+    } else {
+      // Custom automation
+      trigger = {
+        type: 'time',
+        config: {
+          time: newAutomationTime,
+          recurrence: newAutomationRecurrence,
+          ...(newAutomationRecurrence === 'custom' && { selectedDays })
+        }
+      };
+
+      actions = [{
+        type: 'speak',
+        config: {
+          message: "This is a custom automation."
+        }
+      }];
+
+      name = `Custom Automation at ${newAutomationTime}`;
+    }
+
+    const rule = taskAutomation.createRule(name, trigger, actions);
+    setAutomations(prev => [...prev, rule]);
+    setShowAddAutomation(false);
+    setNewAutomationType('');
+    setNewAutomationTime('07:40');
+    setNewAutomationRecurrence('weekdays');
+    setSelectedDays([false, true, true, true, true, true, false]); // Reset to default (Mon-Fri)
+  };
+
+  const toggleAutomation = (ruleId: string, enabled: boolean) => {
+    // Use the proper method to update the rule status
+    taskAutomation.updateRuleStatus(ruleId, enabled);
+    // Update the UI state
+    setAutomations(prev => prev.map(r => r.id === ruleId ? {...r, enabled} : r));
+  };
+
+  const deleteAutomation = (ruleId: string) => {
+    // Use the proper method to delete the rule from the service
+    taskAutomation.deleteRule(ruleId);
+    // Update the UI state
+    setAutomations(prev => prev.filter(r => r.id !== ruleId));
+  };
+
+  const testAutomation = (rule: AutomationRule) => {
+    // Execute the automation actions to test it
+    taskAutomation.executeActions(rule.actions);
   };
 
   return (
@@ -255,7 +372,103 @@ export const IntegrationsDashboard: React.FC<IntegrationsDashboardProps> = ({ on
 
           {activeTab === 'automations' && (
             <div className="space-y-4">
-              <h3 className="text-lg font-medium text-white">Active Automations</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium text-white">Active Automations</h3>
+                <button
+                  onClick={() => setShowAddAutomation(true)}
+                  className="flex items-center gap-2 px-3 py-1 bg-orange-900/30 text-orange-400 rounded text-sm hover:bg-orange-900/50"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Automation
+                </button>
+              </div>
+
+              {showAddAutomation && (
+                <div className="p-3 bg-gray-900/50 rounded">
+                  <h4 className="text-md font-medium text-white mb-2">Create New Automation</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">Automation Type</label>
+                      <select
+                        value={newAutomationType}
+                        onChange={(e) => setNewAutomationType(e.target.value)}
+                        className="w-full bg-black border border-cyan-900/30 rounded px-3 py-2 text-white text-sm"
+                      >
+                        <option value="">Select type...</option>
+                        <option value="morning_briefing">Morning Briefing</option>
+                        <option value="daily_reminder">Daily Reminder</option>
+                        <option value="custom">Custom Automation</option>
+                      </select>
+                    </div>
+
+                    {newAutomationType === 'morning_briefing' && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Wake-up Time</label>
+                          <input
+                            type="time"
+                            value={newAutomationTime}
+                            onChange={(e) => setNewAutomationTime(e.target.value)}
+                            className="w-full bg-black border border-cyan-900/30 rounded px-3 py-2 text-white text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-gray-400 mb-1">Recurrence</label>
+                          <select
+                            value={newAutomationRecurrence}
+                            onChange={(e) => setNewAutomationRecurrence(e.target.value)}
+                            className="w-full bg-black border border-cyan-900/30 rounded px-3 py-2 text-white text-sm"
+                          >
+                            <option value="daily">Every Day</option>
+                            <option value="weekdays">Weekdays Only (Mon-Fri)</option>
+                            <option value="weekends">Weekends Only (Sat-Sun)</option>
+                            <option value="custom">Custom Days</option>
+                          </select>
+                        </div>
+                        {newAutomationRecurrence === 'custom' && (
+                          <div className="space-y-2">
+                            <label className="block text-sm text-gray-400">Select Days:</label>
+                            <div className="grid grid-cols-7 gap-1">
+                              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                                <div key={day} className="flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    id={`day-${index}`}
+                                    checked={selectedDays[index]}
+                                    onChange={(e) => {
+                                      const newSelectedDays = [...selectedDays];
+                                      newSelectedDays[index] = e.target.checked;
+                                      setSelectedDays(newSelectedDays);
+                                    }}
+                                    className="mr-1"
+                                  />
+                                  <label htmlFor={`day-${index}`} className="text-xs">{day}</label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={handleAddAutomation}
+                        className="px-4 py-2 bg-orange-900/50 text-orange-400 rounded text-sm"
+                      >
+                        Create
+                      </button>
+                      <button
+                        onClick={() => setShowAddAutomation(false)}
+                        className="px-4 py-2 bg-gray-700 text-gray-300 rounded text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {automations.length === 0 ? (
                 <div className="text-center py-8">
                   <Settings className="w-12 h-12 text-gray-600 mx-auto mb-4" />
@@ -273,13 +486,36 @@ export const IntegrationsDashboard: React.FC<IntegrationsDashboardProps> = ({ on
                     >
                       <div className="flex items-center justify-between">
                         <p className="font-medium text-white">{rule.name}</p>
-                        <span className={`w-2 h-2 rounded-full ${
-                          rule.enabled ? 'bg-green-500' : 'bg-gray-500'
-                        }`} />
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => testAutomation(rule)}
+                            className="text-blue-400 hover:text-blue-300 mr-2"
+                            title="Test automation"
+                          >
+                            <Bell className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => toggleAutomation(rule.id, !rule.enabled)}
+                            className={`w-8 h-4 rounded-full relative ${rule.enabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                          >
+                            <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${rule.enabled ? 'left-4' : 'left-0.5'}`} />
+                          </button>
+                          <button
+                            onClick={() => deleteAutomation(rule.id)}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-sm text-gray-500 mt-1">
                         Trigger: {rule.trigger.type} • Triggered {rule.triggerCount} times
                       </p>
+                      {rule.trigger.config.time && (
+                        <p className="text-xs text-cyan-400">
+                          Daily at {rule.trigger.config.time}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>

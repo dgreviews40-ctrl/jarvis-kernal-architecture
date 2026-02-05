@@ -1,5 +1,5 @@
 /**
- * Worker Service - Kernel v1.2
+ * Worker Service - Kernel v1.3
  * Web Worker management for offloading heavy computations
  * 
  * Features:
@@ -124,15 +124,37 @@ function computeHash(payload) {
   return { hash: hash.toString(16), algorithm };
 }
 
+// Note: This is a simplified version. In a real implementation, you'd want to use a proper
+// sandboxing solution like VM2 or similar for Node.js environments, or use Web Workers
+// with proper isolation for browser environments.
 function executePlugin(payload) {
   const { code, context } = payload;
-  // Sandboxed plugin execution
+  // Sandboxed plugin execution - SECURITY WARNING: new Function() is dangerous
+  // In production, use a proper sandboxing solution
   try {
+    // Validate code doesn't contain dangerous patterns
+    if (containsDangerousPatterns(code)) {
+      throw new Error('Code contains dangerous patterns');
+    }
+
     const fn = new Function('context', code);
     return { result: fn(context) };
   } catch (e) {
     throw new Error('Plugin execution failed: ' + e.message);
   }
+}
+
+// Helper function to check for dangerous patterns
+function containsDangerousPatterns(code) {
+  const dangerousPatterns = [
+    /\b(import|require|eval|Function|setInterval|setTimeout)\b/,
+    /\b(process|global|window|document|self|parent|top)\b/,
+    /\b(XMLHttpRequest|fetch|navigator)\b/,
+    /\b(document\.cookie|localStorage|sessionStorage)\b/,
+    /\b(console\.log|alert|confirm|prompt)\b/
+  ];
+
+  return dangerousPatterns.some(pattern => pattern.test(code));
 }
 `;
 

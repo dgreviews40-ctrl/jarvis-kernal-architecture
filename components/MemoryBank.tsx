@@ -148,7 +148,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
   // ==================== RENDER ====================
 
   return (
-    <div className="h-full bg-[#0a0a0a] border border-[#333] rounded-lg p-6 flex flex-col relative overflow-hidden">
+    <div className="h-full bg-[#0a0a0a] border border-[#333] rounded-lg p-6 flex flex-col relative">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
@@ -216,13 +216,13 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
 
       {/* MEMORIES VIEW */}
       {viewMode === 'memories' && (
-        <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Search & Actions Bar */}
           <div className="flex gap-2 mb-4">
             <form onSubmit={handleSearch} className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 w-4 h-4" />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search semantic memory..."
@@ -252,10 +252,10 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
                 {searchQuery ? 'No memories found matching query.' : 'No memories stored yet.'}
               </div>
             )}
-            
+
             {displayNodes.map(node => (
-              <div 
-                key={node.id} 
+              <div
+                key={node.id}
                 className={`border rounded-lg p-3 transition-all hover:bg-[#151515] group relative ${getTypeColor(node.type).split(' ').slice(1).join(' ')}`}
               >
                 <div className="flex justify-between items-start mb-2">
@@ -267,7 +267,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
                     {new Date(node.created).toLocaleDateString()}
                   </span>
                 </div>
-                
+
                 <p className="text-sm text-gray-300 mb-2 leading-relaxed">
                   {node.content}
                 </p>
@@ -281,7 +281,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
                   ))}
                 </div>
 
-                <button 
+                <button
                   onClick={() => onForget(node.id)}
                   className="absolute top-3 right-3 text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
                 >
@@ -295,7 +295,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
 
       {/* BACKUPS VIEW */}
       {viewMode === 'backups' && (
-        <div className="flex-1 flex flex-col gap-4">
+        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           {/* Backup Actions */}
           <div className="flex gap-2">
             <button
@@ -308,8 +308,8 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
             <button
               onClick={() => setShowBackupSettings(!showBackupSettings)}
               className={`px-4 py-2 border rounded-lg transition-all flex items-center gap-2 text-sm ${
-                showBackupSettings 
-                  ? 'bg-gray-800 border-gray-600 text-white' 
+                showBackupSettings
+                  ? 'bg-gray-800 border-gray-600 text-white'
                   : 'bg-[#111] border-[#333] text-gray-400 hover:text-white'
               }`}
             >
@@ -321,7 +321,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
           {showBackupSettings && (
             <div className="bg-[#111] border border-[#333] rounded-lg p-4 space-y-3">
               <h3 className="text-xs font-bold text-gray-400 uppercase">Auto-Backup Settings</h3>
-              
+
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-300">Enable Auto-Backup</span>
                 <button
@@ -410,7 +410,7 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
 
       {/* STATS VIEW */}
       {viewMode === 'stats' && (
-        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 overflow-hidden">
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-[#111] border border-[#333] rounded-lg p-4">
               <div className="text-[10px] text-gray-500 uppercase mb-1">Total Memories</div>

@@ -7,16 +7,20 @@ import { checkStorageVersion } from './stores';
 
 // Force clear old plugin registry cache on startup
 // This ensures stale mock plugins are removed when registry definition changes
-const CURRENT_REGISTRY_VERSION = 10;
-const storedVersion = localStorage.getItem('jarvis_plugin_registry_version');
-if (!storedVersion || parseInt(storedVersion) < CURRENT_REGISTRY_VERSION) {
-  console.log('[JARVIS] Clearing stale plugin registry cache...');
-  localStorage.removeItem('jarvis_plugin_registry');
-  localStorage.setItem('jarvis_plugin_registry_version', CURRENT_REGISTRY_VERSION.toString());
-}
+try {
+  const CURRENT_REGISTRY_VERSION = 13;
+  const storedVersion = localStorage.getItem('jarvis_plugin_registry_version');
+  if (!storedVersion || parseInt(storedVersion) < CURRENT_REGISTRY_VERSION) {
+    console.log('[JARVIS] Clearing stale plugin registry cache...');
+    localStorage.removeItem('jarvis_plugin_registry');
+    localStorage.setItem('jarvis_plugin_registry_version', CURRENT_REGISTRY_VERSION.toString());
+  }
 
-// Check storage version and migrate if needed
-checkStorageVersion();
+  // Check storage version and migrate if needed
+  checkStorageVersion();
+} catch (e) {
+  console.warn('[JARVIS] localStorage not available or quota exceeded:', e);
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

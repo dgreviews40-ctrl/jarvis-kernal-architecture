@@ -1,5 +1,5 @@
 /**
- * Resource Manager - Kernel v1.2
+ * Resource Manager - Kernel v1.3
  * CPU, memory, and resource quota management
  * 
  * Features:

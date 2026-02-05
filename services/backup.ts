@@ -26,7 +26,7 @@ class BackupService {
    */
   public generateBackup(): SystemBackup {
     return {
-      version: "1.3.0",
+      version: "1.5.0",
       timestamp: Date.now(),
       data: {
         aiConfig: providerManager.getAIConfig(),

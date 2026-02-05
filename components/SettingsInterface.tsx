@@ -187,18 +187,64 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
     };
   }, []);
 
-  const handleSave = () => {
-    if (selectedCam) vision.setDeviceId(selectedCam);
-    if (apiKey.trim()) {
-      // Store API key in localStorage (in a real application, this should be encrypted)
-      localStorage.setItem('GEMINI_API_KEY', btoa(apiKey.trim())); // Base64 encode as minimal obfuscation
-      // Also update the process.env for immediate use
-      (process.env as any).API_KEY = apiKey.trim();
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveMessage(null);
+    
+    try {
+      if (selectedCam) vision.setDeviceId(selectedCam);
+      
+      if (apiKey.trim()) {
+        // Store API key in localStorage (fallback for immediate use)
+        localStorage.setItem('GEMINI_API_KEY', btoa(apiKey.trim()));
+        // Also update the process.env for immediate use
+        (process.env as any).API_KEY = apiKey.trim();
+        
+        // Save to .env.local file via proxy server
+        try {
+          const response = await fetch('http://localhost:3101/save-api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: 'gemini',
+              key: apiKey.trim()
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            console.log('[SETTINGS] API key saved to .env.local:', result.file);
+            setSaveMessage('API key saved to .env.local successfully');
+          } else {
+            console.warn('[SETTINGS] Failed to save API key to file:', result.message);
+            setSaveMessage('Saved locally but failed to write to .env file');
+          }
+        } catch (err) {
+          console.warn('[SETTINGS] Proxy server not available, key saved to localStorage only:', err);
+          setSaveMessage('Proxy server offline - key saved to browser only');
+        }
+      }
+      
+      providerManager.setAIConfig(aiConfig);
+      providerManager.setOllamaConfig(ollamaConfig);
+      voice.setConfig(voiceConfig);
+      
+      // Show success message briefly before closing
+      if (!saveMessage) {
+        setSaveMessage('Settings saved successfully');
+      }
+      
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+      
+    } finally {
+      setIsSaving(false);
     }
-    providerManager.setAIConfig(aiConfig);
-    providerManager.setOllamaConfig(ollamaConfig);
-    voice.setConfig(voiceConfig);
-    onClose();
   };
 
   const testOllama = async () => {
@@ -467,11 +513,30 @@ const neuralVoices = [
           <Settings className="text-gray-400" />
           SYSTEM CONFIGURATION
         </h2>
-        <div className="flex gap-2">
-            <button onClick={onClose} className={`px-4 py-2 ${textStyle.bodySecondary} text-gray-400 hover:text-white border border-[#333] rounded hover:bg-[#111]`}>Cancel</button>
-            <button onClick={handleSave} className={`px-4 py-2 ${textStyle.button} bg-cyan-900/50 text-cyan-400 border border-cyan-800 rounded hover:bg-cyan-900 flex items-center gap-2`}>
-                <Save size={14} /> Save Protocols
-            </button>
+        <div className="flex items-center gap-3">
+            {saveMessage && (
+              <span className={`text-xs ${saveMessage.includes('success') ? 'text-green-400' : saveMessage.includes('offline') ? 'text-yellow-400' : 'text-cyan-400'}`}>
+                {saveMessage}
+              </span>
+            )}
+            <div className="flex gap-2">
+              <button onClick={onClose} className={`px-4 py-2 ${textStyle.bodySecondary} text-gray-400 hover:text-white border border-[#333] rounded hover:bg-[#111]`}>Cancel</button>
+              <button 
+                onClick={handleSave} 
+                disabled={isSaving}
+                className={`px-4 py-2 ${textStyle.button} bg-cyan-900/50 text-cyan-400 border border-cyan-800 rounded hover:bg-cyan-900 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} /> Save Protocols
+                  </>
+                )}
+              </button>
+            </div>
         </div>
       </div>
 

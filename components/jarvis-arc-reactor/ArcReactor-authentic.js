@@ -20,8 +20,36 @@ export class AuthenticArcReactor {
     this.options = {
       glowIntensity: options.glowIntensity ?? 1.0,
       audioReactivity: options.audioReactivity ?? true,
+      colorMode: options.colorMode ?? 'classic', // classic, warm, cyberpunk
       ...options
     };
+
+    // Color palettes for different modes
+    this.colorPalettes = {
+      classic: {
+        core: 0x00ddff,      // Cyan
+        innerRing: 0x00aaff, // Blue
+        aura: 0x0088ff,      // Dark blue
+        plasma: 0x00ffff,    // Bright cyan
+        coilGlow: 0x0044aa,  // Dark blue
+      },
+      warm: {
+        core: 0xffaa00,      // Orange
+        innerRing: 0xff6600, // Dark orange
+        aura: 0xff4400,      // Red-orange
+        plasma: 0xff8800,    // Bright orange
+        coilGlow: 0xff2200,  // Red
+      },
+      cyberpunk: {
+        core: 0xff00ff,      // Magenta
+        innerRing: 0xaa00ff, // Purple
+        aura: 0xff0088,      // Pink
+        plasma: 0xff00ff,    // Bright magenta
+        coilGlow: 0x8800ff,  // Violet
+      }
+    };
+    
+    this.colors = this.colorPalettes[this.options.colorMode] || this.colorPalettes.classic;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(
@@ -63,17 +91,18 @@ export class AuthenticArcReactor {
     const ambient = new THREE.AmbientLight(0x1a1a2e, 0.3);
     this.scene.add(ambient);
 
-    // Central glow light from the palladium core
-    this.coreLight = new THREE.PointLight(0x00ddff, 2.0, 10);
+    // Central glow light from the palladium core - uses color palette
+    this.coreLight = new THREE.PointLight(this.colors.core, 2.0, 10);
     this.coreLight.position.set(0, 0, 0.5);
     this.scene.add(this.coreLight);
 
-    // Rim light for metallic edges
-    const rimLight = new THREE.DirectionalLight(0x4488ff, 0.5);
+    // Rim light for metallic edges - tinted by core color
+    const rimColor = new THREE.Color(this.colors.core).multiplyScalar(0.5);
+    const rimLight = new THREE.DirectionalLight(rimColor, 0.5);
     rimLight.position.set(2, 2, 2);
     this.scene.add(rimLight);
 
-    const rimLight2 = new THREE.DirectionalLight(0x2244aa, 0.3);
+    const rimLight2 = new THREE.DirectionalLight(rimColor, 0.3);
     rimLight2.position.set(-2, -2, 1);
     this.scene.add(rimLight2);
 
@@ -85,7 +114,7 @@ export class AuthenticArcReactor {
 
   // Level 1: The Palladium Core - The heart of the reactor
   _createPalladiumCore() {
-    // Inner core - bright white-hot center
+    // Inner core - bright white-hot center (tinted by color mode)
     const coreGeometry = new THREE.CircleGeometry(0.6, 64);
     this.coreMaterial = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -97,10 +126,10 @@ export class AuthenticArcReactor {
     this.core.position.z = 0.3;
     this.scene.add(this.core);
 
-    // Inner energy ring - cyan glow
+    // Inner energy ring - uses color palette
     const innerRingGeo = new THREE.RingGeometry(0.5, 0.7, 64);
     this.innerRingMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ddff,
+      color: this.colors.innerRing,
       transparent: true,
       opacity: 0.6,
       blending: THREE.AdditiveBlending,
@@ -110,10 +139,10 @@ export class AuthenticArcReactor {
     this.innerRing.position.z = 0.28;
     this.scene.add(this.innerRing);
 
-    // Outer energy aura
+    // Outer energy aura - uses color palette
     const auraGeo = new THREE.RingGeometry(0.7, 1.0, 64);
     this.auraMaterial = new THREE.MeshBasicMaterial({
-      color: 0x0088ff,
+      color: this.colors.aura,
       transparent: true,
       opacity: 0.3,
       blending: THREE.AdditiveBlending,
@@ -142,7 +171,7 @@ export class AuthenticArcReactor {
         color: 0xb87333, // Copper color
         metalness: 0.9,
         roughness: 0.4,
-        emissive: 0x331100,
+        emissive: this.colors.coilGlow,
         emissiveIntensity: 0.2
       });
       const coil = new THREE.Mesh(coilGeometry, coilMaterial);
@@ -359,10 +388,10 @@ export class AuthenticArcReactor {
       );
       this.scene.add(bolt);
 
-      // Bolt glow
+      // Bolt glow - uses color palette
       const boltGlowGeo = new THREE.CircleGeometry(0.12, 6);
       const boltGlowMat = new THREE.MeshBasicMaterial({
-        color: 0x00aaff,
+        color: this.colors.core,
         transparent: true,
         opacity: 0.3,
         blending: THREE.AdditiveBlending
@@ -379,10 +408,10 @@ export class AuthenticArcReactor {
 
   // Level 7: Energy Field - The glowing plasma effect
   _createEnergyField() {
-    // Inner plasma ring
+    // Inner plasma ring - uses color palette
     const plasmaGeo = new THREE.RingGeometry(0.3, 0.5, 64);
     this.plasmaMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
+      color: this.colors.plasma,
       transparent: true,
       opacity: 0.4,
       blending: THREE.AdditiveBlending,
@@ -392,13 +421,13 @@ export class AuthenticArcReactor {
     this.plasmaRing.position.z = 0.35;
     this.scene.add(this.plasmaRing);
 
-    // Rotating energy rings
+    // Rotating energy rings - uses color palette
     this.energyRings = new THREE.Group();
     
     for (let i = 0; i < 3; i++) {
       const ringGeo = new THREE.TorusGeometry(1.2 + i * 0.3, 0.02, 16, 100);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x00ddff,
+        color: this.colors.innerRing,
         transparent: true,
         opacity: 0.2 - i * 0.05,
         blending: THREE.AdditiveBlending

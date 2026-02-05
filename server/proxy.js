@@ -7,6 +7,8 @@
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import process from 'process';
+import fs from 'fs';
+import path from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -143,6 +145,98 @@ app.get('/status', (req, res) => {
     url: haConfig.url ? haConfig.url : null,
     hasToken: !!haConfig.token
   });
+});
+
+// Save API Key to .env.local file
+app.post('/save-api-key', async (req, res) => {
+  const { provider, key } = req.body;
+  
+  if (!provider || !key) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Provider and key are required' 
+    });
+  }
+  
+  // Validate provider
+  const validProviders = ['gemini', 'openai', 'anthropic'];
+  if (!validProviders.includes(provider)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: `Invalid provider. Must be one of: ${validProviders.join(', ')}` 
+    });
+  }
+  
+  // Basic key validation
+  if (typeof key !== 'string' || key.length < 10) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Invalid API key format' 
+    });
+  }
+  
+  try {
+    // Get the project root directory (parent of server directory)
+    const projectRoot = resolve(__dirname, '..');
+    const envLocalPath = path.join(projectRoot, '.env.local');
+    const envPath = path.join(projectRoot, '.env');
+    
+    // Determine which file to write to (prefer .env.local, fall back to .env)
+    const targetPath = fs.existsSync(envLocalPath) ? envLocalPath : envPath;
+    
+    // Read existing content
+    let envContent = '';
+    try {
+      envContent = fs.readFileSync(targetPath, 'utf8');
+    } catch (e) {
+      // File doesn't exist, start with empty content
+      envContent = '';
+    }
+    
+    // Build the env variable name
+    const envVarName = `VITE_${provider.toUpperCase()}_API_KEY`;
+    
+    // Check if the key already exists and replace it, or add it
+    const lines = envContent.split('\n');
+    let keyFound = false;
+    const newLines = lines.map(line => {
+      // Match the specific env var (handle comments and whitespace)
+      const match = line.match(new RegExp(`^\\s*${envVarName}\\s*=.*$`));
+      if (match) {
+        keyFound = true;
+        return `${envVarName}=${key}`;
+      }
+      return line;
+    });
+    
+    // If key wasn't found, add it
+    if (!keyFound) {
+      // Add a comment header if the file is not empty and doesn't have a comment
+      if (newLines.length > 0 && newLines[0].trim() !== '' && !newLines[0].startsWith('#')) {
+        newLines.unshift(`# ${provider.toUpperCase()} API Key`);
+      }
+      newLines.push(`${envVarName}=${key}`);
+    }
+    
+    // Write the updated content
+    fs.writeFileSync(targetPath, newLines.join('\n'), 'utf8');
+    
+    console.log(`[PROXY] API key for ${provider} saved to ${targetPath}`);
+    
+    res.json({ 
+      success: true, 
+      message: `API key for ${provider} saved successfully`,
+      file: targetPath
+    });
+    
+  } catch (error) {
+    console.error('[PROXY] Error saving API key:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to save API key',
+      error: error.message 
+    });
+  }
 });
 
 // Health check endpoint
@@ -354,6 +448,7 @@ app.listen(PORT, () => {
   console.log(`JARVIS Home Assistant Proxy running on port ${PORT}`);
   console.log('Routes:');
   console.log('  POST /config - Set Home Assistant URL and token');
+  console.log('  POST /save-api-key - Save API key to .env.local file');
   console.log('  GET  /status - Get configuration status');
   console.log('  GET  /health - Health check');
   console.log('  ALL  /ha-api/* - Proxy to Home Assistant API');

@@ -84,6 +84,7 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
       case 'authentic':
         reactor = new AuthenticArcReactor(containerRef.current, {
           glowIntensity,
+          colorMode,
           audioReactivity: true
         });
         break;

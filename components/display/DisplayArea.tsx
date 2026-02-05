@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { Activity, X, Download, Settings, Brain } from 'lucide-react';
+import { X, Download, Settings, Brain } from 'lucide-react';
 import { ProcessorState, VoiceState, DisplayMode, DisplayContent } from '../../types';
 import { JarvisNeuralNetwork } from '../JarvisNeuralNetwork';
 
@@ -362,15 +362,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         </div>
       )}
 
-      {/* Processing Overlay */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-          {isExecuting ? (
-              <div className="text-center bg-black/40 p-8 rounded-2xl backdrop-blur-md border border-cyan-500/20 shadow-2xl z-30">
-                  <Activity size={64} className="mx-auto text-cyan-400 animate-bounce mb-6" />
-                  <div className="text-4xl font-bold text-white tracking-[0.5em] animate-pulse drop-shadow-[0_0_10px_rgba(34,211,238,0.8)] uppercase">Processing</div>
-              </div>
-          ) : null}
-      </div>
+
 
       {/* Main Content Area */}
       <div className="z-10 w-full h-full flex items-center justify-center relative">

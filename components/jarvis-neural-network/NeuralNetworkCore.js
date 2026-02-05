@@ -376,19 +376,29 @@ export class NeuralNetworkCore {
       }
     });
 
-    // Spawn pulses
-    let spawnRate = 0.04 * activityMultiplier;
-    if (voiceState === 'speaking') spawnRate = 0.25;
-    else if (voiceState === 'listening') spawnRate = 0.15;
+    // Spawn pulses - MUCH more frequent when speaking
+    let spawnRate = 0.03; // Base idle rate
+    let burstCount = 1;
+    
+    if (voiceState === 'speaking') {
+      spawnRate = 0.4; // 40% chance per frame = very rapid firing
+      burstCount = 3; // Multiple pulses at once
+    } else if (voiceState === 'listening') {
+      spawnRate = 0.2; // 20% when listening
+      burstCount = 2;
+    }
     
     if (Math.random() < spawnRate) {
-      const conn = this.connections[Math.floor(Math.random() * this.connections.length)];
-      if (conn) {
-        this.spawnPulse(conn, isVoiceActive);
-        
-        if (isVoiceActive && Math.random() < 0.3) {
-          const conn2 = this.connections[Math.floor(Math.random() * this.connections.length)];
-          setTimeout(() => this.spawnPulse(conn2, true), 30);
+      for (let i = 0; i < burstCount; i++) {
+        const conn = this.connections[Math.floor(Math.random() * this.connections.length)];
+        if (conn) {
+          const isBurst = voiceState === 'speaking' || voiceState === 'listening';
+          // Stagger the burst pulses slightly
+          if (i === 0) {
+            this.spawnPulse(conn, isBurst);
+          } else {
+            setTimeout(() => this.spawnPulse(conn, isBurst), i * 20);
+          }
         }
       }
     }
@@ -408,52 +418,32 @@ export class NeuralNetworkCore {
 
   updateNodes() {
     const time = this.time;
-    const activityMultiplier = this.getActivityMultiplier();
-    const voiceState = this.options.voiceState;
-    const isVoiceActive = voiceState === 'speaking' || voiceState === 'listening';
     const brightness = this.options.brightness;
 
     this.nodes.forEach(node => {
-      // Breathing animation
-      const breathe = Math.sin(time * 0.7 + node.pulsePhase) * 0.06;
-      const voiceBreathe = isVoiceActive ? Math.sin(time * 2.5) * 0.1 : 0;
-      const scale = 1 + breathe + voiceBreathe;
+      // NO breathing/pulsating - keep sphere static size
+      node.mesh.position.copy(node.originalPos);
       
-      node.mesh.position.copy(node.originalPos).multiplyScalar(scale);
+      // Static node size - no pulsing
+      node.mesh.scale.setScalar(node.baseSize * 10);
       
-      // Node pulsing - size change but brightness stays
-      const basePulse = Math.sin(time * 2 + node.pulsePhase) * 0.2 + 1;
-      const voicePulse = isVoiceActive ? Math.sin(time * 5 + node.pulsePhase) * 0.3 : 0;
-      const sizeMult = (basePulse + voicePulse);
-      
-      // Apply node size with pulsing
-      node.mesh.scale.setScalar(node.baseSize * sizeMult * 10); // Scale up for visibility
-      
-      // Brightness is independent of activity - uses brightness option
+      // Brightness controls opacity
       const baseOpacity = 0.8 * brightness;
-      const pulseOpacity = Math.sin(time * 2 + node.pulsePhase) * 0.15;
-      node.mesh.material.opacity = Math.min(1, baseOpacity + pulseOpacity);
+      node.mesh.material.opacity = Math.min(1, baseOpacity);
       
-      // Glow opacity also uses brightness
+      // Glow opacity uses brightness
       node.glow.material.opacity = 0.5 * brightness;
-
-      // Flash during voice
-      if (isVoiceActive) {
-        const flash = (Math.sin(time * 6 + node.pulsePhase) + 1) * 0.5;
-        node.mesh.material.color.copy(node.color).lerp(new THREE.Color(0xffffff), flash * 0.35);
-      } else {
-        node.mesh.material.color.copy(node.color);
-      }
+      
+      // Keep original color - no flashing
+      node.mesh.material.color.copy(node.color);
     });
   }
 
   updateConnections() {
     const brightness = this.options.brightness;
-    const activityMultiplier = this.getActivityMultiplier();
-    const time = this.time;
 
     this.connections.forEach(conn => {
-      // Update positions
+      // Update positions to match nodes
       const positions = conn.line.geometry.attributes.position.array;
       positions[0] = conn.nodeA.mesh.position.x;
       positions[1] = conn.nodeA.mesh.position.y;
@@ -463,20 +453,14 @@ export class NeuralNetworkCore {
       positions[5] = conn.nodeB.mesh.position.z;
       conn.line.geometry.attributes.position.needsUpdate = true;
 
-      // Opacity based on brightness and activity
-      const baseOpacity = conn.baseOpacity * brightness;
-      const activityBoost = (activityMultiplier - 1) * 0.15;
-      const wave = Math.sin(time * 1.5 + conn.nodeA.index * 0.05) * 0.05;
-      
-      conn.line.material.opacity = Math.min(0.8, baseOpacity + activityBoost + wave);
+      // Constant opacity - just brightness based
+      conn.line.material.opacity = conn.baseOpacity * brightness;
     });
   }
 
   updateLights() {
     const time = this.time;
     const brightness = this.options.brightness;
-    const voiceState = this.options.voiceState;
-    const isVoiceActive = voiceState === 'speaking' || voiceState === 'listening';
     
     this.lights.forEach(({ light, basePos, phase }) => {
       const orbitSpeed = 0.25;
@@ -487,8 +471,8 @@ export class NeuralNetworkCore {
       light.position.z = z;
       light.position.y = basePos[1] + Math.sin(time * 0.4 + phase) * 3;
       
-      const baseIntensity = (0.8 + Math.sin(time * 1.2 + phase) * 0.3) * brightness;
-      light.intensity = isVoiceActive ? baseIntensity * 1.8 : baseIntensity;
+      // Constant intensity - no voice boost
+      light.intensity = 0.8 * brightness;
     });
   }
 

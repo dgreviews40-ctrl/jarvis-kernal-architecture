@@ -1,13 +1,12 @@
 /**
- * NeuralNetworkCore - Circular Neural Network Visualization
+ * NeuralNetworkCore - 3D Mesh Neural Network Visualization
  * 
- * A brain-inspired neural network in a circular arc-reactor-like design.
- * Features:
- * - Nodes arranged in concentric rings (circular layers)
- * - Dynamic connections between nodes
- * - Electrical impulses firing between neurons
- * - Rotating animation
- * - Reactive to CPU/GPU load and voice activity
+ * A brain-inspired neural network with:
+ * - 3D wave-like mesh surface
+ * - Multi-colored glowing nodes
+ * - Triangular web connections
+ * - Organic brain-like structure
+ * - Electrical pulses traveling through connections
  */
 
 import * as THREE from 'three';
@@ -16,15 +15,15 @@ export class NeuralNetworkCore {
   constructor(container, options = {}) {
     this.container = container;
     this.options = {
-      nodeCount: options.nodeCount || 64,
-      connectionDensity: options.connectionDensity || 0.15,
-      rotationSpeed: options.rotationSpeed || 0.002,
+      gridSize: options.gridSize || 12,
+      radius: options.radius || 8,
+      waveHeight: options.waveHeight || 2,
+      rotationSpeed: options.rotationSpeed || 0.001,
       pulseSpeed: options.pulseSpeed || 1.0,
-      activityLevel: options.activityLevel || 0.5,
-      colorTheme: options.colorTheme || 'cyan',
+      activityLevel: options.activityLevel ?? 0.7,
       cpuLoad: options.cpuLoad || 0,
       gpuLoad: options.gpuLoad || 0,
-      voiceState: options.voiceState || 'idle', // 'idle', 'listening', 'speaking'
+      voiceState: options.voiceState || 'idle',
       ...options
     };
 
@@ -34,32 +33,14 @@ export class NeuralNetworkCore {
     this.time = 0;
     this.isDestroyed = false;
 
-    // Color themes
-    this.colorThemes = {
-      cyan: {
-        node: 0x00ddff,
-        connection: 0x0088aa,
-        pulse: 0x00ffff,
-        glow: 0x00aaff
-      },
-      orange: {
-        node: 0xff8800,
-        connection: 0xaa4400,
-        pulse: 0xffaa00,
-        glow: 0xff6600
-      },
-      purple: {
-        node: 0xff00ff,
-        connection: 0xaa00aa,
-        pulse: 0xff88ff,
-        glow: 0xcc00ff
-      },
-      green: {
-        node: 0x00ff88,
-        connection: 0x00aa44,
-        pulse: 0x88ffaa,
-        glow: 0x00ff66
-      }
+    // Multi-color palette (like the reference image)
+    this.colors = {
+      cyan: new THREE.Color(0x00ddff),
+      magenta: new THREE.Color(0xff00ff),
+      orange: new THREE.Color(0xff8800),
+      purple: new THREE.Color(0x8844ff),
+      pink: new THREE.Color(0xff4488),
+      blue: new THREE.Color(0x4488ff)
     };
 
     this.init();
@@ -70,21 +51,23 @@ export class NeuralNetworkCore {
     this.setupCamera();
     this.setupRenderer();
     this.setupLights();
-    this.createNeuralNetwork();
-    this.addEventListeners();
+    this.createNeuralMesh();
+    this.createFloatingParticles();
+    this.createPulseSystem();
     this.animate();
   }
 
   setupScene() {
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x000000, 0.02);
+    this.scene.fog = new THREE.FogExp2(0x000000, 0.03);
   }
 
   setupCamera() {
     const width = this.container.clientWidth || 600;
     const height = this.container.clientHeight || 600;
-    this.camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-    this.camera.position.z = 18;
+    this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
+    this.camera.position.set(0, 8, 18);
+    this.camera.lookAt(0, 0, 0);
   }
 
   setupRenderer() {
@@ -102,250 +85,253 @@ export class NeuralNetworkCore {
   }
 
   setupLights() {
-    // Ambient light for base visibility
-    const ambientLight = new THREE.AmbientLight(0x222222, 0.5);
+    const ambientLight = new THREE.AmbientLight(0x111122, 0.4);
     this.scene.add(ambientLight);
 
-    // Central glow light
-    this.centralLight = new THREE.PointLight(
-      this.getThemeColor('glow'),
-      1,
-      30
-    );
-    this.centralLight.position.set(0, 0, 2);
-    this.scene.add(this.centralLight);
+    // Multi-colored point lights
+    this.lights = [];
+    const lightPositions = [
+      { pos: [10, 5, 10], color: 0x00ddff },
+      { pos: [-10, 5, 10], color: 0xff00ff },
+      { pos: [0, -5, 10], color: 0xff8800 },
+      { pos: [0, 8, 5], color: 0x8844ff }
+    ];
 
-    // Dynamic lights that will pulse
-    this.pulseLight1 = new THREE.PointLight(this.getThemeColor('pulse'), 0, 20);
-    this.pulseLight1.position.set(8, 8, 5);
-    this.scene.add(this.pulseLight1);
-
-    this.pulseLight2 = new THREE.PointLight(this.getThemeColor('pulse'), 0, 20);
-    this.pulseLight2.position.set(-8, -8, 5);
-    this.scene.add(this.pulseLight2);
+    lightPositions.forEach(({ pos, color }) => {
+      const light = new THREE.PointLight(color, 0.8, 30);
+      light.position.set(...pos);
+      this.scene.add(light);
+      this.lights.push({ light, basePos: [...pos], phase: Math.random() * Math.PI * 2 });
+    });
   }
 
-  getThemeColor(key) {
-    const theme = this.colorThemes[this.options.colorTheme] || this.colorThemes.cyan;
-    return theme[key];
+  getRandomColor() {
+    const colorKeys = Object.keys(this.colors);
+    const key = colorKeys[Math.floor(Math.random() * colorKeys.length)];
+    return this.colors[key];
   }
 
-  createNeuralNetwork() {
-    this.networkGroup = new THREE.Group();
-    this.scene.add(this.networkGroup);
+  createNeuralMesh() {
+    this.meshGroup = new THREE.Group();
+    this.scene.add(this.meshGroup);
 
-    this.createNodes();
-    this.createConnections();
-    this.createCentralCore();
-    this.createPulseSystem();
+    const gridSize = this.options.gridSize;
+    const radius = this.options.radius;
+    const nodes = [];
+
+    // Create nodes in a circular grid pattern (polar coordinates)
+    for (let ring = 0; ring < gridSize; ring++) {
+      const r = (ring / (gridSize - 1)) * radius;
+      const nodesInRing = Math.max(6, ring * 6);
+      
+      for (let i = 0; i < nodesInRing; i++) {
+        const angle = (i / nodesInRing) * Math.PI * 2;
+        
+        // Base position
+        const x = Math.cos(angle) * r;
+        const z = Math.sin(angle) * r;
+        
+        // Add wave height variation
+        const waveOffset = Math.sin(angle * 3 + ring * 0.5) * this.options.waveHeight * (ring / gridSize);
+        const y = waveOffset;
+
+        const node = this.createNode(x, y, z, ring, i);
+        nodes.push(node);
+        this.nodes.push(node);
+        this.meshGroup.add(node.mesh);
+      }
+    }
+
+    // Create triangular mesh connections
+    this.createTriangularConnections();
   }
 
-  createNodes() {
-    const nodeGeometry = new THREE.SphereGeometry(0.15, 16, 16);
-    const nodeMaterial = new THREE.MeshBasicMaterial({
-      color: this.getThemeColor('node'),
+  createNode(x, y, z, ring, index) {
+    const color = this.getRandomColor();
+    const size = 0.08 + (1 - ring / this.options.gridSize) * 0.12;
+
+    const geometry = new THREE.SphereGeometry(size, 16, 16);
+    const material = new THREE.MeshBasicMaterial({
+      color: color,
       transparent: true,
       opacity: 0.9
     });
 
-    // Create nodes in concentric rings (circular layers like a brain)
-    const ringCount = 4;
-    const nodesPerRing = Math.floor(this.options.nodeCount / ringCount);
-    
-    for (let ring = 0; ring < ringCount; ring++) {
-      const radius = 3 + ring * 2.5; // Rings at radius 3, 5.5, 8, 10.5
-      const ringNodes = ring === 0 ? 8 : nodesPerRing + ring * 4;
-      
-      for (let i = 0; i < ringNodes; i++) {
-        const angle = (i / ringNodes) * Math.PI * 2;
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-        const z = (Math.random() - 0.5) * 1.5; // Slight depth variation
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
 
-        const node = new THREE.Mesh(nodeGeometry, nodeMaterial.clone());
-        node.position.set(x, y, z);
-        
-        // Store node data
-        node.userData = {
-          ring: ring,
-          index: i,
-          angle: angle,
-          radius: radius,
-          baseOpacity: 0.6 + Math.random() * 0.4,
-          pulsePhase: Math.random() * Math.PI * 2,
-          activationLevel: Math.random()
-        };
-
-        this.networkGroup.add(node);
-        this.nodes.push(node);
-      }
-    }
-
-    // Add some random inner nodes (like a central brain cluster)
-    for (let i = 0; i < 12; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = Math.random() * 2.5;
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
-      const z = (Math.random() - 0.5) * 2;
-
-      const node = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 12, 12),
-        nodeMaterial.clone()
-      );
-      node.position.set(x, y, z);
-      
-      node.userData = {
-        ring: -1, // Inner cluster
-        index: i,
-        baseOpacity: 0.8,
-        pulsePhase: Math.random() * Math.PI * 2,
-        activationLevel: Math.random()
-      };
-
-      this.networkGroup.add(node);
-      this.nodes.push(node);
-    }
-  }
-
-  createConnections() {
-    const connectionMaterial = new THREE.LineBasicMaterial({
-      color: this.getThemeColor('connection'),
+    // Add glow sprite
+    const glowTexture = this.createGlowTexture();
+    const glowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      color: color,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.5,
       blending: THREE.AdditiveBlending
     });
+    const glow = new THREE.Sprite(glowMaterial);
+    glow.scale.set(size * 6, size * 6, 1);
+    mesh.add(glow);
 
-    // Connect nodes within rings and between adjacent rings
+    return {
+      mesh,
+      glow,
+      originalPos: new THREE.Vector3(x, y, z),
+      ring,
+      index,
+      color: color.clone(),
+      baseSize: size,
+      pulsePhase: Math.random() * Math.PI * 2,
+      activity: Math.random()
+    };
+  }
+
+  createGlowTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.3, 'rgba(255,255,255,0.3)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    return texture;
+  }
+
+  createTriangularConnections() {
+    // Connect nodes to form triangular mesh
+    const maxDistance = 2.5;
+
     for (let i = 0; i < this.nodes.length; i++) {
       const nodeA = this.nodes[i];
       
       for (let j = i + 1; j < this.nodes.length; j++) {
         const nodeB = this.nodes[j];
-        const distance = nodeA.position.distanceTo(nodeB.position);
+        const dist = nodeA.originalPos.distanceTo(nodeB.originalPos);
         
-        // Connection probability based on distance and density setting
-        const maxDistance = nodeA.userData.ring === nodeB.userData.ring ? 3 : 4;
-        const shouldConnect = distance < maxDistance && Math.random() < this.options.connectionDensity;
-        
-        if (shouldConnect) {
-          const geometry = new THREE.BufferGeometry().setFromPoints([
-            nodeA.position,
-            nodeB.position
+        if (dist < maxDistance && Math.random() > 0.4) {
+          // Create line connection
+          const geometry = new THREE.BufferGeometry();
+          const positions = new Float32Array([
+            nodeA.mesh.position.x, nodeA.mesh.position.y, nodeA.mesh.position.z,
+            nodeB.mesh.position.x, nodeB.mesh.position.y, nodeB.mesh.position.z
           ]);
+          geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
           
-          const line = new THREE.Line(geometry, connectionMaterial.clone());
-          line.userData = {
-            nodeA: nodeA,
-            nodeB: nodeB,
-            baseOpacity: 0.2 + Math.random() * 0.3,
-            active: Math.random() > 0.7 // Some connections are more active
-          };
+          // Gradient color between the two nodes
+          const lineColor = nodeA.color.clone().lerp(nodeB.color, 0.5);
           
-          this.networkGroup.add(line);
-          this.connections.push(line);
+          const material = new THREE.LineBasicMaterial({
+            color: lineColor,
+            transparent: true,
+            opacity: 0.25,
+            blending: THREE.AdditiveBlending
+          });
+
+          const line = new THREE.Line(geometry, material);
+          this.meshGroup.add(line);
+          
+          this.connections.push({
+            line,
+            nodeA,
+            nodeB,
+            baseOpacity: 0.15 + Math.random() * 0.2,
+            active: Math.random() > 0.6
+          });
         }
       }
     }
   }
 
-  createCentralCore() {
-    // Central glowing core (like the arc reactor center)
-    const coreGeometry = new THREE.SphereGeometry(1.2, 32, 32);
-    const coreMaterial = new THREE.MeshBasicMaterial({
-      color: this.getThemeColor('glow'),
-      transparent: true,
-      opacity: 0.6,
-      blending: THREE.AdditiveBlending
-    });
-    
-    this.centralCore = new THREE.Mesh(coreGeometry, coreMaterial);
-    this.networkGroup.add(this.centralCore);
-
-    // Outer glow ring
-    const ringGeometry = new THREE.TorusGeometry(1.8, 0.1, 16, 64);
-    const ringMaterial = new THREE.MeshBasicMaterial({
-      color: this.getThemeColor('pulse'),
-      transparent: true,
-      opacity: 0.5,
-      blending: THREE.AdditiveBlending
-    });
-    
-    this.coreRing = new THREE.Mesh(ringGeometry, ringMaterial);
-    this.coreRing.position.z = 0;
-    this.networkGroup.add(this.coreRing);
-
-    // Inner energy particles
-    const particleCount = 30;
-    const particleGeometry = new THREE.BufferGeometry();
+  createFloatingParticles() {
+    const particleCount = 80;
+    const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(particleCount * 3);
-    
+    const colors = new Float32Array(particleCount * 3);
+    const sizes = new Float32Array(particleCount);
+
     for (let i = 0; i < particleCount; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 0.5 + Math.random() * 1;
-      positions[i * 3] = Math.cos(angle) * radius;
-      positions[i * 3 + 1] = Math.sin(angle) * radius;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+      // Random position in a spherical volume
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 3 + Math.random() * 8;
+      
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.5;
+      positions[i * 3 + 2] = r * Math.cos(phi);
+
+      const color = this.getRandomColor();
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+
+      sizes[i] = 0.1 + Math.random() * 0.2;
     }
-    
-    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    
-    const particleMaterial = new THREE.PointsMaterial({
-      color: this.getThemeColor('pulse'),
+
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const material = new THREE.PointsMaterial({
       size: 0.15,
+      vertexColors: true,
       transparent: true,
       opacity: 0.8,
       blending: THREE.AdditiveBlending
     });
-    
-    this.coreParticles = new THREE.Points(particleGeometry, particleMaterial);
-    this.networkGroup.add(this.coreParticles);
+
+    this.particleSystem = new THREE.Points(geometry, material);
+    this.meshGroup.add(this.particleSystem);
   }
 
   createPulseSystem() {
-    // Create reusable pulse particles
     this.pulsePool = [];
-    const pulseGeometry = new THREE.SphereGeometry(0.08, 8, 8);
-    const pulseMaterial = new THREE.MeshBasicMaterial({
-      color: this.getThemeColor('pulse'),
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending
-    });
+    const pulseGeometry = new THREE.SphereGeometry(0.06, 8, 8);
 
-    // Pre-create pulse objects
-    for (let i = 0; i < 50; i++) {
-      const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial.clone());
+    for (let i = 0; i < 40; i++) {
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 1,
+        blending: THREE.AdditiveBlending
+      });
+      
+      const pulse = new THREE.Mesh(pulseGeometry, material.clone());
       pulse.visible = false;
-      this.networkGroup.add(pulse);
+      this.meshGroup.add(pulse);
+      
       this.pulsePool.push({
         mesh: pulse,
         active: false,
         progress: 0,
         speed: 0,
-        nodeA: null,
-        nodeB: null
+        connection: null
       });
     }
   }
 
   spawnPulse(connection) {
-    // Find inactive pulse from pool
     const pulse = this.pulsePool.find(p => !p.active);
     if (!pulse) return;
 
     pulse.active = true;
     pulse.progress = 0;
-    pulse.speed = 0.02 + Math.random() * 0.03;
-    pulse.nodeA = connection.userData.nodeA;
-    pulse.nodeB = connection.userData.nodeB;
+    pulse.speed = 0.015 + Math.random() * 0.02;
+    pulse.connection = connection;
     pulse.mesh.visible = true;
+    pulse.mesh.material.color.copy(connection.nodeA.color);
     pulse.mesh.material.opacity = 1;
   }
 
   updatePulses() {
     const activityMultiplier = this.getActivityMultiplier();
-    
+
     this.pulsePool.forEach(pulse => {
       if (!pulse.active) return;
 
@@ -357,90 +343,122 @@ export class NeuralNetworkCore {
         return;
       }
 
-      // Interpolate position
-      const start = pulse.nodeA.position;
-      const end = pulse.nodeB.position;
+      const start = pulse.connection.nodeA.mesh.position;
+      const end = pulse.connection.nodeB.mesh.position;
       
       pulse.mesh.position.lerpVectors(start, end, pulse.progress);
-      pulse.mesh.material.opacity = 1 - Math.abs(pulse.progress - 0.5) * 2;
       
-      // Scale pulse based on progress
-      const scale = 1 + Math.sin(pulse.progress * Math.PI) * 0.5;
-      pulse.mesh.scale.setScalar(scale);
+      // Fade in then out
+      const fadeIn = Math.min(1, pulse.progress * 3);
+      const fadeOut = Math.min(1, (1 - pulse.progress) * 3);
+      pulse.mesh.material.opacity = Math.min(fadeIn, fadeOut);
+      
+      // Color interpolation
+      pulse.mesh.material.color.copy(
+        pulse.connection.nodeA.color.clone().lerp(pulse.connection.nodeB.color, pulse.progress)
+      );
     });
 
-    // Spawn new pulses based on activity
-    const spawnRate = 0.05 * activityMultiplier;
+    // Spawn new pulses
+    const spawnRate = 0.03 * activityMultiplier;
     if (Math.random() < spawnRate) {
-      const activeConnections = this.connections.filter(c => c.userData.active);
+      const activeConnections = this.connections.filter(c => c.active);
       if (activeConnections.length > 0) {
-        const connection = activeConnections[Math.floor(Math.random() * activeConnections.length)];
-        this.spawnPulse(connection);
+        const conn = activeConnections[Math.floor(Math.random() * activeConnections.length)];
+        this.spawnPulse(conn);
       }
     }
   }
 
   getActivityMultiplier() {
-    // Combine CPU, GPU load and voice state for activity
     const cpuFactor = this.options.cpuLoad / 100;
     const gpuFactor = this.options.gpuLoad / 100;
-    const voiceFactor = this.options.voiceState === 'speaking' ? 1.5 : 
-                       this.options.voiceState === 'listening' ? 1.2 : 0.5;
+    const voiceFactor = this.options.voiceState === 'speaking' ? 1.8 : 
+                       this.options.voiceState === 'listening' ? 1.4 : 0.6;
     
-    return 0.5 + (cpuFactor + gpuFactor) * 0.5 + voiceFactor * 0.3;
+    return 0.5 + (cpuFactor + gpuFactor) * 0.6 + voiceFactor * 0.4;
   }
 
   updateNodes(deltaTime) {
     const time = this.time;
     const activityMultiplier = this.getActivityMultiplier();
-    
+
     this.nodes.forEach(node => {
-      const data = node.userData;
+      // Wave animation
+      const waveX = Math.sin(time * 0.5 + node.originalPos.x * 0.3) * 0.3;
+      const waveZ = Math.cos(time * 0.4 + node.originalPos.z * 0.3) * 0.3;
+      const waveY = Math.sin(time * 0.6 + node.ring * 0.5) * 0.2;
+
+      node.mesh.position.y = node.originalPos.y + waveY;
+      node.mesh.position.x = node.originalPos.x + waveX * (node.ring / this.options.gridSize);
+      node.mesh.position.z = node.originalPos.z + waveZ * (node.ring / this.options.gridSize);
+
+      // Pulsing size
+      const pulse = Math.sin(time * 3 + node.pulsePhase) * 0.3 + 1;
+      const activityPulse = Math.sin(time * 5 * activityMultiplier + node.ring) * 0.2;
+      const scale = (pulse + activityPulse) * this.options.activityLevel;
       
-      // Pulsing opacity
-      const pulse = Math.sin(time * 2 + data.pulsePhase) * 0.3 + 0.7;
-      const activityPulse = Math.sin(time * 5 * activityMultiplier) * 0.2;
+      node.mesh.scale.setScalar(scale);
       
-      node.material.opacity = (data.baseOpacity * pulse + activityPulse) * this.options.activityLevel;
-      
-      // Scale based on activation
-      const targetScale = 1 + data.activationLevel * 0.5 * activityMultiplier;
-      node.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), 0.1);
+      // Opacity pulse
+      node.mesh.material.opacity = (0.6 + Math.sin(time * 2 + node.pulsePhase) * 0.3) * this.options.activityLevel;
+      node.glow.material.opacity = (0.4 + Math.sin(time * 2 + node.pulsePhase) * 0.2) * this.options.activityLevel;
+
+      // Color shift based on activity
+      if (activityMultiplier > 1.2) {
+        const shift = (Math.sin(time * 4) + 1) * 0.5;
+        node.mesh.material.color.copy(node.color).lerp(new THREE.Color(0xffffff), shift * 0.3);
+      } else {
+        node.mesh.material.color.copy(node.color);
+      }
     });
   }
 
   updateConnections() {
     const activityMultiplier = this.getActivityMultiplier();
-    
-    this.connections.forEach(connection => {
-      const baseOpacity = connection.userData.baseOpacity;
-      const activityBoost = connection.userData.active ? activityMultiplier * 0.3 : 0;
+    const time = this.time;
+
+    this.connections.forEach(conn => {
+      // Update line positions to match moving nodes
+      const positions = conn.line.geometry.attributes.position.array;
+      positions[0] = conn.nodeA.mesh.position.x;
+      positions[1] = conn.nodeA.mesh.position.y;
+      positions[2] = conn.nodeA.mesh.position.z;
+      positions[3] = conn.nodeB.mesh.position.x;
+      positions[4] = conn.nodeB.mesh.position.y;
+      positions[5] = conn.nodeB.mesh.position.z;
+      conn.line.geometry.attributes.position.needsUpdate = true;
+
+      // Opacity based on activity
+      const baseOpacity = conn.baseOpacity;
+      const activityBoost = conn.active ? activityMultiplier * 0.3 : 0;
+      const wave = Math.sin(time * 2 + conn.nodeA.ring) * 0.1;
       
-      connection.material.opacity = Math.min(0.8, (baseOpacity + activityBoost) * this.options.activityLevel);
+      conn.line.material.opacity = Math.min(0.7, (baseOpacity + activityBoost + wave) * this.options.activityLevel);
     });
   }
 
-  updateCore(deltaTime) {
+  updateParticles() {
     const time = this.time;
-    const activityMultiplier = this.getActivityMultiplier();
+    const positions = this.particleSystem.geometry.attributes.position.array;
+
+    for (let i = 0; i < 80; i++) {
+      // Slow drift
+      positions[i * 3 + 1] += Math.sin(time * 0.5 + i) * 0.005;
+    }
     
-    // Rotate core ring
-    this.coreRing.rotation.z += this.options.rotationSpeed * 2;
-    this.coreRing.rotation.x = Math.sin(time * 0.5) * 0.1;
+    this.particleSystem.geometry.attributes.position.needsUpdate = true;
+    this.particleSystem.rotation.y = time * 0.05;
+  }
+
+  updateLights() {
+    const time = this.time;
     
-    // Pulse central core
-    const corePulse = Math.sin(time * 3 * activityMultiplier) * 0.2 + 0.8;
-    this.centralCore.scale.setScalar(1 + corePulse * 0.1);
-    this.centralCore.material.opacity = 0.4 + corePulse * 0.3;
-    
-    // Rotate core particles
-    this.coreParticles.rotation.z -= this.options.rotationSpeed * 3;
-    
-    // Update lights based on activity
-    const lightIntensity = 0.5 + activityMultiplier * 0.8;
-    this.centralLight.intensity = lightIntensity;
-    this.pulseLight1.intensity = Math.sin(time * 4) * 0.5 * activityMultiplier;
-    this.pulseLight2.intensity = Math.cos(time * 3) * 0.5 * activityMultiplier;
+    this.lights.forEach(({ light, basePos, phase }) => {
+      light.position.x = basePos[0] + Math.sin(time * 0.5 + phase) * 2;
+      light.position.y = basePos[1] + Math.cos(time * 0.3 + phase) * 2;
+      light.intensity = 0.6 + Math.sin(time * 2 + phase) * 0.3;
+    });
   }
 
   animate() {
@@ -449,22 +467,22 @@ export class NeuralNetworkCore {
     const deltaTime = 0.016;
     this.time += deltaTime;
 
-    // Rotate entire network slowly
-    this.networkGroup.rotation.z += this.options.rotationSpeed;
-    this.networkGroup.rotation.y = Math.sin(this.time * 0.2) * 0.1;
+    // Rotate entire mesh slowly
+    this.meshGroup.rotation.y += this.options.rotationSpeed;
 
     this.updateNodes(deltaTime);
     this.updateConnections();
-    this.updateCore(deltaTime);
+    this.updateParticles();
+    this.updateLights();
     this.updatePulses();
 
     this.renderer.render(this.scene, this.camera);
     this.animationId = requestAnimationFrame(() => this.animate());
   }
 
-  // Public methods for external control
+  // Public methods
   setActivityLevel(level) {
-    this.options.activityLevel = Math.max(0, Math.min(1, level));
+    this.options.activityLevel = Math.max(0.2, Math.min(1.5, level));
   }
 
   setCpuLoad(load) {
@@ -476,49 +494,11 @@ export class NeuralNetworkCore {
   }
 
   setVoiceState(state) {
-    this.options.voiceState = state; // 'idle', 'listening', 'speaking'
-  }
-
-  setColorTheme(theme) {
-    if (this.colorThemes[theme]) {
-      this.options.colorTheme = theme;
-      this.updateColors();
-    }
-  }
-
-  updateColors() {
-    const theme = this.colorThemes[this.options.colorTheme];
-    
-    // Update node colors
-    this.nodes.forEach(node => {
-      node.material.color.setHex(theme.node);
-    });
-    
-    // Update connection colors
-    this.connections.forEach(connection => {
-      connection.material.color.setHex(theme.connection);
-    });
-    
-    // Update pulse colors
-    this.pulsePool.forEach(pulse => {
-      pulse.mesh.material.color.setHex(theme.pulse);
-    });
-    
-    // Update core colors
-    this.centralCore.material.color.setHex(theme.glow);
-    this.coreRing.material.color.setHex(theme.pulse);
-    this.coreParticles.material.color.setHex(theme.pulse);
-    this.centralLight.color.setHex(theme.glow);
-    this.pulseLight1.color.setHex(theme.pulse);
-    this.pulseLight2.color.setHex(theme.pulse);
+    this.options.voiceState = state;
   }
 
   setRotationSpeed(speed) {
     this.options.rotationSpeed = speed;
-  }
-
-  setPulseSpeed(speed) {
-    this.options.pulseSpeed = speed;
   }
 
   resize() {
@@ -532,11 +512,6 @@ export class NeuralNetworkCore {
     this.renderer.setSize(width, height);
   }
 
-  addEventListeners() {
-    this.resizeHandler = () => this.resize();
-    window.addEventListener('resize', this.resizeHandler);
-  }
-
   destroy() {
     this.isDestroyed = true;
     
@@ -544,9 +519,6 @@ export class NeuralNetworkCore {
       cancelAnimationFrame(this.animationId);
     }
     
-    window.removeEventListener('resize', this.resizeHandler);
-    
-    // Clean up Three.js objects
     this.scene.traverse(object => {
       if (object.geometry) object.geometry.dispose();
       if (object.material) {

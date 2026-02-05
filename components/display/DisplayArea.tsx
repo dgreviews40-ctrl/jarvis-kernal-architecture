@@ -103,8 +103,6 @@ const MapViewer: React.FC<{ content: DisplayContent['map'] }> = ({ content }) =>
 
 // Neural Network Control Panel
 const NeuralNetworkControls: React.FC<{
-  colorTheme: 'cyan' | 'orange' | 'purple' | 'green';
-  setColorTheme: (t: 'cyan' | 'orange' | 'purple' | 'green') => void;
   activityLevel: number;
   setActivityLevel: (a: number) => void;
   rotationSpeed: number;
@@ -112,56 +110,26 @@ const NeuralNetworkControls: React.FC<{
   cpuLoad: number;
   gpuLoad: number;
   voiceState: VoiceState;
-}> = ({ colorTheme, setColorTheme, activityLevel, setActivityLevel, rotationSpeed, setRotationSpeed, cpuLoad, gpuLoad, voiceState }) => {
-  const themeInfo = {
-    cyan: { name: 'Neural Blue', color: '#00ddff' },
-    orange: { name: 'Plasma', color: '#ff8800' },
-    purple: { name: 'Synaptic', color: '#ff00ff' },
-    green: { name: 'Bio', color: '#00ff88' }
-  };
-
+}> = ({ activityLevel, setActivityLevel, rotationSpeed, setRotationSpeed, cpuLoad, gpuLoad, voiceState }) => {
   return (
     <div
       className="relative p-5 rounded-2xl"
       style={{
-        background: 'linear-gradient(180deg, rgba(10,20,40,0.98) 0%, rgba(5,10,20,0.99) 100%)',
-        border: '2px solid rgba(0, 170, 255, 0.5)',
-        boxShadow: '0 4px 30px rgba(0,0,0,0.6), 0 0 40px rgba(0, 170, 255, 0.3)',
-        minWidth: '260px',
+        background: 'linear-gradient(180deg, rgba(10,12,24,0.98) 0%, rgba(5,6,12,0.99) 100%)',
+        border: '1px solid rgba(100, 150, 255, 0.3)',
+        boxShadow: '0 4px 30px rgba(0,0,0,0.6), 0 0 40px rgba(100, 150, 255, 0.15)',
+        minWidth: '240px',
       }}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-xs font-bold tracking-widest" style={{ color: themeInfo[colorTheme].color }}>
-          🧠 NEURAL CONFIG
+        <span className="text-xs font-bold tracking-widest bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
+          🧠 NEURAL MESH
         </span>
-        <span className="text-xs font-mono font-bold" style={{ color: themeInfo[colorTheme].color }}>
+        <span className="text-xs font-mono font-bold text-cyan-400">
           {Math.round(activityLevel * 100)}%
         </span>
-      </div>
-
-      {/* Color Theme Buttons */}
-      <div className="mb-4">
-        <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Theme</label>
-        <div className="grid grid-cols-2 gap-2">
-          {(['cyan', 'orange', 'purple', 'green'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => { setColorTheme(t); localStorage.setItem('jarvis.neural.color', t); }}
-              className="py-2 rounded-lg text-[9px] font-bold uppercase transition-all flex items-center gap-2 justify-center"
-              style={{
-                background: colorTheme === t ? `${themeInfo[t].color}20` : 'rgba(255,255,255,0.05)',
-                border: `2px solid ${colorTheme === t ? themeInfo[t].color : 'rgba(255,255,255,0.1)'}`,
-                color: colorTheme === t ? themeInfo[t].color : '#64748b',
-                boxShadow: colorTheme === t ? `0 0 15px ${themeInfo[t].color}40` : 'none',
-              }}
-            >
-              <div className="w-2 h-2 rounded-full" style={{ background: themeInfo[t].color }} />
-              {themeInfo[t].name}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Activity Slider */}
@@ -169,51 +137,47 @@ const NeuralNetworkControls: React.FC<{
         <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Activity</label>
         <input
           type="range"
-          min="0.2"
+          min="0.3"
           max="1.5"
           step="0.1"
           value={activityLevel}
           onChange={(e) => { setActivityLevel(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.activity', e.target.value); }}
           className="w-full h-2 rounded-lg appearance-none cursor-pointer"
           style={{
-            background: `linear-gradient(to right, ${themeInfo[colorTheme].color} 0%, ${themeInfo[colorTheme].color} ${((activityLevel - 0.2) / 1.3) * 100}%, rgba(255,255,255,0.1) ${((activityLevel - 0.2) / 1.3) * 100}%)`,
+            background: `linear-gradient(to right, #00ddff 0%, #ff00ff ${((activityLevel - 0.3) / 1.2) * 50}%, #ff8800 ${((activityLevel - 0.3) / 1.2) * 100}%, rgba(255,255,255,0.1) ${((activityLevel - 0.3) / 1.2) * 100}%)`,
           }}
         />
       </div>
 
       {/* Rotation Speed */}
-      <div>
+      <div className="mb-4">
         <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Rotation</label>
         <input
           type="range"
           min="0"
-          max="0.01"
-          step="0.001"
+          max="0.005"
+          step="0.0005"
           value={rotationSpeed}
           onChange={(e) => { setRotationSpeed(parseFloat(e.target.value)); localStorage.setItem('jarvis.neural.rotation', e.target.value); }}
           className="w-full h-2 rounded-lg appearance-none cursor-pointer"
           style={{
-            background: `linear-gradient(to right, ${themeInfo[colorTheme].color} 0%, ${themeInfo[colorTheme].color} ${(rotationSpeed / 0.01) * 100}%, rgba(255,255,255,0.1) ${(rotationSpeed / 0.01) * 100}%)`,
+            background: `linear-gradient(to right, #8844ff 0%, #ff4488 ${(rotationSpeed / 0.005) * 100}%, rgba(255,255,255,0.1) ${(rotationSpeed / 0.005) * 100}%)`,
           }}
         />
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2 mt-4 pt-3 border-t border-white/10">
+      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-white/10">
         <div className="text-center">
-          <div className="text-sm font-bold font-mono" style={{ color: themeInfo[colorTheme].color }}>
-            {Math.round(cpuLoad)}%
-          </div>
+          <div className="text-sm font-bold font-mono text-cyan-400">{Math.round(cpuLoad)}%</div>
           <div className="text-[8px] text-slate-500 uppercase">CPU</div>
         </div>
         <div className="text-center">
-          <div className="text-sm font-bold font-mono" style={{ color: themeInfo[colorTheme].color }}>
-            {Math.round(gpuLoad)}%
-          </div>
+          <div className="text-sm font-bold font-mono text-purple-400">{Math.round(gpuLoad)}%</div>
           <div className="text-[8px] text-slate-500 uppercase">GPU</div>
         </div>
         <div className="text-center">
-          <div className="text-sm font-bold font-mono uppercase" style={{ color: themeInfo[colorTheme].color }}>
+          <div className="text-sm font-bold font-mono uppercase text-pink-400">
             {voiceState === VoiceState.SPEAKING ? 'TTS' : voiceState === VoiceState.LISTENING ? 'STT' : 'IDLE'}
           </div>
           <div className="text-[8px] text-slate-500 uppercase">Voice</div>
@@ -233,39 +197,34 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   const isExecuting = processorState === ProcessorState.EXECUTING || processorState === ProcessorState.ANALYZING;
   const showingContent = displayMode !== 'NEURAL' && displayContent !== null;
   
-  // System load states (these would come from actual system monitoring)
+  // System load states
   const [cpuLoad, setCpuLoad] = useState(15);
   const [gpuLoad, setGpuLoad] = useState(8);
   
   // Neural Network settings
-  const [colorTheme, setColorTheme] = useState<'cyan' | 'orange' | 'purple' | 'green'>(() => {
-    const saved = localStorage.getItem('jarvis.neural.color');
-    return (saved as 'cyan' | 'orange' | 'purple' | 'green') || 'cyan';
-  });
   const [showControls, setShowControls] = useState(false);
   const [activityLevel, setActivityLevel] = useState(() => {
     const saved = localStorage.getItem('jarvis.neural.activity');
-    return saved ? parseFloat(saved) : 0.7;
+    return saved ? parseFloat(saved) : 0.8;
   });
   const [rotationSpeed, setRotationSpeed] = useState(() => {
     const saved = localStorage.getItem('jarvis.neural.rotation');
-    return saved ? parseFloat(saved) : 0.002;
+    return saved ? parseFloat(saved) : 0.001;
   });
   
   // Simulate system load changes
   useEffect(() => {
     const interval = setInterval(() => {
-      // Base load plus variation based on processor state
-      const baseCpu = processorState === ProcessorState.EXECUTING ? 45 : 
-                      processorState === ProcessorState.ANALYZING ? 35 : 15;
-      const baseGpu = processorState === ProcessorState.EXECUTING ? 30 : 8;
+      const baseCpu = processorState === ProcessorState.EXECUTING ? 50 : 
+                      processorState === ProcessorState.ANALYZING ? 40 : 15;
+      const baseGpu = processorState === ProcessorState.EXECUTING ? 35 : 8;
       
       setCpuLoad(prev => {
-        const variation = (Math.random() - 0.5) * 10;
+        const variation = (Math.random() - 0.5) * 12;
         return Math.max(5, Math.min(95, baseCpu + variation));
       });
       setGpuLoad(prev => {
-        const variation = (Math.random() - 0.5) * 8;
+        const variation = (Math.random() - 0.5) * 10;
         return Math.max(2, Math.min(90, baseGpu + variation));
       });
     }, 2000);
@@ -275,9 +234,9 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   
   // Dynamic activity based on voice state
   const dynamicActivity = voiceState === VoiceState.SPEAKING 
-    ? activityLevel * 1.4 
+    ? activityLevel * 1.5 
     : voiceState === VoiceState.LISTENING 
-    ? activityLevel * 1.2 
+    ? activityLevel * 1.25 
     : activityLevel;
 
   const renderContent = () => {
@@ -313,16 +272,11 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             gpuLoad={gpuLoad}
             voiceState={voiceState === VoiceState.SPEAKING ? 'speaking' : 
                        voiceState === VoiceState.LISTENING ? 'listening' : 'idle'}
-            colorTheme={colorTheme}
             activityLevel={dynamicActivity}
             rotationSpeed={rotationSpeed}
-            width={560}
-            height={560}
+            width={620}
+            height={620}
             showControls={false}
-            onColorChange={(theme) => {
-              setColorTheme(theme);
-              localStorage.setItem('jarvis.neural.color', theme);
-            }}
             onActivityChange={(level) => {
               setActivityLevel(level);
               localStorage.setItem('jarvis.neural.activity', String(level));
@@ -335,12 +289,10 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         </div>
       )}
       
-      {/* Neural Network Controls - Rendered OUTSIDE at high z-index */}
+      {/* Neural Network Controls */}
       {showControls && !showingContent && (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-50">
           <NeuralNetworkControls
-            colorTheme={colorTheme}
-            setColorTheme={setColorTheme}
             activityLevel={activityLevel}
             setActivityLevel={setActivityLevel}
             rotationSpeed={rotationSpeed}
@@ -352,13 +304,9 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         </div>
       )}
       
-      {/* Controls Toggle - Always Visible */}
+      {/* Controls Toggle */}
       {!showingContent && (
-        <div 
-          className="absolute bottom-4 right-4 flex items-center gap-2"
-          style={{ zIndex: 50 }}
-        >
-          {/* Settings Toggle Button */}
+        <div className="absolute bottom-4 right-4 flex items-center gap-2" style={{ zIndex: 50 }}>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -371,11 +319,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             <Settings size={16} />
           </button>
           
-          {/* Neural Net Indicator */}
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 bg-cyan-500/20 text-cyan-300 border border-cyan-500/50"
-            title="JARVIS Neural Network Active"
-          >
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono transition-all duration-300 bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/40">
             <Brain size={14} className="animate-pulse" />
             <span>NEURAL</span>
           </div>

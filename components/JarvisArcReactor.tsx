@@ -163,11 +163,13 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
   // Handlers for controls
   const handleGlowChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = parseFloat(e.target.value);
+    console.log('[ArcReactor] Glow change:', newValue);
     setGlowIntensity(newValue);
     onGlowChange?.(newValue);
   }, [onGlowChange]);
 
   const handleColorChange = useCallback((newMode: 'classic' | 'warm' | 'cyberpunk') => {
+    console.log('[ArcReactor] Color mode change:', newMode);
     setColorMode(newMode);
     onColorChange?.(newMode);
   }, [onColorChange]);
@@ -236,7 +238,11 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
             {colorModes.map((mode) => (
               <button
                 key={mode.id}
-                onClick={() => handleColorChange(mode.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('[ArcReactor] Color change:', mode.id);
+                  handleColorChange(mode.id);
+                }}
                 style={{
                   flex: 1,
                   padding: '8px 6px',
@@ -251,10 +257,11 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
                   gap: '2px',
                   cursor: 'pointer',
                   transition: 'all 0.2s',
+                  userSelect: 'none',
                 }}
               >
-                <span style={{ fontWeight: 'bold' }}>{mode.name}</span>
-                <span style={{ opacity: 0.6, fontSize: '8px' }}>{mode.desc}</span>
+                <span style={{ fontWeight: 'bold', pointerEvents: 'none' }}>{mode.name}</span>
+                <span style={{ opacity: 0.6, fontSize: '8px', pointerEvents: 'none' }}>{mode.desc}</span>
               </button>
             ))}
           </div>
@@ -265,24 +272,50 @@ export const JarvisArcReactor: React.FC<JarvisArcReactorProps> = ({
               <span>Glow Intensity</span>
               <span style={{ color: '#00aaff', fontWeight: 'bold' }}>{Math.round(glowIntensity * 100)}%</span>
             </label>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.1"
-              value={glowIntensity}
-              onChange={handleGlowChange}
-              style={{
-                width: '100%',
-                height: '6px',
-                background: 'rgba(255,255,255,0.1)',
-                borderRadius: '3px',
-                outline: 'none',
-                cursor: 'pointer',
-                WebkitAppearance: 'none',
-                appearance: 'none',
-              }}
-            />
+            <div style={{ position: 'relative', height: '20px', display: 'flex', alignItems: 'center' }}>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                value={glowIntensity}
+                onChange={handleGlowChange}
+                className="arc-reactor-slider"
+                style={{
+                  width: '100%',
+                  height: '6px',
+                  background: `linear-gradient(to right, #00aaff 0%, #00aaff ${(glowIntensity / 2) * 100}%, rgba(255,255,255,0.1) ${(glowIntensity / 2) * 100}%, rgba(255,255,255,0.1) 100%)`,
+                  borderRadius: '3px',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  WebkitAppearance: 'none',
+                  appearance: 'none',
+                  margin: 0,
+                }}
+              />
+            </div>
+            <style>{`
+              .arc-reactor-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 16px;
+                height: 16px;
+                background: #00aaff;
+                border-radius: 50%;
+                cursor: pointer;
+                box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+                border: 2px solid #fff;
+              }
+              .arc-reactor-slider::-moz-range-thumb {
+                width: 16px;
+                height: 16px;
+                background: #00aaff;
+                border-radius: 50%;
+                cursor: pointer;
+                box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+                border: 2px solid #fff;
+              }
+            `}</style>
           </div>
 
           {/* Stats grid */}

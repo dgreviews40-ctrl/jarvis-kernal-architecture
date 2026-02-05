@@ -673,20 +673,6 @@ export class JarvisArcReactor {
       });
     }
     
-    // Create central holographic cone/projector effect
-    const coneGeometry = new THREE.ConeGeometry(1.5, 3, 32, 1, true);
-    const coneMaterial = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-    this.holoCone = new THREE.Mesh(coneGeometry, coneMaterial);
-    this.holoCone.position.z = 2;
-    this.holoCone.rotation.x = Math.PI;
-    this.scene.add(this.holoCone);
   }
 
   initAudio(audioStream) {
@@ -950,12 +936,6 @@ export class JarvisArcReactor {
         const audioScale = 1 + this.audioIntensity * 0.3;
         glyph.sprite.scale.set(0.5 * audioScale, 0.25 * audioScale, 1);
       });
-    }
-    
-    // Animate holographic cone
-    if (this.holoCone) {
-      this.holoCone.rotation.z += 0.002;
-      this.holoCone.material.opacity = 0.08 + Math.sin(this.time * 1.5) * 0.03 + this.audioIntensity * 0.1;
     }
     
     this.renderer.render(this.scene, this.camera);

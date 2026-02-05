@@ -120,10 +120,14 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
   });
   const [showReactorControls, setShowReactorControls] = useState(false);
   
-  // User-adjustable glow intensity (starts at default, can be overridden)
+  // User-adjustable settings (saved to localStorage)
   const [reactorGlow, setReactorGlow] = useState(() => {
     const saved = localStorage.getItem('jarvis.arcReactor.glow');
     return saved ? parseFloat(saved) : 1.2;
+  });
+  const [reactorColor, setReactorColor] = useState<'classic' | 'warm' | 'cyberpunk'>(() => {
+    const saved = localStorage.getItem('jarvis.arcReactor.color');
+    return (saved as 'classic' | 'warm' | 'cyberpunk') || 'classic';
   });
   
   // Dynamic glow based on voice state + user setting
@@ -199,11 +203,17 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
             glowIntensity={dynamicGlow}
             enhanced={enhancedReactor}
             showControls={showReactorControls}
-            colorMode="classic"
+            colorMode={reactorColor}
             particleCount={150}
             onGlowChange={(value) => {
+              console.log('[DisplayArea] Glow changed to:', value);
               setReactorGlow(value);
               localStorage.setItem('jarvis.arcReactor.glow', String(value));
+            }}
+            onColorChange={(mode) => {
+              console.log('[DisplayArea] Color changed to:', mode);
+              setReactorColor(mode);
+              localStorage.setItem('jarvis.arcReactor.color', mode);
             }}
           />
         </div>

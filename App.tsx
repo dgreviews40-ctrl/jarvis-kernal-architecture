@@ -574,7 +574,7 @@ const App: React.FC = () => {
   if (view === 'PERFORMANCE') return <div className="h-screen w-screen"><LazyViewWrapper><PerformanceDashboard /></LazyViewWrapper></div>;
   if (view === 'MARKETPLACE') return <div className="h-screen w-screen"><LazyViewWrapper><PluginMarketplace onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
   if (view === 'VECTOR_DB') return <div className="h-screen w-screen"><LazyViewWrapper><VectorDBDashboard isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
-  if (view === 'REALTIME') return <div className="h-screen w-screen"><LazyViewWrapper><RealtimeDashboard /></LazyViewWrapper></div>;
+  if (view === 'REALTIME') return <div className="h-screen w-screen"><LazyViewWrapper><RealtimeDashboard onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
 
   const isMainDashboard = activeTab === 'DASHBOARD';
 

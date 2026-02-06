@@ -12,6 +12,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { RealtimeMetricsChart } from './RealtimeMetricsChart';
 import { RealtimeProcessList } from './RealtimeProcessList';
 import { RealtimeAlertPanel } from './RealtimeAlertPanel';
@@ -22,6 +23,10 @@ import {
   formatBytes 
 } from '../services/coreOs';
 
+interface RealtimeDashboardProps {
+  onClose?: () => void;
+}
+
 interface StatsSummary {
   totalProcesses: number;
   runningProcesses: number;
@@ -31,7 +36,7 @@ interface StatsSummary {
   topMemoryProcess: string;
 }
 
-export const RealtimeDashboard: React.FC = () => {
+export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'processes' | 'alerts'>('overview');
@@ -91,7 +96,14 @@ export const RealtimeDashboard: React.FC = () => {
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
-          <h1 style={styles.title}>🔴 Real-Time System Dashboard</h1>
+          <div style={styles.titleRow}>
+            {onClose && (
+              <button onClick={onClose} style={styles.backBtn} title="Back to Dashboard">
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            <h1 style={styles.title}>🔴 Real-Time System Dashboard</h1>
+          </div>
           <div style={styles.subtitle}>
             <span style={isRunning ? styles.statusActive : styles.statusInactive}>
               {isRunning ? '● Live' : '○ Stopped'}
@@ -234,6 +246,23 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column',
     gap: '5px',
+  },
+  titleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  backBtn: {
+    background: '#1a1a1a',
+    border: '1px solid #333',
+    borderRadius: '6px',
+    padding: '8px',
+    color: '#00ff88',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s ease',
   },
   title: {
     margin: 0,

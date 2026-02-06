@@ -449,7 +449,8 @@ export const VisionWindow: React.FC = () => {
                   onClick={() => {
                     if (feedType !== 'local') {
                       setFeedType('local');
-                      if (state !== VisionState.OFF && state !== VisionState.ERROR) {
+                      const currentState = state as VisionState;
+                      if (currentState !== VisionState.OFF && currentState !== VisionState.ERROR) {
                         vision.stopCamera();
                         visionHACamera.stopHACameraRefresh();
                       }
@@ -466,7 +467,8 @@ export const VisionWindow: React.FC = () => {
                   onClick={() => {
                     if (feedType !== 'home_assistant') {
                       setFeedType('home_assistant');
-                      if (state !== VisionState.OFF && state !== VisionState.ERROR) {
+                      const currentState = state as VisionState;
+                      if (currentState !== VisionState.OFF && currentState !== VisionState.ERROR) {
                         vision.stopCamera();
                         visionHACamera.stopHACameraRefresh();
                       }

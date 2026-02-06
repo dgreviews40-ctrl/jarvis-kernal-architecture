@@ -392,7 +392,7 @@ class PluginLoader {
   }
 
   private createContext(manifest: PluginManifest): PluginContext {
-    const hasPermission = (perm: string) => manifest.permissions.includes(perm);
+    const hasPermission = (perm: string) => (manifest.permissions as string[]).includes(perm);
 
     return {
       id: manifest.id,

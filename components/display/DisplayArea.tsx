@@ -268,7 +268,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
     ? brightness * 1.1 
     : brightness;
 
-  const renderContent = () => {
+  const renderContent = (): React.ReactNode => {
     const contentKey = displayContent 
       ? `${displayMode}-${displayContent.title || ''}-${JSON.stringify(displayContent).length}`
       : displayMode;
@@ -283,7 +283,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
       case 'MAP':
         return <MapViewer key={contentKey} content={displayContent?.map} />;
       case 'CUSTOM':
-        return displayContent?.custom?.component || null;
+        return (displayContent?.custom?.component as React.ReactNode) || null;
       case 'NEURAL':
       default:
         return null;

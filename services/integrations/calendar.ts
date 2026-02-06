@@ -98,13 +98,11 @@ class CalendarService {
     this.reminders.set(id, timeout);
     
     // Store in memory
-    memory.store({
-      id: `reminder_${id}`,
-      content: `Reminder: ${request.text} at ${request.time.toLocaleString()}`,
-      type: 'PREFERENCE',
-      tags: ['reminder', request.priority],
-      created: Date.now()
-    });
+    memory.store(
+      `Reminder: ${request.text} at ${request.time.toLocaleString()}`,
+      'PREFERENCE',
+      ['reminder', request.priority]
+    );
     
     return id;
   }

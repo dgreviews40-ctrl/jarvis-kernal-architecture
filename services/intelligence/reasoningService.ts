@@ -197,7 +197,7 @@ class ReasoningService {
     Object.entries(patterns).forEach(([type, regexes]) => {
       regexes.forEach(regex => {
         const matches = text.match(regex) || [];
-        matches.forEach(match => {
+        matches.forEach((match: string) => {
           const name = match.toLowerCase();
           
           // Check if we already know this entity

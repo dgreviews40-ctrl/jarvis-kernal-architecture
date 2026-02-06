@@ -337,7 +337,7 @@ export class AdvancedSentimentAnalyzer {
     }
 
     // Determine overall sentiment category
-    let overallSentiment: typeof this.prototype.analyzeWithContext extends (...args: any[]) => infer R ? R extends Promise<infer P> ? P extends { overallSentiment: infer S } ? S : never : never : never;
+    let overallSentiment: 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative' | 'mixed';
     const v = dimensions.valence;
     const a = dimensions.arousal;
 

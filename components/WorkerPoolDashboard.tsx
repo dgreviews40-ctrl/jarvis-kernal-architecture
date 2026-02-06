@@ -72,7 +72,7 @@ export const WorkerPoolDashboard: React.FC = () => {
     setTaskHistory(prev => [{
       id: taskId,
       type: selectedTaskType,
-      status: 'pending'
+      status: 'pending' as const
     }, ...prev].slice(0, 20));
 
     try {
@@ -157,7 +157,7 @@ export const WorkerPoolDashboard: React.FC = () => {
     setTaskHistory(prev => [{
       id: `batch-${batchId}`,
       type: `Batch (${count} tasks)`,
-      status: 'completed',
+      status: 'completed' as const,
       startTime,
       endTime: Date.now(),
       duration

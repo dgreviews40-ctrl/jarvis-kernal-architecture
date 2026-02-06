@@ -195,7 +195,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ onCommand, onNavig
 
                      <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 min-h-0">
                          <StatRow label="LINK_PROT" value={providerManager.getMode() === AIProvider.OLLAMA ? 'LOCAL' : 'CLOUD'} />
-                         <StatRow label="LATENCY" value={lastOp?.details?.latency || "0ms"} />
+                         <StatRow label="LATENCY" value={(lastOp?.details as { latency?: string })?.latency || "0ms"} />
                          <StatRow label="LOAD" value="OPTIMAL" />
                      </div>
                  </div>

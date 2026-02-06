@@ -375,13 +375,11 @@ class TaskAutomationService {
           this.notify('notify', action.config);
           break;
         case 'set_memory':
-          memory.store({
-            id: `auto_${Date.now()}`,
-            content: action.config.content,
-            type: 'FACT',
-            tags: ['automation'],
-            created: Date.now()
-          });
+          memory.store(
+            action.config.content,
+            'FACT',
+            ['automation']
+          );
           break;
         case 'delay':
           await new Promise(r => setTimeout(r, action.config.duration));
@@ -454,11 +452,11 @@ class TaskAutomationService {
     } catch (e) {
       // Fallback to simulated weather if service fails
       const tempCelsius = Math.floor(Math.random() * 10) + 15; // Random temp in Celsius (about 60-80°F equivalent)
-      const tempF = mainWeatherService.weatherService.formatTemperatureOnlyFahrenheit(tempCelsius);
+      const tempF = Math.round((tempCelsius * 9/5) + 32);
       const conditions = ["sunny", "partly cloudy", "cloudy", "rainy"];
       const condition = conditions[Math.floor(Math.random() * conditions.length)];
 
-      weatherInfo = `The current weather is ${tempF} and ${condition}. `;
+      weatherInfo = `The current weather is ${tempF}°F and ${condition}. `;
 
       // Add clothing advice based on weather
       const tempCelsiusFallback = Math.floor(Math.random() * 10) + 15; // Use random value for advice

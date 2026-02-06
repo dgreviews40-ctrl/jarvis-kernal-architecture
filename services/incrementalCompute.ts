@@ -192,7 +192,7 @@ class IncrementalComputeEngine {
     if (cached) {
       // Check if any dependency has changed
       const depVersions = dependencies.map(depId => 
-        this.computations.get(depId)?.version || 0
+        (this.computations.get(depId)?.version || 0).toString()
       );
       
       const cachedVersions = Array.from(cached.dependencies);
@@ -273,7 +273,7 @@ export function useIncremental<TInput, TOutput>(
 
   React.useEffect(() => {
     incrementalCompute.register(id, compute);
-    const result = incrementalCompute.compute(id, input);
+    const result = incrementalCompute.compute(id, input) as TOutput;
     setOutput(result);
   }, [id, ...deps]);
 

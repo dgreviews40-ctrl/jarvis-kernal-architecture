@@ -7,7 +7,7 @@
  */
 
 export { useUIStore } from './uiStore';
-export { useKernelStore } from './kernelStore';
+export { useKernelStore, useMemoryConsolidationStats } from './kernelStore';
 export { useMemoryStore } from './memoryStore';
 export { useLogsStore } from './logsStore';
 export { usePluginStore, usePlugins, useSelectedPlugin } from './pluginStore';

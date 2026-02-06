@@ -202,7 +202,8 @@ export class ConversationalContextEngine {
       keywords: [],
       startTime: now,
       lastActive: now,
-      turnCount: 1
+      turnCount: 1,
+      relatedTopics: []
     };
 
     const newThread: ConversationThread = {

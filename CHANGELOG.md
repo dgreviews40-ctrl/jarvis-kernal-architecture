@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Real-Time System Dashboard** - Live monitoring dashboard with:
+  - Real-time CPU and Memory usage charts with 2-minute history
+  - Live process list with sorting, filtering, and kill controls
+  - System alert panel with acknowledgment and pulse animations
+  - Auto-refreshing metrics (configurable: 1s, 2s, 5s, 10s intervals)
+  - Tabbed interface: Overview, Processes, Alerts
+  - Summary stats bar showing top processes and resource usage
+  - Integration with core.os v1.2.1 process management APIs
+  - New components:
+    - `RealtimeDashboard` - Main dashboard component
+    - `RealtimeMetricsChart` - Live chart component
+    - `RealtimeProcessList` - Process monitoring with controls
+    - `RealtimeAlertPanel` - Alert management UI
+  - New service: `realtimeMetrics.ts` - Event-driven metrics broadcasting
+  - Added 'REALTIME' view to UI store and App.tsx navigation
+
 ## [core.os-1.2.1] - 2026-02-05
 
 ### Added

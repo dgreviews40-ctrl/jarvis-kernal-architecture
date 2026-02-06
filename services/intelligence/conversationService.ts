@@ -75,9 +75,13 @@ class ConversationService {
       
       if (relevance > 0) {
         topics.push({
+          id: `topic_${name}_${Date.now()}`,
           name,
+          keywords: [name],
+          startTime: Date.now(),
           relevance: Math.min(relevance, 1),
-          lastActive: Date.now()
+          lastActive: Date.now(),
+          turnCount: 1
         });
       }
     });

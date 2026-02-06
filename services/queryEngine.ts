@@ -109,9 +109,9 @@ class QueryEngine {
     query: Query<unknown, T>,
     options: { autoRefresh?: boolean; refreshInterval?: number } = {}
   ): MaterializedView<T> {
-    const view: MaterializedView<T> = {
+    const view = {
       id,
-      query: query as Query<unknown, unknown>,
+      query,
       data: null as unknown as T,
       lastUpdated: 0,
       autoRefresh: options.autoRefresh ?? false,

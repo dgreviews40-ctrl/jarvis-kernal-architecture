@@ -32,7 +32,7 @@ export const LazyHealthDashboard = lazy(() =>
 );
 
 export const LazyHomeAssistantDashboard = lazy(() => 
-  import('./HomeAssistantDashboard').then(m => ({ default: m.HomeAssistantDashboard }))
+  import('./HomeAssistantDashboard')
 );
 
 export const LazyDevDashboard = lazy(() => 

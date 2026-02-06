@@ -100,7 +100,7 @@ export function createPersistOptions<T extends object, K extends keyof T>(
 ): PersistOptions<T, PersistPartial<T, K>> {
   return {
     name,
-    storage: defaultStorage,
+    storage: defaultStorage as import('zustand/middleware').PersistStorage<PersistPartial<T, K>>,
     partialize: (state) => {
       const partial = {} as PersistPartial<T, K>;
       keys.forEach((key) => {

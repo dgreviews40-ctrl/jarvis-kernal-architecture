@@ -11,7 +11,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type MainView = 'DASHBOARD' | 'SETTINGS' | 'DEV' | 'INTEGRATIONS' | 'PERFORMANCE' | 'MARKETPLACE';
+export type MainView = 'DASHBOARD' | 'SETTINGS' | 'DEV' | 'INTEGRATIONS' | 'PERFORMANCE' | 'MARKETPLACE' | 'VECTOR_DB' | 'REALTIME';
 export type TabView = 'DASHBOARD' | 'ARCH' | 'MEMORY' | 'VISION' | 'HEALTH' | 'GRAPH' | 'LOGS' | 'HOME_ASSISTANT' | 'WEATHER' | 'AGENT';
 
 interface UIState {

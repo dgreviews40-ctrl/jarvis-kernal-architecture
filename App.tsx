@@ -9,7 +9,7 @@ import { SystemMonitor } from './components/SystemMonitor';
 import { BootSequence } from './components/BootSequence';
 import { MainDashboard } from './components/MainDashboard';
 import { NotificationSystem } from './components/NotificationSystem';
-import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell } from 'lucide-react';
+import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell, Database } from 'lucide-react';
 import { textStyle, textColor, fontFamily, tracking } from './constants/typography';
 import { logger } from './services/logger';
 import { TIMING, LIMITS } from './constants/config';
@@ -28,6 +28,8 @@ const PerformanceDashboard = lazy(() => import('./components/PerformanceDashboar
 const PluginMarketplace = lazy(() => import('./components/PluginMarketplace'));
 const WeatherDashboard = lazy(() => import('./components/WeatherDashboard'));
 const AgentDashboard = lazy(() => import('./components/AgentDashboard'));
+const VectorDBDashboard = lazy(() => import('./components/VectorDBDashboard'));
+const RealtimeDashboard = lazy(() => import('./components/RealtimeDashboard'));
 
 import { 
   ProcessorState, 
@@ -571,6 +573,8 @@ const App: React.FC = () => {
   if (view === 'INTEGRATIONS') return <div className="h-screen w-screen"><LazyViewWrapper><IntegrationsDashboard onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
   if (view === 'PERFORMANCE') return <div className="h-screen w-screen"><LazyViewWrapper><PerformanceDashboard /></LazyViewWrapper></div>;
   if (view === 'MARKETPLACE') return <div className="h-screen w-screen"><LazyViewWrapper><PluginMarketplace onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
+  if (view === 'VECTOR_DB') return <div className="h-screen w-screen"><LazyViewWrapper><VectorDBDashboard isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
+  if (view === 'REALTIME') return <div className="h-screen w-screen"><LazyViewWrapper><RealtimeDashboard /></LazyViewWrapper></div>;
 
   const isMainDashboard = activeTab === 'DASHBOARD';
 
@@ -604,6 +608,8 @@ const App: React.FC = () => {
            <div className="jarvis-actions">
              <NotificationBell />
              <button onClick={() => setView('INTEGRATIONS')} className="jarvis-btn-icon text-cyan-500" title="Integrations"><Zap size={18} /></button>
+             <button onClick={() => setView('VECTOR_DB')} className="jarvis-btn-icon text-purple-500" title="Vector DB"><Database size={18} /></button>
+             <button onClick={() => setView('REALTIME')} className="jarvis-btn-icon text-red-500" title="Real-Time Dashboard"><Activity size={18} /></button>
              <button onClick={() => setView('DEV')} className="jarvis-btn-icon text-yellow-500" title="Dev Tools"><Bug size={18} /></button>
              <button onClick={() => setView('SETTINGS')} className="jarvis-btn-icon text-gray-500" title="Settings"><SettingsIcon size={18} /></button>
            </div>

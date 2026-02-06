@@ -238,8 +238,8 @@ export function useLazyLoad<T>(
 // ==================== USE PREVIOUS ====================
 
 export function usePrevious<T>(value: T): T | undefined {
-  const ref = useRef<T>();
-  const prevRef = useRef<T>();
+  const ref = useRef<T>(undefined);
+  const prevRef = useRef<T>(undefined);
 
   useEffect(() => {
     prevRef.current = ref.current;

@@ -400,7 +400,7 @@ class PiperTTSService {
       };
 
       // Handle errors
-      source.onerror = () => {
+      (source as any).onerror = () => {
         this.activeSources.delete(source);
         if (this.currentSource === source) {
           this.currentSource = null;

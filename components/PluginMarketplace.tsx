@@ -77,7 +77,9 @@ const PluginCard: React.FC<PluginCardProps> = ({ plugin, isInstalled, onInstall,
               <h3 className="font-semibold text-white group-hover:text-cyan-400 transition-colors flex items-center gap-2">
                 {plugin.manifest.name}
                 {plugin.verified && (
-                  <Shield size={14} className="text-green-400" title="Verified" />
+                  <span title="Verified">
+                    <Shield size={14} className="text-green-400" />
+                  </span>
                 )}
               </h3>
               <p className="text-sm text-gray-500">{plugin.manifest.author}</p>
@@ -378,7 +380,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
         setStats(getMarketplaceStats());
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load marketplace');
-        logger.log('PLUGIN', 'Failed to load marketplace data', { error: e });
+        logger.log('PLUGIN', 'Failed to load marketplace data: ' + (e instanceof Error ? e.message : String(e)));
       } finally {
         setIsLoading(false);
       }
@@ -399,7 +401,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
       if (result.error) throw new Error(result.error);
       setPlugins(result.plugins);
     } catch (e) {
-      logger.log('PLUGIN', 'Search failed', { error: e });
+      logger.log('PLUGIN', 'Search failed: ' + (e instanceof Error ? e.message : String(e)));
     } finally {
       setIsLoading(false);
     }
@@ -431,7 +433,7 @@ export const PluginMarketplace: React.FC<PluginMarketplaceProps> = ({ onClose })
         throw new Error(result.error || 'Installation failed');
       }
     } catch (e) {
-      logger.log('PLUGIN', `Failed to install ${plugin.manifest.id}`, { error: e });
+      logger.log('PLUGIN', `Failed to install ${plugin.manifest.id}: ` + (e instanceof Error ? e.message : String(e)));
       setNotification({ message: `Installation failed: ${e instanceof Error ? e.message : 'Unknown error'}`, type: 'error' });
       setTimeout(() => setNotification(null), 5000);
     }

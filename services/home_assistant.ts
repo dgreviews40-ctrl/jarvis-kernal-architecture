@@ -1,4 +1,4 @@
-import { CircuitBreaker } from "./CircuitBreaker";
+import { EnhancedCircuitBreaker } from "./CircuitBreaker";
 
 export interface HAEntity {
   entity_id: string;
@@ -342,7 +342,7 @@ class HomeAssistantService {
     }
   }
 
-  public async getStatus(): Promise<{ connected: boolean; entitiesCount: number; error?: string }> {
+  public async getStatus(): Promise<{ connected: boolean; entitiesCount: number; error?: string; initialized?: boolean }> {
     if (!this.token) {
       return { connected: false, entitiesCount: 0, error: "Not configured" };
     }

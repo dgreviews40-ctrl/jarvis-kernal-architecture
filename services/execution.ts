@@ -17,6 +17,14 @@ import {
   formatBytes, 
   formatUptime,
   formatDuration,
+  getProcessList,
+  getProcessStats,
+  killProcess,
+  findProcesses,
+  getTopCpuProcesses,
+  getTopMemoryProcesses,
+  formatProcessList,
+  formatProcessStats,
 } from "./coreOs";
 
 const DEFAULT_CONFIG: CircuitConfig = {
@@ -359,11 +367,65 @@ No active alerts. All systems nominal ✅`;
 • Error:   ${health.error} ❌
 • Paused:  ${health.paused} ⏸️`;
            }
+           
+           // v1.2.1: Process management
+           if (entities.includes('process') || entities.includes('processes')) {
+             // Process list
+             if (entities.includes('list') || entities.includes('all')) {
+               const processes = await getProcessList();
+               return formatProcessList(processes);
+             }
+             
+             // Process stats
+             if (entities.includes('stats') || entities.includes('summary')) {
+               const stats = await getProcessStats();
+               return formatProcessStats(stats);
+             }
+             
+             // Top CPU processes
+             if (entities.includes('cpu') || entities.includes('top')) {
+               const processes = await getTopCpuProcesses(10);
+               return `TOP CPU PROCESSES [core.os v1.2.1]\n\n${formatProcessList(processes)}`;
+             }
+             
+             // Top memory processes
+             if (entities.includes('memory') || entities.includes('mem')) {
+               const processes = await getTopMemoryProcesses(10);
+               return `TOP MEMORY PROCESSES [core.os v1.2.1]\n\n${formatProcessList(processes)}`;
+             }
+             
+             // Default: show process stats + top 5
+             const [stats, topCpu] = await Promise.all([
+               getProcessStats(),
+               getTopCpuProcesses(5)
+             ]);
+             return `${formatProcessStats(stats)}\n\nTOP 5 BY CPU:\n${formatProcessList(topCpu)}`;
+           }
+           
+           // v1.2.1: Kill process
+           if (entities.includes('kill') || entities.includes('terminate')) {
+             const pid = parseInt(action.params.pid as string);
+             if (isNaN(pid)) {
+               return 'ERROR: No PID specified. Usage: kill <pid>';
+             }
+             const result = await killProcess(pid);
+             return result.message;
+           }
+           
+           // v1.2.1: Find process
+           if (entities.includes('find') || entities.includes('search')) {
+             const pattern = action.params.pattern as string;
+             if (!pattern) {
+               return 'ERROR: No search pattern specified. Usage: find <pattern>';
+             }
+             const processes = await findProcesses(pattern);
+             return `SEARCH RESULTS FOR "${pattern}" [core.os v1.2.1]\n\n${formatProcessList(processes)}`;
+           }
 
            // Fallback with version info
-           return `SYSTEM COMMAND EXECUTED [core.os v1.2.0]
+           return `SYSTEM COMMAND EXECUTED [core.os v1.2.1]
 Available: diagnostic, metrics, network, battery, storage, performance,
-           predict, alerts, health, monitor, circuit, memory`;
+           predict, alerts, health, monitor, process, kill, find, circuit, memory`;
         }
 
         // Check if this is a plugin method execution

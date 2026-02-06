@@ -236,7 +236,7 @@ class CoreOsIntegration {
     try {
       // Use voice service if available
       if (voice && typeof voice.speak === 'function') {
-        voice.speak(message, true); // true = interruptible
+        voice.speak(message);
       } else {
         // Fallback to system TTS
         const utterance = new SpeechSynthesisUtterance(message);
@@ -348,7 +348,7 @@ class CoreOsIntegration {
           impact: ImpactLevel.MEDIUM,
           latencyMs: 0,
           context: { 
-            pluginErrors: health.error,
+            pluginErrors: health.error ? [String(health.error)] : [],
             totalPlugins: health.total 
           }
         });

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [core.os-1.2.1] - 2026-02-05
+
+### Added
+- **Process Management**: Full process monitoring and control capabilities
+  - `getProcessList()` - List all running processes with filters
+  - `getProcessStats()` - Get aggregate process statistics
+  - `killProcess(pid, force?)` - Terminate processes by PID
+  - `findProcesses(pattern)` - Search processes by name
+  - `getTopCpuProcesses(n)` - Get top N CPU-consuming processes
+  - `getTopMemoryProcesses(n)` - Get top N memory-consuming processes
+  - `formatProcessList()` - Beautiful ASCII table formatting
+  - Virtual process registration for tracking browser operations
+- **New Commands**:
+  - `process list` / `process all` - Show all processes
+  - `process stats` / `process summary` - Show process statistics
+  - `process cpu` / `process top` - Top 10 CPU processes
+  - `process memory` / `process mem` - Top 10 memory processes
+  - `kill <pid>` / `terminate <pid>` - Kill a process
+  - `find <pattern>` / `search <pattern>` - Find processes by name
+- **Process Interface Types**:
+  - `ProcessInfo` - Process metadata (PID, name, status, CPU, memory)
+  - `ProcessStats` - Aggregate statistics
+  - `ProcessFilter` - Filter options for process queries
+  - `ProcessKillResult` - Result of kill operation
+
+### Changed
+- **Version Bump**: core.os upgraded from v1.2.0 to v1.2.1
+- **Plugin Manifest Updated**:
+  - New `provides`: `process_list`, `process_kill`
+  - New `capabilities`: `process_list`, `process_kill`
+  - Updated description to include process management
+- **Registry Version**: Bumped to v16 to clear cached plugin data
+
 ## [core.os-1.2.0] - 2026-02-05
 
 ### Added
@@ -183,7 +216,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Plugin | Current Version | Status |
 |--------|-----------------|--------|
-| core.os | 1.1.0 | ✅ Active |
+| core.os | 1.2.1 | ✅ Active |
 | core.network | 1.0.0 | ✅ Active |
 | core.memory | 2.0.0 | ✅ Active |
 | core.ai | 1.0.0 | ✅ Active |
@@ -197,12 +230,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Future Roadmap
 
-### core.os v1.2.0 (Planned)
+### core.os v1.2.0 (Completed) ✅
+- [x] CPU monitoring
+- [x] Storage monitoring
+- [x] Performance metrics
+- [x] Predictive analytics
+- [x] System alerts
+- [x] Process list and management (v1.2.1)
+
+### core.os v1.3.0 (Planned)
 - [ ] CPU temperature monitoring (node-systeminformation)
-- [ ] Disk usage statistics
-- [ ] Process list and management
+- [ ] Disk usage statistics (detailed per-disk)
 - [ ] System load averages
 - [ ] Network interface details
+- [ ] Process tree visualization
 
 ### core.os v2.0.0 (Planned)
 - [ ] Hardware sensor integration (fan speed, voltage)

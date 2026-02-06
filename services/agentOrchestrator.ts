@@ -433,8 +433,9 @@ Or {"toolId": null} if no tool matches.
           }
         }
 
-        // Check if goal should continue
-        if (goal.status === 'cancelled' || goal.status === 'failed') {
+        // Check if goal should continue (status may be modified by executeTask)
+        const currentStatus = goal.status as TaskStatus;
+        if (currentStatus === 'cancelled' || currentStatus === 'failed') {
           break;
         }
       }

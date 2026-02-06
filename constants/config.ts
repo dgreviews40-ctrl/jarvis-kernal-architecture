@@ -571,6 +571,9 @@ export const CONTEXT_WINDOW = {
   
   /** Maximum turns before forced summary */
   MAX_TURNS_BEFORE_SUMMARY: 20,
+  
+  /** Reserved tokens (calculated as system + response reserve) */
+  RESERVED: 3000, // SYSTEM_PROMPT_RESERVE + RESPONSE_RESERVE
 } as const;
 
 // ==================== AGENT SYSTEM (v1.4.2) ====================

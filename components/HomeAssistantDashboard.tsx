@@ -30,7 +30,11 @@ type ViewMode = 'dashboard' | 'whitelist';
 const HomeAssistantDashboard: React.FC = () => {
   const [entities, setEntities] = useState<HAEntityDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState({
+  const [connectionStatus, setConnectionStatus] = useState<{
+    connected: boolean;
+    entitiesCount: number;
+    error?: string;
+  }>({
     connected: false,
     entitiesCount: 0,
     error: ''
@@ -180,8 +184,8 @@ const HomeAssistantDashboard: React.FC = () => {
       const action = currentState === 'on' ? 'turn_off' : 'turn_on';
       await haService.executeSmartCommand([entityId, action]);
       
-      // Refresh data after action
-      await loadData();
+      // Refresh data after action - reload page to refresh
+      window.location.reload();
     } catch (error) {
       console.error(`Error toggling entity ${entityId}:`, error);
       alert(`Failed to toggle ${entityId}: ${error instanceof Error ? error.message : 'Unknown error'}`);

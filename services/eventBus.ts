@@ -168,16 +168,18 @@ class EventBus {
     const responseChannel = `${channel}:response:${correlationId}`;
 
     return new Promise((resolve, reject) => {
+      let unsubscribeFn: (() => void) | null = null;
+      
       const timeout = setTimeout(() => {
-        this.unsubscribe(subscriptionId);
+        if (unsubscribeFn) unsubscribeFn();
         reject(new Error(`Request timeout on ${channel}`));
       }, timeoutMs);
 
-      const subscriptionId = this.subscribe(
+      unsubscribeFn = this.subscribe(
         responseChannel,
         (event) => {
           clearTimeout(timeout);
-          this.unsubscribe(subscriptionId);
+          if (unsubscribeFn) unsubscribeFn();
           resolve(event.payload as TResponse);
         },
         { priority: 'critical' }

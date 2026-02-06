@@ -36,14 +36,15 @@ export enum BootState {
   PHASE_BOOT = 'PHASE_BOOT',
   RUNNING = 'RUNNING',
   DEGRADED = 'DEGRADED',
-  FATAL = 'FATAL'
+  FATAL = 'FATAL',
+  ERROR = 'ERROR'
 }
 
 export interface BootPhase {
   id: number;
   name: string;
-  criticality: 'HIGH' | 'LOW';
-  status: 'PENDING' | 'IN_PROGRESS' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  criticality: 'HIGH' | 'MEDIUM' | 'LOW';
+  status: 'PENDING' | 'IN_PROGRESS' | 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'ERROR';
   logs: string[];
 }
 
@@ -76,7 +77,8 @@ export interface LogEntry {
   source: 'KERNEL' | 'GEMINI' | 'PLUGIN' | 'USER' | 'SYSTEM' | 'CIRCUIT_BREAKER' | 'REGISTRY' | 'MEMORY' | 'OLLAMA' | 'VOICE' | 'VISION' | 'CORTEX' | 'DEV_HOST' | 'GRAPH' | 'CONVERSATION' | 'HOME_ASSISTANT' | 'AGENT' | 'WEBSOCKET' | 'CACHE' | 'SECURITY' | 'RESILIENCE' | 'PREDICTIVE' | 'PERFORMANCE' | 'TESTING' | 'SETTINGS' | 'MARKETPLACE' | 'ERROR' | 'BACKUP' |
     // v1.1+ Additional sources
     'FILE_GENERATOR' | 'VECTOR_DB' | 'CONTEXT_WINDOW' | 'INTELLIGENCE' | 'DISPLAY' | 'WEATHER' | 'PIPER' | 'TIMER' |
-    'ERROR_HANDLER' | 'NOTIFICATION' | 'GLOBAL' | 'PLUGIN_LOADER' | 'VECTOR_MEMORY' | 'STREAMING' | 'CORE_OS' | 'BOOT';
+    'ERROR_HANDLER' | 'NOTIFICATION' | 'GLOBAL' | 'PLUGIN_LOADER' | 'VECTOR_MEMORY' | 'STREAMING' | 'CORE_OS' | 'BOOT' |
+    'IMAGE_GENERATOR' | 'SUGGESTION' | 'PREDICTION' | 'ANALYTICS' | 'MIGRATION' | 'LEARNING' | 'SEARCH' | 'QUERY';
   message: string;
   details?: Record<string, unknown> | string | number | boolean | object;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -103,7 +105,15 @@ export interface BreakerStatus {
   nextAttempt?: number;
 }
 
-export type Permission = 'READ_MEMORY' | 'WRITE_MEMORY' | 'NETWORK' | 'HARDWARE_CONTROL' | 'AUDIO_OUTPUT' | 'CAMERA_ACCESS' | 'AUDIO_INPUT' | 'DISPLAY_RENDER' | 'MODEL_SELECTION';
+export type Permission = 
+  | 'READ_MEMORY' | 'WRITE_MEMORY' | 'NETWORK' | 'HARDWARE_CONTROL' 
+  | 'AUDIO_OUTPUT' | 'CAMERA_ACCESS' | 'AUDIO_INPUT' | 'DISPLAY_RENDER' | 'MODEL_SELECTION' 
+  | 'display:render' | 'model:selection'
+  | 'ai:generate' | 'ai:embed'
+  | 'memory:read' | 'memory:write'
+  | 'storage:read' | 'storage:write'
+  | 'system:execute'
+  | 'network:fetch';
 
 export interface PluginManifest {
   id: string;
@@ -111,7 +121,9 @@ export interface PluginManifest {
   version: string;
   description: string;
   author: string;
-  permissions: Permission[];
+  entry?: string;
+  engine?: string;
+  permissions: Permission[] | string[];
   provides: string[]; 
   requires: string[]; 
   priority: number;   
@@ -120,9 +132,11 @@ export interface PluginManifest {
 
 export interface RuntimePlugin {
   manifest: PluginManifest;
-  status: 'ACTIVE' | 'DISABLED' | 'ERROR' | 'PAUSED_DEPENDENCY';
+  status: 'ACTIVE' | 'DISABLED' | 'ERROR' | 'PAUSED_DEPENDENCY' | 'ENABLED';
   loadedAt: number;
   error?: string;
+  capabilities?: string[];
+  exports?: Record<string, unknown>;
 }
 
 export interface GraphNode {
@@ -206,7 +220,7 @@ export interface VoiceConfig {
 export interface ConversationTurn {
   id: string;
   timestamp: number;
-  speaker: 'USER' | 'JARVIS';
+  speaker: 'USER' | 'JARVIS' | 'SYSTEM';
   text: string;
   interrupted?: boolean;
 }
@@ -391,23 +405,85 @@ export interface Topic {
   lastActive: number;
   turnCount: number;
   relatedTopics?: string[];
+  relevance?: number;
+}
+
+export interface SuggestionContext {
+  currentTopic?: string;
+  sentiment?: string;
+  timeOfDay?: number;
+  recentActions?: string[];
+  topics?: Topic[];
 }
 
 export interface PluginCapability {
   name: string;
   version: string;
   description?: string;
+  provider?: string;
+  handler?: string;
 }
 
-export interface KernelEvent {
+export interface KernelEvent<T = unknown> {
   id: string;
   timestamp: number;
   type: string;
   source: string;
-  payload: unknown;
+  payload: T;
+  channel?: string;
 }
 
 export type FileFormat = 'png' | 'jpeg' | 'svg' | 'pdf' | 'txt' | 'md';
+
+// Speech Recognition interfaces
+export interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+export interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+export interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+export interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+export interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+export interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onnomatch: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  abort(): void;
+  start(): void;
+  stop(): void;
+}
 
 // Extend global window interface for speech recognition and audio context
 declare global {

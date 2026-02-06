@@ -79,6 +79,50 @@ export interface SystemAlert {
   acknowledged: boolean;
 }
 
+// ============================================================================
+// PROCESS MANAGEMENT INTERFACES (v1.2.1)
+// ============================================================================
+
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  status: 'running' | 'sleeping' | 'stopped' | 'zombie' | 'unknown';
+  cpu: number; // CPU usage percentage
+  memory: number; // Memory in bytes
+  ppid?: number; // Parent process ID
+  command?: string; // Command line
+  uptime: number; // Process uptime in seconds
+  timestamp: number; // When info was collected
+}
+
+export interface ProcessFilter {
+  status?: ProcessInfo['status'];
+  minCpu?: number;
+  minMemory?: number;
+  namePattern?: string;
+}
+
+export interface ProcessKillResult {
+  success: boolean;
+  pid: number;
+  message: string;
+}
+
+export interface ProcessStats {
+  total: number;
+  running: number;
+  sleeping: number;
+  stopped: number;
+  totalCpu: number;
+  totalMemory: number;
+}
+
+export interface ProcessManagement {
+  processes: ProcessInfo[];
+  stats: ProcessStats;
+  timestamp: number;
+}
+
 export interface PredictiveAnalysis {
   batteryTimeRemaining: number | null;
   memoryTrend: 'increasing' | 'stable' | 'decreasing';
@@ -526,6 +570,261 @@ export function clearAcknowledgedAlerts(): void {
 }
 
 // ============================================================================
+// PROCESS MANAGEMENT (v1.2.1)
+// ============================================================================
+
+// Track "virtual" processes (browser operations, intervals, etc.)
+interface VirtualProcess {
+  pid: number;
+  name: string;
+  status: ProcessInfo['status'];
+  startTime: number;
+  memory: number;
+  cpu: number;
+  command?: string;
+  cleanup?: () => void;
+}
+
+const virtualProcesses = new Map<number, VirtualProcess>();
+let nextVirtualPid = 10000;
+
+/**
+ * Register a virtual process for tracking
+ */
+export function registerVirtualProcess(
+  name: string,
+  command?: string,
+  cleanup?: () => void
+): number {
+  const pid = nextVirtualPid++;
+  virtualProcesses.set(pid, {
+    pid,
+    name,
+    status: 'running',
+    startTime: Date.now(),
+    memory: 0,
+    cpu: 0,
+    command,
+    cleanup,
+  });
+  return pid;
+}
+
+/**
+ * Unregister a virtual process
+ */
+export function unregisterVirtualProcess(pid: number): boolean {
+  const proc = virtualProcesses.get(pid);
+  if (proc) {
+    if (proc.cleanup) {
+      try {
+        proc.cleanup();
+      } catch (e) {
+        console.error(`[core.os] Cleanup error for process ${pid}:`, e);
+      }
+    }
+    virtualProcesses.delete(pid);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Update virtual process metrics
+ */
+export function updateVirtualProcessMetrics(pid: number, memory: number, cpu: number): boolean {
+  const proc = virtualProcesses.get(pid);
+  if (proc) {
+    proc.memory = memory;
+    proc.cpu = cpu;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Set virtual process status
+ */
+export function setVirtualProcessStatus(pid: number, status: ProcessInfo['status']): boolean {
+  const proc = virtualProcesses.get(pid);
+  if (proc) {
+    proc.status = status;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Get list of running processes
+ * Combines Node.js processes (if available) with virtual processes
+ */
+export async function getProcessList(filter?: ProcessFilter): Promise<ProcessInfo[]> {
+  const processes: ProcessInfo[] = [];
+  
+  // Add Node.js process info
+  processes.push({
+    pid: process.pid || 0,
+    name: 'jarvis-kernel',
+    status: 'running',
+    cpu: getCPUUsage(),
+    memory: process.memoryUsage().rss,
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+    command: 'node jarvis-kernel',
+  });
+  
+  // Add virtual processes
+  virtualProcesses.forEach(proc => {
+    processes.push({
+      pid: proc.pid,
+      name: proc.name,
+      status: proc.status,
+      cpu: proc.cpu,
+      memory: proc.memory,
+      uptime: (Date.now() - proc.startTime) / 1000,
+      timestamp: Date.now(),
+      command: proc.command,
+    });
+  });
+  
+  // Apply filters
+  let filtered = processes;
+  if (filter) {
+    if (filter.status) {
+      filtered = filtered.filter(p => p.status === filter.status);
+    }
+    if (filter.minCpu !== undefined) {
+      filtered = filtered.filter(p => p.cpu >= filter.minCpu!);
+    }
+    if (filter.minMemory !== undefined) {
+      filtered = filtered.filter(p => p.memory >= filter.minMemory!);
+    }
+    if (filter.namePattern) {
+      const pattern = new RegExp(filter.namePattern, 'i');
+      filtered = filtered.filter(p => pattern.test(p.name));
+    }
+  }
+  
+  return filtered.sort((a, b) => b.cpu - a.cpu); // Sort by CPU usage descending
+}
+
+/**
+ * Get process statistics
+ */
+export async function getProcessStats(): Promise<ProcessStats> {
+  const processes = await getProcessList();
+  return {
+    total: processes.length,
+    running: processes.filter(p => p.status === 'running').length,
+    sleeping: processes.filter(p => p.status === 'sleeping').length,
+    stopped: processes.filter(p => p.status === 'stopped').length,
+    totalCpu: processes.reduce((sum, p) => sum + p.cpu, 0),
+    totalMemory: processes.reduce((sum, p) => sum + p.memory, 0),
+  };
+}
+
+/**
+ * Kill a process by PID
+ * Note: Can only kill virtual processes in browser environment
+ */
+export async function killProcess(pid: number, force: boolean = false): Promise<ProcessKillResult> {
+  // Cannot kill main Node.js process
+  if (pid === (process.pid || 0)) {
+    return {
+      success: false,
+      pid,
+      message: 'Cannot kill the main JARVIS kernel process',
+    };
+  }
+  
+  // Try to kill virtual process
+  if (virtualProcesses.has(pid)) {
+    const proc = virtualProcesses.get(pid)!;
+    const success = unregisterVirtualProcess(pid);
+    return {
+      success,
+      pid,
+      message: success ? `Process "${proc.name}" (PID: ${pid}) terminated` : `Failed to terminate process ${pid}`,
+    };
+  }
+  
+  return {
+    success: false,
+    pid,
+    message: `Process ${pid} not found or cannot be terminated from browser environment`,
+  };
+}
+
+/**
+ * Find processes by name pattern
+ */
+export async function findProcesses(namePattern: string): Promise<ProcessInfo[]> {
+  return getProcessList({ namePattern });
+}
+
+/**
+ * Get top N processes by CPU usage
+ */
+export async function getTopCpuProcesses(n: number = 5): Promise<ProcessInfo[]> {
+  const processes = await getProcessList();
+  return processes.slice(0, n);
+}
+
+/**
+ * Get top N processes by memory usage
+ */
+export async function getTopMemoryProcesses(n: number = 5): Promise<ProcessInfo[]> {
+  const processes = await getProcessList();
+  return processes.sort((a, b) => b.memory - a.memory).slice(0, n);
+}
+
+/**
+ * Format process list for display
+ */
+export function formatProcessList(processes: ProcessInfo[]): string {
+  if (processes.length === 0) {
+    return 'No processes found.';
+  }
+  
+  const lines = [
+    '╔══════╦════════════════════════════╦════════╦══════════╦══════════════════╗',
+    '║ PID  ║ Name                       ║ Status ║ CPU %    ║ Memory           ║',
+    '╠══════╬════════════════════════════╬════════╬══════════╬══════════════════╣',
+  ];
+  
+  processes.forEach(proc => {
+    const pid = proc.pid.toString().padStart(4);
+    const name = proc.name.substring(0, 26).padEnd(26);
+    const status = proc.status.padEnd(6);
+    const cpu = proc.cpu.toFixed(1).padStart(6);
+    const memory = formatBytes(proc.memory).padStart(14);
+    lines.push(`║ ${pid} ║ ${name} ║ ${status} ║ ${cpu} ║ ${memory} ║`);
+  });
+  
+  lines.push('╚══════╩════════════════════════════╩════════╩══════════╩══════════════════╝');
+  return lines.join('\n');
+}
+
+/**
+ * Format process statistics for display
+ */
+export function formatProcessStats(stats: ProcessStats): string {
+  return [
+    '╔════════════════════════════════════════════════════════════════╗',
+    '║                  PROCESS STATISTICS                            ║',
+    '╠════════════════════════════════════════════════════════════════╣',
+    `║  Total Processes: ${stats.total.toString().padStart(45)} ║`,
+    `║  Running:         ${stats.running.toString().padStart(45)} ║`,
+    `║  Sleeping:        ${stats.sleeping.toString().padStart(45)} ║`,
+    `║  Stopped:         ${stats.stopped.toString().padStart(45)} ║`,
+    '╠════════════════════════════════════════════════════════════════╣',
+    `║  Total CPU Usage: ${(stats.totalCpu.toFixed(1) + '%').padStart(45)} ║`,
+    `║  Total Memory:    ${formatBytes(stats.totalMemory).padStart(45)} ║`,
+    '╚════════════════════════════════════════════════════════════════╝',
+  ].join('\n');
+}
+
+// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
@@ -595,7 +894,7 @@ export async function runDiagnostics(): Promise<string> {
 
   const lines = [
     '╔══════════════════════════════════════════════════════════════════╗',
-    `║${padCenter('JARVIS SYSTEM DIAGNOSTIC REPORT v1.2.0')}║`,
+    `║${padCenter('JARVIS SYSTEM DIAGNOSTIC REPORT v1.2.1')}║`,
     '╠══════════════════════════════════════════════════════════════════╣',
     `║  MEMORY${' '.repeat(TOTAL_INNER - 8)}║`,
     `║  Heap Used:  ${padValue(formatBytes(metrics.memory.heapUsed))} ║`,
@@ -747,9 +1046,9 @@ export function isMonitoring(): boolean {
 // EXPORT
 // ============================================================================
 
-// Export core.os v1.2.0 API
+// Export core.os v1.2.1 API
 export const coreOs = {
-  version: '1.2.0',
+  version: '1.2.1',
   // v1.1.0 functions
   getSystemMetrics,
   getBatteryInfo,
@@ -771,6 +1070,19 @@ export const coreOs = {
   stopMonitoring,
   isMonitoring,
   formatDuration,
+  // v1.2.1 process management
+  registerVirtualProcess,
+  unregisterVirtualProcess,
+  updateVirtualProcessMetrics,
+  setVirtualProcessStatus,
+  getProcessList,
+  getProcessStats,
+  killProcess,
+  findProcesses,
+  getTopCpuProcesses,
+  getTopMemoryProcesses,
+  formatProcessList,
+  formatProcessStats,
 };
 
 export default coreOs;

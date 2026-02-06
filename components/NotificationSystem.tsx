@@ -73,29 +73,29 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({
   maxNotifications = 5,
   defaultDuration = 5000
 }) => {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notificationList, setNotificationList] = useState<Notification[]>([]);
   
   useEffect(() => {
     // Subscribe to notification queue
-    listeners.add(setNotifications);
+    listeners.add(setNotificationList);
     
     // Listen for global error events
     const handleGlobalNotification = (event: CustomEvent) => {
       const { type, message } = event.detail;
       
       if (type === 'error') {
-        notifications.error('Error', message);
+        notify({ type: 'error', title: 'Error', message, duration: 0 });
       } else if (type === 'warning') {
-        notifications.warning('Warning', message);
+        notify({ type: 'warning', title: 'Warning', message, duration: 5000 });
       } else {
-        notifications.info('Info', message);
+        notify({ type: 'info', title: 'Info', message, duration: 3000 });
       }
     };
     
     window.addEventListener('jarvis-notification', handleGlobalNotification as EventListener);
     
     return () => {
-      listeners.delete(setNotifications);
+      listeners.delete(setNotificationList);
       window.removeEventListener('jarvis-notification', handleGlobalNotification as EventListener);
     };
   }, []);
@@ -104,7 +104,7 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];
     
-    notifications.forEach(notification => {
+    notificationList.forEach(notification => {
       const duration = notification.duration ?? defaultDuration;
       
       if (duration > 0) {
@@ -139,8 +139,8 @@ export const NotificationSystem: React.FC<NotificationSystemProps> = ({
   };
   
   // Limit visible notifications
-  const visibleNotifications = notifications.slice(0, maxNotifications);
-  const overflowCount = notifications.length - maxNotifications;
+  const visibleNotifications = notificationList.slice(0, maxNotifications);
+  const overflowCount = notificationList.length - maxNotifications;
   
   return (
     <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-md">

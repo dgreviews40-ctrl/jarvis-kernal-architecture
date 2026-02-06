@@ -4,7 +4,11 @@
  * Reduces storage usage by 60-80%
  */
 
-import { requestIdleCallback } from './idleCallback';
+// Polyfill for requestIdleCallback
+const requestIdleCallback = 
+  typeof window !== 'undefined' && 'requestIdleCallback' in window
+    ? window.requestIdleCallback.bind(window)
+    : (callback: IdleRequestCallback) => setTimeout(callback, 1);
 
 interface StorageEntry<T> {
   data: T;
@@ -377,10 +381,10 @@ export function requestIdleCallbackPolyfill(
   }
   
   // Fallback to setTimeout
-  return window.setTimeout(() => {
+  return (typeof window !== 'undefined' ? window : globalThis).setTimeout(() => {
     callback({
       timeRemaining: () => 50,
       didTimeout: true
     });
-  }, 1);
+  }, 1) as unknown as number;
 }

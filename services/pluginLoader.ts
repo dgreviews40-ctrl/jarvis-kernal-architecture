@@ -146,7 +146,8 @@ class PluginLoader {
         manifest,
         status: 'ENABLED',
         capabilities: manifest.capabilities || [],
-        exports: {}
+        exports: {},
+        loadedAt: Date.now()
       });
 
       // Store
@@ -201,7 +202,7 @@ class PluginLoader {
 
       // Unregister capabilities
       plugin.manifest.capabilities?.forEach(cap => {
-        this.capabilities.delete(cap.name);
+        this.capabilities.delete(cap);
       });
 
       // Cleanup
@@ -430,7 +431,7 @@ class PluginLoader {
         },
         ui: {
           showNotification: (message, type = 'info') => {
-            notificationService.show(message, type);
+            notificationService[type](message);
           },
           showModal: async (title, content) => {
             // Return true for now - modal system would be implemented separately

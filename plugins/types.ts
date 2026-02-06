@@ -71,7 +71,9 @@ export type PluginPermission =
   | 'system:file:write'
   | 'ui:overlay'
   | 'ui:panel'
-  | 'ui:statusbar';
+  | 'ui:statusbar'
+  | 'display:render'
+  | 'model:selection';
 
 export interface Capability {
   name: string;

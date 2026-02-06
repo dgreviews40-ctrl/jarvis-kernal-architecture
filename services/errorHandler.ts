@@ -183,6 +183,7 @@ export async function withDegradation<T>(
       sourceId: context.component || 'unknown',
       type: HealthEventType.ERROR,
       impact: ImpactLevel.MEDIUM,
+      latencyMs: 0,
       context: {
         operation: context.operation,
         error: err.message,
@@ -242,6 +243,7 @@ function handleFinalError(error: Error, context: ErrorContext): void {
     sourceId: context.component || 'unknown',
     type: HealthEventType.ERROR,
     impact: category === 'runtime' ? ImpactLevel.HIGH : ImpactLevel.MEDIUM,
+    latencyMs: 0,
     context: {
       operation: context.operation,
       error: error.message,

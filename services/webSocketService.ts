@@ -97,11 +97,11 @@ export class WebSocketService {
     if (this.eventListenersAttached) return;
     
     // Listen to all events on the event bus and broadcast to interested clients
-    eventBus.subscribe('*', (event: KernelEvent) => {
+    eventBus.subscribe('*', (event) => {
       if (this.isConnected) {
         // In a real implementation, this would broadcast to all connected WebSocket clients
         // For now, we'll just log that an event would be broadcast
-        logger.log('SYSTEM', `Event would be broadcast: ${event.channel}`, 'info');
+        logger.log('SYSTEM', `Event would be broadcast: ${(event as any).channel || 'unknown'}`, 'info');
       }
     });
     

@@ -179,7 +179,7 @@ class SettingsManager {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Export failed';
-      logger.log('SYSTEM', 'Export failed', { error: message });
+      logger.log('SYSTEM', `Export failed: ${message}`, 'error');
       return {
         success: false,
         error: message,
@@ -256,7 +256,8 @@ class SettingsManager {
       if (exportData.memory && Array.isArray(exportData.memory)) {
         for (const mem of exportData.memory) {
           try {
-            await memory.store(mem.content, mem.type, mem.tags);
+            const memoryItem = mem as { content: string; type: string; tags: string[] };
+            await memory.store(memoryItem.content, memoryItem.type as import('../types').MemoryType, memoryItem.tags);
             result.imported.memory++;
           } catch (error) {
             result.warnings.push(`Failed to import memory: ${error}`);
@@ -279,16 +280,13 @@ class SettingsManager {
           memory: result.imported.memory,
         });
       } else {
-        logger.log('SYSTEM', 'Settings imported with errors', {
-          errors: result.errors.length,
-          warnings: result.warnings.length,
-        });
+        logger.log('SYSTEM', `Settings imported with ${result.errors.length} errors and ${result.warnings.length} warnings`, 'warning');
       }
 
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Import failed';
-      logger.log('SYSTEM', 'Import failed', { error: message });
+      logger.log('SYSTEM', `Import failed: ${message}`, 'error');
       result.errors.push(message);
       return result;
     }

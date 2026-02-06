@@ -747,7 +747,7 @@ export class TestingFramework {
    */
   public generateReport(): string {
     const stats = this.getStats();
-    const report = `
+    let report = `
 JARVIS Kernel v1.4.0 - Test Report
 =================================
 

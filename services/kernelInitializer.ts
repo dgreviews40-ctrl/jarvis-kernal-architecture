@@ -109,6 +109,8 @@ export function getKernelStatus(): KernelInitStatus {
   return {
     vectorDB: vectorDBStats.isInitialized,
     contextWindow: true, // Always available
+    memoryConsolidation: true, // Default to true
+    agentSystem: true, // Default to true
     errors: []
   };
 }

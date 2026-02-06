@@ -5,6 +5,11 @@
  */
 
 // Worker context type
+type DedicatedWorkerGlobalScope = typeof globalThis & {
+  postMessage: (message: any, transfer?: Transferable[]) => void;
+  addEventListener: (type: string, listener: (event: any) => void) => void;
+  removeEventListener: (type: string, listener: (event: any) => void) => void;
+};
 declare const self: DedicatedWorkerGlobalScope;
 
 interface CanvasMessage {

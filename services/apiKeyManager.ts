@@ -9,6 +9,7 @@
  */
 
 import { encrypt, decrypt } from './crypto';
+import { useState, useEffect } from 'react';
 
 export type APIProvider = 'gemini' | 'openai' | 'anthropic' | 'ollama';
 
@@ -107,7 +108,7 @@ class APIKeyManager {
    * Get API key for a provider
    * Checks cache first, then environment, then localStorage
    */
-  getKey(provider: APIProvider): string | null {
+  async getKey(provider: APIProvider): Promise<string | null> {
     // Check cache first
     const cached = this.cache.get(provider);
     if (cached) {
@@ -132,7 +133,7 @@ class APIKeyManager {
     
     // Try localStorage (encrypted or legacy)
     // Note: For encrypted storage, initializeEncryption() must be called first
-    const storedKey = this.getFromStorage(provider);
+    const storedKey = await this.getFromStorage(provider);
     if (storedKey) {
       this.cache.set(provider, {
         key: storedKey,
@@ -240,16 +241,19 @@ class APIKeyManager {
   /**
    * Check if a key exists for a provider
    */
-  hasKey(provider: APIProvider): boolean {
-    return this.getKey(provider) !== null;
+  async hasKey(provider: APIProvider): Promise<boolean> {
+    return (await this.getKey(provider)) !== null;
   }
   
   /**
    * Get all configured providers
    */
-  getConfiguredProviders(): APIProvider[] {
+  async getConfiguredProviders(): Promise<APIProvider[]> {
     const providers: APIProvider[] = ['gemini', 'openai', 'anthropic', 'ollama'];
-    return providers.filter(p => this.hasKey(p));
+    const results = await Promise.all(
+      providers.map(async p => ({ provider: p, hasKey: await this.hasKey(p) }))
+    );
+    return results.filter(r => r.hasKey).map(r => r.provider);
   }
   
   /**
@@ -319,7 +323,7 @@ class APIKeyManager {
     return null;
   }
   
-  private getFromStorage(provider: APIProvider): string | null {
+  private async getFromStorage(provider: APIProvider): Promise<string | null> {
     try {
       const stored = localStorage.getItem(`${this.STORAGE_PREFIX}${provider.toUpperCase()}`);
       
@@ -336,7 +340,7 @@ class APIKeyManager {
       try {
         const data = JSON.parse(stored);
         if (data.encrypted && this.encryptionPassword) {
-          return decrypt(data.encrypted, this.encryptionPassword);
+          return await decrypt(data.encrypted, this.encryptionPassword);
         }
       } catch {
         // Not JSON, try legacy decode
@@ -388,9 +392,26 @@ export const apiKeyManager = new APIKeyManager();
 
 // Convenience hook for React components
 export function useAPIKey(provider: APIProvider) {
+  const [key, setKeyState] = useState<string | null>(null);
+  const [hasKeyState, setHasKeyState] = useState<boolean>(false);
+  
+  useEffect(() => {
+    let mounted = true;
+    const loadKey = async () => {
+      const k = await apiKeyManager.getKey(provider);
+      const has = await apiKeyManager.hasKey(provider);
+      if (mounted) {
+        setKeyState(k);
+        setHasKeyState(has);
+      }
+    };
+    loadKey();
+    return () => { mounted = false; };
+  }, [provider]);
+  
   return {
-    key: apiKeyManager.getKey(provider),
-    hasKey: apiKeyManager.hasKey(provider),
+    key,
+    hasKey: hasKeyState,
     setKey: (key: string) => apiKeyManager.setKey(provider, key),
     removeKey: () => apiKeyManager.removeKey(provider),
     isEncryptionEnabled: () => apiKeyManager.isEncryptionEnabled()

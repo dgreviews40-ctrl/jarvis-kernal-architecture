@@ -914,7 +914,8 @@ export class KernelProcessor {
         logger.log('DISPLAY', 'Generating image using FileGenerator service', 'info');
 
         // Import the new file generator service
-        const { fileGeneratorService, FileFormat } = await import('./fileGenerator');
+        const { fileGeneratorService } = await import('./fileGenerator');
+        type FileFormat = import('./fileGenerator').FileFormat;
 
         try {
           // Determine format and style from input
@@ -1014,7 +1015,7 @@ export class KernelProcessor {
       context.setActiveModule('DISPLAY');
       try {
         // Skip plugin system for now due to provider manager error
-        logger.log('DISPLAY', 'Skipping plugin system due to provider manager error', 'warn');
+        logger.log('DISPLAY', 'Skipping plugin system due to provider manager error', 'warning');
 
         // Always update the store directly to ensure display happens
         const { useKernelStore } = await import('../stores');

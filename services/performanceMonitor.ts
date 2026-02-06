@@ -103,9 +103,9 @@ class PerformanceMonitor {
     
     // Check thresholds
     if (gzipSize > THRESHOLDS.bundleSize.critical) {
-      logger.log('SYSTEM', `Bundle ${chunkName} exceeds critical size: ${(gzipSize / 1024).toFixed(2)}KB`, { chunkName, size, gzipSize });
+      logger.log('SYSTEM', `Bundle ${chunkName} exceeds critical size: ${(gzipSize / 1024).toFixed(2)}KB`, 'error', { chunkName, size, gzipSize });
     } else if (gzipSize > THRESHOLDS.bundleSize.warning) {
-      logger.log('SYSTEM', `Bundle ${chunkName} exceeds warning size: ${(gzipSize / 1024).toFixed(2)}KB`, { chunkName, size, gzipSize });
+      logger.log('SYSTEM', `Bundle ${chunkName} exceeds warning size: ${(gzipSize / 1024).toFixed(2)}KB`, 'warning', { chunkName, size, gzipSize });
     }
     
     this.saveHistoricalData();
@@ -129,9 +129,9 @@ class PerformanceMonitor {
       
       // Check thresholds
       if (duration > THRESHOLDS.timing.critical) {
-        logger.log('SYSTEM', `Operation "${operation}" exceeded critical time: ${duration.toFixed(2)}ms`, { operation, duration });
+        logger.log('SYSTEM', `Operation "${operation}" exceeded critical time: ${duration.toFixed(2)}ms`, 'error', { operation, duration });
       } else if (duration > THRESHOLDS.timing.warning) {
-        logger.log('SYSTEM', `Operation "${operation}" exceeded warning time: ${duration.toFixed(2)}ms`, { operation, duration });
+        logger.log('SYSTEM', `Operation "${operation}" exceeded warning time: ${duration.toFixed(2)}ms`, 'warning', { operation, duration });
       }
       
       this.saveHistoricalData();
@@ -189,9 +189,9 @@ class PerformanceMonitor {
     
     // Check thresholds
     if (snapshot.used > THRESHOLDS.memory.critical) {
-      logger.log('SYSTEM', `Memory usage critical: ${snapshot.used}MB`, snapshot);
+      logger.log('SYSTEM', `Memory usage critical: ${snapshot.used}MB`, 'error', snapshot);
     } else if (snapshot.used > THRESHOLDS.memory.warning) {
-      logger.log('SYSTEM', `Memory usage high: ${snapshot.used}MB`, snapshot);
+      logger.log('SYSTEM', `Memory usage high: ${snapshot.used}MB`, 'warning', snapshot);
     }
     
     this.saveHistoricalData();
@@ -450,7 +450,7 @@ export function useRenderTime(componentName: string): void {
   requestAnimationFrame(() => {
     const duration = performance.now() - start;
     if (duration > 16) { // Log if slower than 60fps
-      logger.log('SYSTEM', `${componentName} render took ${duration.toFixed(2)}ms`, { component: componentName, duration });
+      logger.log('SYSTEM', `${componentName} render took ${duration.toFixed(2)}ms`, 'warning', { component: componentName, duration });
     }
   });
 }

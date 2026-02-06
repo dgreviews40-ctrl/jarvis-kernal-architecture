@@ -3,7 +3,7 @@
  * Features: VAD, audio compression, connection pooling, and efficient streaming
  */
 
-import { VoiceState, VoiceConfig, VoiceType } from "../types";
+import { VoiceState, VoiceConfig, VoiceType, SpeechRecognition, SpeechRecognitionEvent, SpeechRecognitionErrorEvent } from "../types";
 import { conversation } from "./conversation";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { geminiRateLimiter } from "./rateLimiter";
@@ -60,7 +60,7 @@ async function decodeRawPCM(
 }
 
 class VoiceCoreOptimized {
-  private recognition: SpeechRecognition | null = null;
+  private recognition: InstanceType<typeof window.SpeechRecognition> | InstanceType<typeof window.webkitSpeechRecognition> | null = null;
   private synthesis: SpeechSynthesis = window.speechSynthesis;
   private state: VoiceState = VoiceState.MUTED;
   private config: VoiceConfig = { ...DEFAULT_CONFIG };
@@ -317,13 +317,13 @@ class VoiceCoreOptimized {
         // Optimized settings
         (this.recognition as any).maxAlternatives = 1;
         
-        this.recognition.onresult = (event: SpeechRecognitionEvent) => this.handleResult(event);
+        this.recognition.onresult = (event: SpeechRecognitionEvent | any) => this.handleResult(event);
         
         // Debug logging for recognition events
         this.recognition.onaudiostart = () => console.log('[VOICE] Audio input started');
         this.recognition.onsoundstart = () => console.log('[VOICE] Sound detected');
         this.recognition.onspeechstart = () => console.log('[VOICE] Speech detected');
-        this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => this.handleError(event);
+        this.recognition.onerror = (event: SpeechRecognitionErrorEvent | any) => this.handleError(event as SpeechRecognitionErrorEvent);
         this.recognition.onend = () => this.handleEnd();
         this.recognition.onstart = () => {
           console.log('[VOICE] Recognition started successfully');
@@ -390,7 +390,10 @@ class VoiceCoreOptimized {
       
       // Max speech duration check
       if (now - this.speechStartTime > VAD_SPEECH_TIMEOUT) {
-        this.stopListening();
+        this.stopVAD();
+        if (this.recognition) {
+          try { this.recognition.stop(); } catch(e) {}
+        }
       }
     } else {
       // Silence detected
@@ -690,7 +693,7 @@ class VoiceCoreOptimized {
         try {
           this.initRecognition();
           console.log('[VOICE] Attempting to start recognition...');
-          if (this.state !== VoiceState.MUTED && this.state !== VoiceState.ERROR) {
+          if (this.state !== VoiceState.ERROR) {
             this.recognition?.start();
             console.log('[VOICE] recognition.start() called');
           } else {
@@ -1059,7 +1062,7 @@ class VoiceCoreOptimized {
         source.buffer = buffer;
         source.connect(ctx.destination);
         source.onended = () => resolve();
-        source.onerror = (err) => {
+        (source as any).onerror = (err: any) => {
           console.error('[VOICE] Audio playback error:', err);
           reject(err);
         };
@@ -1073,7 +1076,7 @@ class VoiceCoreOptimized {
 
   // ==================== SPEECH RECOGNITION ====================
 
-  private handleResult(event: SpeechRecognitionEvent) {
+  private handleResult(event: SpeechRecognitionEvent | any) {
     // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
     if (this.isCurrentlySpeaking || Date.now() < this.ignoreInputUntil) {
       console.log('[VOICE] Ignoring audio input - JARVIS is currently speaking or in deaf period');
@@ -1254,7 +1257,7 @@ class VoiceCoreOptimized {
     }
   }
 
-  private handleError(event: SpeechRecognitionErrorEvent) {
+  private handleError(event: SpeechRecognitionErrorEvent | any) {
     const error = event.error;
     console.warn('[VOICE] Speech recognition error:', error);
     

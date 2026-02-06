@@ -221,8 +221,11 @@ export const VirtualLogList: React.FC<VirtualLogListProps> = ({
     }
   }, [logs.length, isAutoScrolling, userScrolled]);
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+  const handleScroll = useCallback((scrollTop: number) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const { scrollHeight, clientHeight } = container;
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
     
     setUserScrolled(!isAtBottom);

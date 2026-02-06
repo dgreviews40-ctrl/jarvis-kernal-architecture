@@ -5,14 +5,14 @@ const CORE_PLUGINS: PluginManifest[] = [
   {
     id: "core.os",
     name: "System Core",
-    version: "1.2.0",
-    description: "Core operating system interface with real-time system metrics, predictive analytics, storage monitoring, and automated alerting.",
+    version: "1.2.1",
+    description: "Core operating system interface with real-time system metrics, process management, predictive analytics, storage monitoring, and automated alerting.",
     author: "JARVIS",
     permissions: ["HARDWARE_CONTROL"],
-    provides: ["os_level_control", "filesystem", "system_diagnostics", "system_metrics", "battery_status", "network_info", "storage_info", "performance_metrics", "predictive_analysis", "system_alerts"],
+    provides: ["os_level_control", "filesystem", "system_diagnostics", "system_metrics", "battery_status", "network_info", "storage_info", "performance_metrics", "predictive_analysis", "system_alerts", "process_list", "process_kill"],
     requires: [],
     priority: 100,
-    capabilities: ["system_diagnostics", "process_management", "metrics_collection", "health_monitoring", "battery_monitoring", "network_monitoring", "storage_monitoring", "performance_tracking", "predictive_analytics", "automated_alerting"]
+    capabilities: ["system_diagnostics", "process_management", "process_list", "process_kill", "metrics_collection", "health_monitoring", "battery_monitoring", "network_monitoring", "storage_monitoring", "performance_tracking", "predictive_analytics", "automated_alerting"]
   },
   {
     id: "core.network",
@@ -114,7 +114,7 @@ const CORE_PLUGINS: PluginManifest[] = [
 
 // Version to force cache clear when plugins change
 // Bump this number whenever CORE_PLUGINS changes to clear localStorage
-const REGISTRY_VERSION = 15; // Bumped for core.os v1.2.0 upgrade
+const REGISTRY_VERSION = 16; // Bumped for core.os v1.2.1 process management upgrade
 
 class PluginRegistry {
   private plugins: Map<string, RuntimePlugin> = new Map();
@@ -220,6 +220,72 @@ class PluginRegistry {
     });
     this.persist();
     this.notify();
+  }
+
+  // Additional methods for pluginLoader.ts compatibility
+  
+  /**
+   * Register a runtime plugin (alias for install)
+   */
+  public register(plugin: RuntimePlugin): void {
+    this.plugins.set(plugin.manifest.id, plugin);
+    this.persist();
+    this.notify();
+  }
+
+  /**
+   * Unregister a plugin
+   */
+  public unregister(pluginId: string): void {
+    this.plugins.delete(pluginId);
+    this.persist();
+    this.notify();
+  }
+
+  /**
+   * Update plugin status (alias for setPluginStatus)
+   */
+  public updateStatus(pluginId: string, status: RuntimePlugin['status']): void {
+    this.setPluginStatus(pluginId, status);
+  }
+
+  /**
+   * Start a plugin (set status to ACTIVE)
+   */
+  public async start(pluginId: string): Promise<boolean> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return false;
+    
+    plugin.status = 'ACTIVE';
+    this.persist();
+    this.notify();
+    return true;
+  }
+
+  /**
+   * Stop a plugin (set status to DISABLED)
+   */
+  public async stop(pluginId: string): Promise<boolean> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return false;
+    
+    plugin.status = 'DISABLED';
+    this.persist();
+    this.notify();
+    return true;
+  }
+
+  /**
+   * Update plugin manifest
+   */
+  public async updateManifest(pluginId: string, manifest: PluginManifest): Promise<boolean> {
+    const plugin = this.plugins.get(pluginId);
+    if (!plugin) return false;
+    
+    plugin.manifest = manifest;
+    this.persist();
+    this.notify();
+    return true;
   }
 }
 

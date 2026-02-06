@@ -466,20 +466,30 @@ function analyzeIntentWithHeuristics(input: string): ParsedIntent {
 }
 
 /**
+ * Generate a response using Gemini (alias for analyzeIntent for compatibility)
+ */
+export const generateResponse = async (input: string, options?: { conversationId?: string }): Promise<string> => {
+  const intent = await analyzeIntent(input);
+  return intent.type;
+};
+
+/**
  * Validates if the parsed object has the correct structure for ParsedIntent
  */
 function isValidParsedIntent(obj: unknown): obj is ParsedIntent {
+  if (typeof obj !== 'object' || obj === null) {
+    return false;
+  }
+  const record = obj as Record<string, unknown>;
   return (
-    typeof obj === 'object' &&
-    obj !== null &&
-    typeof obj.type === 'string' &&
-    ['QUERY', 'COMMAND', 'MEMORY_READ', 'MEMORY_WRITE', 'VISION_ANALYSIS', 'UNKNOWN'].includes(obj.type) &&
-    typeof obj.confidence === 'number' &&
-    obj.confidence >= 0 && obj.confidence <= 1 &&
-    typeof obj.complexity === 'number' &&
-    obj.complexity >= 0 && obj.complexity <= 1 &&
-    typeof obj.suggestedProvider === 'string' &&
-    Array.isArray(obj.entities) &&
-    typeof obj.reasoning === 'string'
+    typeof record.type === 'string' &&
+    ['QUERY', 'COMMAND', 'MEMORY_READ', 'MEMORY_WRITE', 'VISION_ANALYSIS', 'UNKNOWN'].includes(record.type) &&
+    typeof record.confidence === 'number' &&
+    record.confidence >= 0 && record.confidence <= 1 &&
+    typeof record.complexity === 'number' &&
+    record.complexity >= 0 && record.complexity <= 1 &&
+    typeof record.suggestedProvider === 'string' &&
+    Array.isArray(record.entities) &&
+    typeof record.reasoning === 'string'
   );
 }

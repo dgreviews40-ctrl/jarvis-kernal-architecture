@@ -16,6 +16,7 @@ import { pluginLoader } from './pluginLoader';
 import { cortex } from './cortex';
 import { registry } from './registry';
 import { engine } from './execution';
+import type { PluginManifest } from '../types';
 
 export const KERNEL_VERSION = '1.5.0';
 
@@ -225,7 +226,7 @@ class KernelAPI {
     this.register({
       method: 'plugin.load',
       handler: async (params) => {
-        const { manifest, code } = params;
+        const { manifest, code } = params as { manifest: PluginManifest; code: string };
         const result = await pluginLoader.load(manifest, code);
         return { success: result.success, error: result.error };
       },

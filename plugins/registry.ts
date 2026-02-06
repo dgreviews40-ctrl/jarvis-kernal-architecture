@@ -426,7 +426,16 @@ export function createPluginAPI(pluginId: string): PluginAPI {
     
     log: (level, message, meta) => {
       plugin.apiCalls++;
-      logger.log(pluginId, message, level, meta);
+      // Map plugin log levels to system log levels
+      const levelMap: Record<string, 'info' | 'success' | 'warning' | 'error'> = {
+        'info': 'info',
+        'success': 'success',
+        'warn': 'warning',
+        'warning': 'warning',
+        'error': 'error',
+        'debug': 'info'
+      };
+      logger.log('PLUGIN', `[${pluginId}] ${message}`, levelMap[level] || 'info', meta);
     },
     
     memory: {

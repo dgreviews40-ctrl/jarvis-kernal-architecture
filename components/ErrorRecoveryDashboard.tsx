@@ -27,7 +27,7 @@ export const ErrorRecoveryDashboard: React.FC = () => {
     degradedFeatures: []
   });
   const [logs, setLogs] = useState<Array<{
-    timestamp: number;
+    timestamp: Date;
     source: string;
     message: string;
     type: string;
@@ -228,7 +228,7 @@ export const ErrorRecoveryDashboard: React.FC = () => {
                 <div key={idx} className="text-xs font-mono p-2 bg-black/30 rounded">
                   <div className="flex items-center gap-2 text-gray-500">
                     <Clock size={10} />
-                    {new Date(log.timestamp).toLocaleTimeString()}
+                    {log.timestamp.toLocaleTimeString()}
                     <span className="text-red-400">[{sourceStr}]</span>
                   </div>
                   <div className="text-gray-300 mt-1">{log.message}</div>

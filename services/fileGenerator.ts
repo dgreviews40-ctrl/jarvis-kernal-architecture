@@ -105,7 +105,7 @@ export class FileGeneratorService {
       const apiKey = geminiProvider?.getApiKey?.() || localStorage.getItem('GEMINI_API_KEY');
       
       if (!apiKey) {
-        logger.log('FILE_GENERATOR', 'No API key available for Imagen, falling back to SVG', 'warn');
+        logger.log('FILE_GENERATOR', 'No API key available for Imagen, falling back to SVG', 'warning');
         return this.generateSVGWithAI(prompt, options);
       }
 
@@ -147,7 +147,7 @@ export class FileGeneratorService {
         
         // Check if this is a permission/model access issue
         if (response.status === 404 || response.status === 403) {
-          logger.log('FILE_GENERATOR', `Imagen 4 not available: ${errorMsg}. Falling back to SVG.`, 'warn');
+          logger.log('FILE_GENERATOR', `Imagen 4 not available: ${errorMsg}. Falling back to SVG.`, 'warning');
           return this.generateSVGWithAI(prompt, options);
         }
         
@@ -186,7 +186,7 @@ export class FileGeneratorService {
       }
 
       // If no image data returned, fall back to SVG
-      logger.log('FILE_GENERATOR', 'No image data in Imagen response, falling back to SVG', 'warn');
+      logger.log('FILE_GENERATOR', 'No image data in Imagen response, falling back to SVG', 'warning');
       return this.generateSVGWithAI(prompt, options);
 
     } catch (error: any) {
@@ -244,7 +244,7 @@ export class FileGeneratorService {
       const ollamaAvailable = ollamaProvider && await ollamaProvider.isAvailable();
 
       if (!geminiAvailable && !ollamaAvailable) {
-        logger.log('FILE_GENERATOR', 'No AI provider available, using fallback', 'warn');
+        logger.log('FILE_GENERATOR', 'No AI provider available, using fallback', 'warning');
         return this.generateFallbackSVG(prompt, width, height);
       }
 
@@ -297,7 +297,7 @@ Generate the complete SVG now:`;
       let svgContent = this.extractSVG(response.text);
       
       if (!svgContent) {
-        logger.log('FILE_GENERATOR', `AI did not return valid SVG. Response length: ${response.text.length}`, 'warn');
+        logger.log('FILE_GENERATOR', `AI did not return valid SVG. Response length: ${response.text.length}`, 'warning');
         // Try to salvage anything that looks like SVG
         svgContent = this.salvageSVG(response.text, width, height);
         if (!svgContent) {

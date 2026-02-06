@@ -391,9 +391,9 @@ export const useKernelStore = create<KernelState>()(
         setIsStreaming: (isStreaming) => set({ isStreaming }),
         
         refreshSystemState: (updates) => set((state) => ({
-          ...state,
-          ...updates
-        })),
+          ...(state as KernelState),
+          ...(updates as Partial<KernelState>)
+        } as KernelState)),
 
         // v1.4.0 Refresh stats
         refreshVectorDBStats: async () => {

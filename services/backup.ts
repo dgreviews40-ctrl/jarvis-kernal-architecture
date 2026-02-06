@@ -24,7 +24,7 @@ class BackupService {
   /**
    * Aggregates all kernel data into a single object
    */
-  public generateBackup(): SystemBackup {
+  public async generateBackup(): Promise<SystemBackup> {
     return {
       version: "1.5.0",
       timestamp: Date.now(),
@@ -32,7 +32,7 @@ class BackupService {
         aiConfig: providerManager.getAIConfig(),
         ollamaConfig: providerManager.getOllamaConfig(),
         voiceConfig: voice.getConfig(),
-        memoryNodes: memory.getAll(),
+        memoryNodes: await memory.getAll(),
         pluginStates: this.getPluginStates()
       }
     };

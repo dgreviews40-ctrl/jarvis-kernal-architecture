@@ -25,7 +25,7 @@ const Toast: React.FC<ToastProps> = ({ notification, onDismiss, index }) => {
   const [progress, setProgress] = useState(100);
   const [isExiting, setIsExiting] = useState(false);
   const startTimeRef = useRef(Date.now());
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
 
   const icons = {
     success: <CheckCircle size={20} className="text-green-400" />,

@@ -64,13 +64,13 @@ export class ServiceConfigurationManager {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return this.mergeConfigs(this.DEFAULT_CONFIG, parsed);
+        return this.mergeConfigs(ServiceConfigurationManager.DEFAULT_CONFIG, parsed);
       } catch (e) {
         console.warn('Invalid service config in storage, using defaults:', e);
-        return this.DEFAULT_CONFIG;
+        return ServiceConfigurationManager.DEFAULT_CONFIG;
       }
     }
-    return this.DEFAULT_CONFIG;
+    return ServiceConfigurationManager.DEFAULT_CONFIG;
   }
 
   private mergeConfigs(defaultConfig: ServiceConfig, userConfig: Partial<ServiceConfig>): ServiceConfig {
@@ -86,7 +86,7 @@ export class ServiceConfigurationManager {
   public saveConfig(config: ServiceConfig): void {
     // Validate config before saving
     if (this.validateConfig(config)) {
-      this.config = { ...this.DEFAULT_CONFIG, ...config };
+      this.config = { ...ServiceConfigurationManager.DEFAULT_CONFIG, ...config };
       localStorage.setItem('jarvis_service_config', JSON.stringify(this.config));
     } else {
       throw new Error('Invalid configuration provided');

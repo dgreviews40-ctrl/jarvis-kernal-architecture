@@ -29,6 +29,7 @@ interface SuggestionContext {
   sentiment?: string;
   timeOfDay?: number;
   recentActions?: string[];
+  topics?: string[];
 }
 
 // ==================== STATE ====================

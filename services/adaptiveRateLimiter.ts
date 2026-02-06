@@ -62,7 +62,7 @@ class AdaptiveRateLimiter {
     this.adaptiveLimits = {
       requestsPerSecond: this.config.baseRequestsPerSecond,
       requestsPerMinute: this.config.baseRequestsPerMinute,
-      requestsPerDay: this.config.requestsPerDay,
+      requestsPerDay: this.config.baseRequestsPerDay,
       currentBurst: this.config.burstSize
     };
 

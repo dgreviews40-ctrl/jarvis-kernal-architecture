@@ -25,6 +25,9 @@ import {
   getTopMemoryProcesses,
   formatProcessList,
   formatProcessStats,
+  registerVirtualProcess,
+  unregisterVirtualProcess,
+  updateVirtualProcessMetrics,
 } from "./coreOs";
 
 const DEFAULT_CONFIG: CircuitConfig = {
@@ -184,6 +187,8 @@ export class ExecutionEngine {
   }
 
   public async executeAction(action: KernelAction): Promise<string> {
+    console.log(`[Execution] executeAction called: ${action.pluginId}.${action.method}`, action.params);
+    
     // 1. Registry Check
     const plugin = registry.get(action.pluginId);
     if (!plugin) {
@@ -200,14 +205,22 @@ export class ExecutionEngine {
          throw new Error(`Plugin blocked by Cortex Policy: ${enabledPolicy.reason}`);
     }
 
-    // 3. Circuit Breaker Execution
+    // 3. Register virtual process for tracking
+    const processName = `${action.pluginId}.${action.method}`;
+    const processCommand = JSON.stringify(action.params);
+    const pid = registerVirtualProcess(processName, processCommand);
+    console.log(`[Execution] Started process ${pid}: ${processName}`);
+
+    // 4. Circuit Breaker Execution
     const breaker = this.getOrInitBreaker(action.pluginId);
 
-    return breaker.execute(async () => {
-      try {
-        // --- HARDWARE ROUTING LOGIC ---
-        // NOTE: Home Assistant routing is now handled via the plugin capability system
-        // to avoid circular dependency between execution.ts and home_assistant.ts
+    try {
+      const result = await breaker.execute(async () => {
+        const startTime = Date.now();
+        try {
+          // --- HARDWARE ROUTING LOGIC ---
+          // NOTE: Home Assistant routing is now handled via the plugin capability system
+          // to avoid circular dependency between execution.ts and home_assistant.ts
 
         // Fallback / Mock implementations for other plugins
         if (action.pluginId === 'media.spotify') {
@@ -453,12 +466,22 @@ Available: diagnostic, metrics, network, battery, storage, performance,
 
         // Generic Default
         await new Promise(r => setTimeout(r, Math.random() * 800 + 200));
-        return `Executed [${action.method}] on [${plugin.manifest.name}] successfully.`;
-      } catch (error) {
-        console.error(`Error in executeAction for plugin ${action.pluginId}:`, error);
-        throw error;
-      }
-    });
+          return `Executed [${action.method}] on [${plugin.manifest.name}] successfully.`;
+        } catch (error) {
+          console.error(`Error in executeAction for plugin ${action.pluginId}:`, error);
+          throw error;
+        } finally {
+          // Update process metrics before cleanup
+          const duration = Date.now() - startTime;
+          updateVirtualProcessMetrics(pid, 0, duration);
+        }
+      });
+      return result;
+    } finally {
+      // Cleanup: unregister the virtual process
+      console.log(`[Execution] Completed process ${pid}: ${processName}`);
+      unregisterVirtualProcess(pid);
+    }
   }
 
   public simulateFailure(pluginId: string) {

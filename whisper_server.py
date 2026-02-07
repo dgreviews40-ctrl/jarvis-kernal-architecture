@@ -10,6 +10,10 @@ OPTIMIZATIONS:
 - Support for partial results
 - Better audio preprocessing
 - Connection pooling with threaded server
+- Better error handling for 500 errors
+- Improved audio format compatibility
+- Enhanced debugging for transcription issues
+- Proper temporary file cleanup
 """
 
 import whisper
@@ -20,6 +24,8 @@ import tempfile
 import os
 import torch
 import time
+import numpy as np
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app)
@@ -36,54 +42,86 @@ print(f"CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
 
-# Load model with optimizations
-model = whisper.load_model(MODEL_SIZE).to(DEVICE)
+try:
+    # Load model with optimizations
+    model = whisper.load_model(MODEL_SIZE).to(DEVICE)
 
-# OPTIMIZATION: Compile model for PyTorch 2.0+ (significant speedup)
-if hasattr(torch, 'compile') and DEVICE == "cuda":
-    try:
-        print("Compiling model for faster inference...")
-        model = torch.compile(model)
-        print("Model compiled successfully!")
-    except Exception as e:
-        print(f"Model compilation not available: {e}")
+    # OPTIMIZATION: Compile model for PyTorch 2.0+ (significant speedup)
+    if hasattr(torch, 'compile') and DEVICE == "cuda":
+        try:
+            print("Compiling model for faster inference...")
+            model = torch.compile(model)
+            print("Model compiled successfully!")
+        except Exception as e:
+            print(f"Model compilation not available: {e}")
 
-print("Model loaded successfully!")
+    print("Model loaded successfully!")
 
-# OPTIMIZATION: Warm up the model with a dummy inference
-if DEVICE == "cuda":
-    print("Warming up GPU...")
-    dummy_audio = torch.randn(16000).cuda()  # 1 second of audio
-    with torch.no_grad():
-        _ = model.transcribe(dummy_audio, language='en', fp16=True)
-    print("GPU warmed up!")
+    # OPTIMIZATION: Warm up the model with a dummy inference
+    if DEVICE == "cuda":
+        print("Warming up GPU...")
+        dummy_audio = torch.randn(16000).cuda()  # 1 second of audio
+        with torch.no_grad():
+            _ = model.transcribe(dummy_audio, language='en', fp16=True)
+        print("GPU warmed up!")
+        
+except Exception as e:
+    print(f"Error loading model: {e}")
+    model = None
 
 @app.route('/health', methods=['GET'])
 def health():
+    if model is None:
+        return jsonify({
+            "status": "error",
+            "model": MODEL_SIZE,
+            "device": DEVICE,
+            "cuda_available": torch.cuda.is_available(),
+            "error": "Model failed to load"
+        }), 500
+    
     return jsonify({
-        "status": "ok", 
-        "model": MODEL_SIZE, 
+        "status": "ok",
+        "model": MODEL_SIZE,
         "device": DEVICE,
         "cuda_available": torch.cuda.is_available()
     })
 
 @app.route('/transcribe', methods=['POST'])
 def transcribe():
+    if model is None:
+        return jsonify({"error": "Model not loaded"}), 500
+        
     start_time = time.time()
     
+    # Validate request
     if 'audio' not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
     
     audio_file = request.files['audio']
+    if audio_file.filename == '':
+        return jsonify({"error": "No audio file selected"}), 400
+    
+    # Validate file type
+    filename = secure_filename(audio_file.filename)
+    if not filename.lower().endswith(('.wav', '.mp3', '.flac', '.webm', '.m4a', '.ogg')):
+        return jsonify({"error": f"Unsupported file type: {filename}"}), 400
+    
     language = request.form.get('language', 'en')
     partial = request.form.get('partial', 'false').lower() == 'true'
     
-    # Save to temp file
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp:
-        audio_file.save(tmp.name)
-        tmp_path = tmp.name
-    
+    # Save to temp file with proper extension
+    file_ext = os.path.splitext(filename)[1]
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            audio_file.save(tmp.name)
+            tmp_path = tmp.name
+        
+        # Check if file exists and has content
+        if not tmp_path or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            return jsonify({"error": "Uploaded file is empty"}), 400
+        
         # IMPROVED: Transcribe with accuracy-focused parameters for wake word detection
         result = model.transcribe(
             tmp_path, 
@@ -125,14 +163,16 @@ def transcribe():
         return jsonify(response)
         
     except Exception as e:
-        print(f"Transcription error: {e}")
-        return jsonify({"error": str(e)}), 500
+        processing_time = time.time() - start_time
+        print(f"Transcription error after {processing_time:.2f}s: {e}")
+        return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
     finally:
         # Clean up temp file
-        try:
-            os.unlink(tmp_path)
-        except:
-            pass
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception as e:
+                print(f"Warning: Could not delete temp file {tmp_path}: {e}")
 
 @app.route('/transcribe-stream', methods=['POST'])
 def transcribe_stream():
@@ -144,6 +184,10 @@ def transcribe_stream():
     return jsonify({"error": "Streaming not yet implemented"}), 501
 
 if __name__ == '__main__':
+    if model is None:
+        print("ERROR: Server cannot start because model failed to load.")
+        exit(1)
+    
     print(f"\n{'='*50}")
     print(f"Whisper STT Server starting on port {PORT}")
     print(f"Model: {MODEL_SIZE} | Device: {DEVICE}")

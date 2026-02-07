@@ -20,7 +20,7 @@ import { workerPool } from './workerService';
 import { resourceManager } from './resourceManager';
 import { pluginLoader } from './pluginLoader';
 import { kernelApi, KERNEL_VERSION } from './kernelApi';
-import { useKernelStore, KERNEL_VERSION as STORE_VERSION } from '../stores/kernelStore';
+import { getKernelStoreState } from '../stores';
 
 export const BOOT_PHASES_V12: BootPhase[] = [
   { 
@@ -229,7 +229,8 @@ class BootOrchestrator {
     const totalBootTime = Date.now() - this.bootStartTime;
     
     // Update kernel store
-    useKernelStore.getState().setHealth({
+    const store = getKernelStoreState();
+    store?.setHealth?.({
       status: 'healthy',
       uptime: 0,
       lastCheck: Date.now(),
@@ -318,11 +319,11 @@ class BootOrchestrator {
 
   private async kernelMountPhase(): Promise<void> {
     // Initialize kernel store
-    const store = useKernelStore.getState();
+    const store = getKernelStoreState();
     
     // Verify version compatibility
-    if (STORE_VERSION.major !== 1 || STORE_VERSION.minor !== 3) {
-      phaseLog('KERNEL MOUNT', 'WARNING: Store version mismatch');
+    if (KERNEL_VERSION.major !== 1 || KERNEL_VERSION.minor !== 5) {
+      phaseLog('KERNEL MOUNT', 'WARNING: Kernel version mismatch');
     }
   }
 

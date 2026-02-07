@@ -7,7 +7,7 @@
  */
 
 export { useUIStore } from './uiStore';
-export { useKernelStore, useMemoryConsolidationStats } from './kernelStore';
+export { useKernelStore, useMemoryConsolidationStats, KERNEL_VERSION } from './kernelStore';
 export { useMemoryStore } from './memoryStore';
 export { useLogsStore } from './logsStore';
 export { usePluginStore, usePlugins, useSelectedPlugin } from './pluginStore';
@@ -24,6 +24,20 @@ export {
   sessionStorageAdapter,
   STORAGE_VERSION,
 } from './persistence';
+
+// Safe store access utilities
+export {
+  getKernelStoreState,
+  getUIStoreState,
+  getMemoryStoreState,
+  updateKernelHealth,
+  setKernelStreaming,
+  setKernelProcessorState,
+  setKernelDisplay,
+  setKernelActiveModule,
+  setKernelProvider,
+  isKernelStoreReady,
+} from './storeAccess';
 
 // Plugin system exports
 export { 

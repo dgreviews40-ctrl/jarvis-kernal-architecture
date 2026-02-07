@@ -148,11 +148,26 @@ export class StreamingResponseHandler {
   ): Promise<void> {
     const { GoogleGenAI } = await import('@google/genai');
     
-    // Get API key from provider manager
+    // Get API key from provider manager (handles decoding properly)
     const geminiProvider = providerManager.getProvider(AIProvider.GEMINI);
-    const apiKey = (geminiProvider as any)?.getApiKey?.() || 
-                   (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : null) ||
-                   (typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null);
+    let apiKey = (geminiProvider as any)?.getApiKey?.();
+    
+    // Fallback to env var
+    if (!apiKey && typeof process !== 'undefined') {
+      apiKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || null;
+    }
+    
+    // Fallback to localStorage with proper decoding
+    if (!apiKey && typeof localStorage !== 'undefined') {
+      const storedKey = localStorage.getItem('GEMINI_API_KEY');
+      if (storedKey) {
+        try {
+          apiKey = atob(storedKey);
+        } catch (e) {
+          console.error('[STREAMING] Failed to decode API key from localStorage');
+        }
+      }
+    }
     
     if (!apiKey) {
       throw new Error('Gemini API key not found. Please configure your API key in settings.');

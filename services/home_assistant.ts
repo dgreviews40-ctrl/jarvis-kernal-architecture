@@ -1,5 +1,3 @@
-import { EnhancedCircuitBreaker } from "./CircuitBreaker";
-
 export interface HAEntity {
   entity_id: string;
   state: string;

@@ -177,14 +177,14 @@ export const DevDashboard: React.FC<DevDashboardProps> = ({ onClose }) => {
 
                <div>
                  <div className="flex justify-between text-xs mb-1">
-                   <span>Temperature</span>
-                   <span className={hwMetrics.temperature > 80 ? "text-red-500" : "text-yellow-500"}>{hwMetrics.temperature}°C</span>
+                   <span>GPU Temperature</span>
+                   <span className={hwMetrics.gpuTemperature > 80 ? "text-red-500" : hwMetrics.gpuTemperature > 60 ? "text-yellow-500" : "text-green-500"}>{hwMetrics.gpuTemperature}°C</span>
                  </div>
                  <input 
                    type="range" min="20" max="100"
-                   value={hwMetrics.temperature} 
+                   value={hwMetrics.gpuTemperature} 
                    onChange={(e) => {
-                     mockHardware.setMetric('temperature', parseInt(e.target.value));
+                     mockHardware.setMetric('gpuTemperature', parseInt(e.target.value));
                      refreshState();
                    }}
                    className="w-full accent-yellow-600 h-1 bg-[#222] rounded-lg appearance-none cursor-pointer"

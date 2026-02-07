@@ -98,7 +98,7 @@ export class MockHardwareMonitor {
     cpuLoad: 10,
     memoryUsage: 20,
     gpuLoad: 0,
-    temperature: 30,
+    gpuTemperature: 30,
     uptime: 1000
   };
 

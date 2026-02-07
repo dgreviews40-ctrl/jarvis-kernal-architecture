@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS - Initializing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&family=Share+Tech+Mono&display=swap');
+
+        body {
+            background: #000;
+            color: #00d4ff;
+            font-family: 'Rajdhani', 'Orbitron', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            position: relative;
+        }
+
+        /* Background effects */
+        .grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(0, 212, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 212, 255, 0.02) 1px, transparent 1px);
+            background-size: 30px 30px;
+            pointer-events: none;
+        }
+
+        .scanline {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0, 212, 255, 0.015) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            animation: scanline 10s linear infinite;
+        }
+
+        @keyframes scanline {
+            from { transform: translateY(0); }
+            to { transform: translateY(100vh); }
+        }
+
+        /* Left panel - System Status */
+        .left-panel {
+            width: 280px;
+            border-right: 1px solid rgba(0, 212, 255, 0.2);
+            padding: 30px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.03), transparent);
+        }
+
+        .panel-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            letter-spacing: 3px;
+            color: rgba(0, 212, 255, 0.6);
+            border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+            padding-bottom: 10px;
+        }
+
+        /* CPU Cores visualization */
+        .cpu-cores {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+        }
+
+        .core {
+            aspect-ratio: 1;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            transition: all 0.1s;
+        }
+
+        .core.active {
+            background: rgba(0, 212, 255, 0.6);
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+
+        .core.high {
+            background: rgba(255, 200, 100, 0.8);
+            box-shadow: 0 0 10px rgba(255, 200, 100, 0.5);
+        }
+
+        /* Memory bar */
+        .memory-section {
+            margin-top: 10px;
+        }
+
+        .mem-label {
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: rgba(0, 212, 255, 0.5);
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .mem-bar {
+            height: 6px;
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mem-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #0088ff);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        /* Process list */
+        .process-list {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            max-height: 200px;
+            overflow: hidden;
+        }
+
+        .process-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 6px;
+            background: rgba(0, 212, 255, 0.05);
+            border-left: 2px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .process-item.running {
+            border-left-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .process-item.complete {
+            border-left-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+        }
+
+        .process-name {
+            color: rgba(0, 212, 255, 0.8);
+        }
+
+        .process-status {
+            color: rgba(0, 212, 255, 0.5);
+        }
+
+        /* Center - Main Display */
+        .center-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        /* Main hex animation */
+        .hex-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+        }
+
+        .hex-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+
+        .hex-ring:nth-child(1) { width: 350px; height: 350px; animation: rotate 20s linear infinite; }
+        .hex-ring:nth-child(2) { width: 300px; height: 300px; animation: rotateReverse 15s linear infinite; border-style: dashed; }
+        .hex-ring:nth-child(3) { width: 250px; height: 250px; animation: rotate 10s linear infinite; border-color: rgba(0, 212, 255, 0.4); }
+
+        @keyframes rotate { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+        @keyframes rotateReverse { from { transform: translate(-50%, -50%) rotate(360deg); } to { transform: translate(-50%, -50%) rotate(0deg); } }
+
+        .hex {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 180px;
+            height: 180px;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(0, 100, 200, 0.15));
+            border: 2px solid rgba(0, 212, 255, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: hexPulse 3s ease-in-out infinite;
+        }
+
+        .hex::before {
+            content: '';
+            position: absolute;
+            inset: 15px;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        @keyframes hexPulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+            50% { transform: translate(-50%, -50%) scale(1.02); opacity: 1; }
+        }
+
+        .hex-inner {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 64px;
+            font-weight: 900;
+            color: #00d4ff;
+            text-shadow: 0 0 30px #00d4ff, 0 0 60px #00d4ff;
+            animation: textGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes textGlow {
+            0%, 100% { text-shadow: 0 0 30px #00d4ff, 0 0 60px #00d4ff; }
+            50% { text-shadow: 0 0 50px #00d4ff, 0 0 100px #00d4ff, 0 0 150px #00d4ff; }
+        }
+
+        /* Main status */
+        .main-status {
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        .jarvis-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 16px;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+            margin-bottom: 8px;
+        }
+
+        .boot-phase {
+            font-size: 14px;
+            letter-spacing: 4px;
+            color: rgba(0, 212, 255, 0.8);
+            height: 24px;
+            margin-bottom: 20px;
+        }
+
+        .main-progress {
+            width: 500px;
+            height: 4px;
+            background: rgba(0, 212, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+            margin: 0 auto;
+        }
+
+        .main-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #0088ff, #00d4ff);
+            background-size: 200% 100%;
+            width: 0%;
+            animation: shimmer 2s linear infinite;
+            box-shadow: 0 0 20px #00d4ff;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .progress-percent {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 48px;
+            font-weight: 700;
+            color: #00d4ff;
+            margin-top: 20px;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+
+        /* Right panel - Data Stream */
+        .right-panel {
+            width: 320px;
+            border-left: 1px solid rgba(0, 212, 255, 0.2);
+            padding: 30px 20px;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(-90deg, rgba(0, 212, 255, 0.03), transparent);
+        }
+
+        /* Terminal output */
+        .terminal {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            line-height: 1.6;
+            color: rgba(0, 212, 255, 0.7);
+            height: 300px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column-reverse;
+        }
+
+        .terminal-line {
+            padding: 2px 0;
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        .timestamp {
+            color: rgba(0, 212, 255, 0.4);
+        }
+
+        .success { color: #00ff88; }
+        .warning { color: #ffaa00; }
+        .info { color: #00d4ff; }
+
+        /* Network visualization */
+        .network-viz {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(0, 212, 255, 0.2);
+        }
+
+        .packets {
+            display: flex;
+            gap: 2px;
+            height: 60px;
+            align-items: flex-end;
+        }
+
+        .packet {
+            flex: 1;
+            background: rgba(0, 212, 255, 0.3);
+            transition: height 0.1s;
+        }
+
+        /* Corner decorations */
+        .corner {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .corner-tl { top: 20px; left: 300px; border-right: none; border-bottom: none; }
+        .corner-tr { top: 20px; right: 340px; border-left: none; border-bottom: none; }
+        .corner-bl { bottom: 20px; left: 300px; border-right: none; border-top: none; }
+        .corner-br { bottom: 20px; right: 340px; border-left: none; border-top: none; }
+
+        /* Version */
+        .version {
+            position: absolute;
+            top: 30px;
+            right: 40px;
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: rgba(0, 212, 255, 0.4);
+        }
+
+        /* Particles */
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: #00d4ff;
+            border-radius: 50%;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Exit transition */
+        .fade-out {
+            animation: fadeOut 1.5s ease-out forwards;
+        }
+
+        @keyframes fadeOut {
+            to { opacity: 0; transform: scale(1.05); }
+        }
+
+        /* Start overlay */
+        .start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            cursor: pointer;
+            transition: opacity 0.5s;
+        }
+
+        .start-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .start-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            letter-spacing: 6px;
+            color: #00d4ff;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="start-overlay" id="startOverlay">
+        <div class="start-text">INITIALIZE SYSTEM</div>
+    </div>
+
+    <div class="grid"></div>
+    <div class="scanline"></div>
+    <div class="version">BUILD 2.0.1 // STARK INDUSTRIES</div>
+
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+
+    <!-- Left Panel: System Resources -->
+    <div class="left-panel">
+        <div class="panel-title">NEURAL CORES</div>
+        <div class="cpu-cores" id="cpuCores"></div>
+
+        <div class="panel-title" style="margin-top: 20px;">MEMORY ALLOCATION</div>
+        <div class="memory-section">
+            <div class="mem-label">
+                <span>RAM</span>
+                <span id="ramText">0 / 128 TB</span>
+            </div>
+            <div class="mem-bar">
+                <div class="mem-fill" id="ramBar"></div>
+            </div>
+        </div>
+        <div class="memory-section">
+            <div class="mem-label">
+                <span>GPU</span>
+                <span id="gpuText">0 / 64 TB</span>
+            </div>
+            <div class="mem-bar">
+                <div class="mem-fill" id="gpuBar"></div>
+            </div>
+        </div>
+
+        <div class="panel-title" style="margin-top: 20px;">ACTIVE PROCESSES</div>
+        <div class="process-list" id="processList"></div>
+    </div>
+
+    <!-- Center Panel: Main Display -->
+    <div class="center-panel">
+        <div class="hex-container">
+            <div class="hex-ring"></div>
+            <div class="hex-ring"></div>
+            <div class="hex-ring"></div>
+            <div class="hex">
+                <div class="hex-inner">J</div>
+            </div>
+        </div>
+
+        <div class="main-status">
+            <div class="jarvis-title">J.A.R.V.I.S.</div>
+            <div class="boot-phase" id="bootPhase">SYSTEM STANDBY</div>
+            <div class="main-progress">
+                <div class="main-progress-bar" id="mainProgress"></div>
+            </div>
+            <div class="progress-percent" id="progressPercent">0%</div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Data Stream -->
+    <div class="right-panel">
+        <div class="panel-title">SYSTEM LOG</div>
+        <div class="terminal" id="terminal"></div>
+
+        <div class="network-viz">
+            <div class="panel-title">DATA THROUGHPUT</div>
+            <div class="packets" id="packets"></div>
+        </div>
+    </div>
+
+    <script>
+        // Audio Context for complex sounds
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+
+        // Complex layered boot sound
+        function playBootSequence() {
+            const now = audioCtx.currentTime;
+            
+            // Low drone - power hum
+            const drone = audioCtx.createOscillator();
+            const droneGain = audioCtx.createGain();
+            drone.type = 'sawtooth';
+            drone.frequency.setValueAtTime(55, now);
+            drone.frequency.exponentialRampToValueAtTime(60, now + 3);
+            droneGain.gain.setValueAtTime(0, now);
+            droneGain.gain.linearRampToValueAtTime(0.08, now + 0.5);
+            droneGain.gain.exponentialRampToValueAtTime(0.03, now + 3);
+            
+            // Lowpass filter for drone
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(200, now);
+            filter.frequency.linearRampToValueAtTime(400, now + 2);
+            
+            drone.connect(filter);
+            filter.connect(droneGain);
+            droneGain.connect(audioCtx.destination);
+            drone.start(now);
+            drone.stop(now + 4);
+
+            // Processing chirps - random computer sounds
+            for (let i = 0; i < 15; i++) {
+                const chirp = audioCtx.createOscillator();
+                const chirpGain = audioCtx.createGain();
+                const chirpTime = now + 0.5 + Math.random() * 3;
+                
+                chirp.type = 'square';
+                chirp.frequency.setValueAtTime(800 + Math.random() * 2000, chirpTime);
+                chirp.frequency.exponentialRampToValueAtTime(100, chirpTime + 0.1);
+                
+                chirpGain.gain.setValueAtTime(0, chirpTime);
+                chirpGain.gain.linearRampToValueAtTime(0.03, chirpTime + 0.01);
+                chirpGain.gain.exponentialRampToValueAtTime(0.001, chirpTime + 0.1);
+                
+                chirp.connect(chirpGain);
+                chirpGain.connect(audioCtx.destination);
+                chirp.start(chirpTime);
+                chirp.stop(chirpTime + 0.15);
+            }
+
+            // High-tech "activation" sound
+            const activate = audioCtx.createOscillator();
+            const activateGain = audioCtx.createGain();
+            activate.type = 'sine';
+            activate.frequency.setValueAtTime(200, now + 0.2);
+            activate.frequency.exponentialRampToValueAtTime(800, now + 1);
+            activateGain.gain.setValueAtTime(0, now + 0.2);
+            activateGain.gain.linearRampToValueAtTime(0.05, now + 0.4);
+            activateGain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+            
+            activate.connect(activateGain);
+            activateGain.connect(audioCtx.destination);
+            activate.start(now + 0.2);
+            activate.stop(now + 1.5);
+        }
+
+        // Success/completion sound
+        function playReadySound() {
+            const now = audioCtx.currentTime;
+            
+            // Layered chords
+            const freqs = [220, 277, 330, 440];
+            freqs.forEach((f, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = f;
+                gain.gain.setValueAtTime(0, now + i * 0.05);
+                gain.gain.linearRampToValueAtTime(0.05, now + i * 0.05 + 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 3);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + i * 0.05);
+                osc.stop(now + 3);
+            });
+
+            // Final high note
+            const final = audioCtx.createOscillator();
+            const finalGain = audioCtx.createGain();
+            final.type = 'triangle';
+            final.frequency.setValueAtTime(880, now + 0.3);
+            final.frequency.exponentialRampToValueAtTime(1760, now + 1);
+            finalGain.gain.setValueAtTime(0, now + 0.3);
+            finalGain.gain.linearRampToValueAtTime(0.08, now + 0.5);
+            finalGain.gain.exponentialRampToValueAtTime(0.001, now + 2);
+            final.connect(finalGain);
+            finalGain.connect(audioCtx.destination);
+            final.start(now + 0.3);
+            final.stop(now + 2);
+        }
+
+        // Processing hum - continuous during boot
+        let processingHum = null;
+        function startProcessingHum() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
+            
+            osc.type = 'sawtooth';
+            osc.frequency.value = 80;
+            
+            filter.type = 'lowpass';
+            filter.frequency.value = 300;
+            
+            gain.gain.value = 0.02;
+            
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            
+            processingHum = { osc, gain };
+        }
+
+        function stopProcessingHum() {
+            if (processingHum) {
+                processingHum.gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+                processingHum.osc.stop(audioCtx.currentTime + 0.5);
+                processingHum = null;
+            }
+        }
+
+        // CPU Cores
+        const cpuCores = document.getElementById('cpuCores');
+        for (let i = 0; i < 32; i++) {
+            const core = document.createElement('div');
+            core.className = 'core';
+            cpuCores.appendChild(core);
+        }
+
+        // Animate CPU cores
+        setInterval(() => {
+            const cores = document.querySelectorAll('.core');
+            cores.forEach(core => {
+                const r = Math.random();
+                if (r > 0.7) {
+                    core.className = 'core active';
+                    if (r > 0.95) core.className = 'core high';
+                } else {
+                    core.className = 'core';
+                }
+            });
+        }, 100);
+
+        // Memory bars
+        const ramBar = document.getElementById('ramBar');
+        const ramText = document.getElementById('ramText');
+        const gpuBar = document.getElementById('gpuBar');
+        const gpuText = document.getElementById('gpuText');
+
+        function updateMemory() {
+            const ramVal = Math.min(100, parseFloat(ramBar.style.width || 0) + Math.random() * 3);
+            const gpuVal = Math.min(100, parseFloat(gpuBar.style.width || 0) + Math.random() * 2);
+            
+            ramBar.style.width = ramVal + '%';
+            ramText.textContent = Math.floor(ramVal * 1.28) + ' / 128 TB';
+            gpuBar.style.width = gpuVal + '%';
+            gpuText.textContent = Math.floor(gpuVal * 0.64) + ' / 64 TB';
+        }
+        setInterval(updateMemory, 200);
+
+        // Process list
+        const processes = [
+            { name: 'neural_net_init', label: 'Neural Network' },
+            { name: 'voice_synth', label: 'Voice Synthesis' },
+            { name: 'hw_monitor', label: 'Hardware Monitor' },
+            { name: 'api_proxy', label: 'API Gateway' },
+            { name: 'llm_loader', label: 'LLM Loading' },
+            { name: 'embeddings', label: 'Embeddings DB' },
+            { name: 'ui_renderer', label: 'UI Renderer' },
+            { name: 'security', label: 'Security Module' }
+        ];
+
+        const processList = document.getElementById('processList');
+        processes.forEach(p => {
+            const div = document.createElement('div');
+            div.className = 'process-item';
+            div.id = 'proc-' + p.name;
+            div.innerHTML = `<span class="process-name">${p.label}</span><span class="process-status">WAIT</span>`;
+            processList.appendChild(div);
+        });
+
+        // Terminal
+        const terminal = document.getElementById('terminal');
+        const logMessages = [
+            { text: 'Loading transformer architecture...', type: 'info', delay: 1000 },
+            { text: 'Mounting CUDA kernels...', type: 'info', delay: 2500 },
+            { text: 'Allocating GPU memory blocks...', type: 'info', delay: 4000 },
+            { text: 'Initializing attention mechanisms...', type: 'info', delay: 5500 },
+            { text: 'Loading 175B parameters...', type: 'warning', delay: 7000 },
+            { text: 'Optimizing tensor operations...', type: 'info', delay: 9000 },
+            { text: 'Calibrating neural pathways...', type: 'info', delay: 11000 },
+            { text: 'Voice model loaded: en-US-stark', type: 'success', delay: 13000 },
+            { text: 'Hardware monitors active', type: 'success', delay: 15000 },
+            { text: 'API gateway online', type: 'success', delay: 17000 },
+            { text: 'All systems operational', type: 'success', delay: 20000 }
+        ];
+
+        function addLog(msg, type) {
+            const line = document.createElement('div');
+            line.className = 'terminal-line ' + type;
+            const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + String(Date.now() % 1000).padStart(3, '0');
+            line.innerHTML = `<span class="timestamp">[${time}]</span> ${msg}`;
+            terminal.insertBefore(line, terminal.firstChild);
+            if (terminal.children.length > 20) terminal.removeChild(terminal.lastChild);
+        }
+
+        logMessages.forEach(m => {
+            setTimeout(() => addLog(m.text, m.type), m.delay);
+        });
+
+        // Network packets
+        const packetsContainer = document.getElementById('packets');
+        for (let i = 0; i < 50; i++) {
+            const p = document.createElement('div');
+            p.className = 'packet';
+            packetsContainer.appendChild(p);
+        }
+
+        setInterval(() => {
+            const packets = document.querySelectorAll('.packet');
+            packets.forEach(p => {
+                p.style.height = Math.random() * 100 + '%';
+                p.style.opacity = Math.random() > 0.3 ? 0.3 + Math.random() * 0.7 : 0.1;
+            });
+        }, 100);
+
+        // Boot phases
+        const phases = [
+            { text: 'INITIALIZING NEURAL ARCHITECTURE', progress: 0 },
+            { text: 'LOADING LANGUAGE MODELS', progress: 15 },
+            { text: 'CALIBRATING SYNTHESIS ENGINE', progress: 35 },
+            { text: 'MOUNTING HARDWARE INTERFACE', progress: 55 },
+            { text: 'ESTABLISHING SECURE CONNECTIONS', progress: 75 },
+            { text: 'FINALIZING BOOT SEQUENCE', progress: 90 },
+            { text: 'SYSTEM READY', progress: 100 }
+        ];
+
+        const bootPhase = document.getElementById('bootPhase');
+        const mainProgress = document.getElementById('mainProgress');
+        const progressPercent = document.getElementById('progressPercent');
+
+        let currentPhase = 0;
+        let progress = 0;
+
+        function updatePhase() {
+            if (currentPhase < phases.length) {
+                bootPhase.textContent = phases[currentPhase].text;
+            }
+        }
+
+        // Progress animation
+        const progressInterval = setInterval(() => {
+            if (progress < 95) {
+                progress += 0.3 + Math.random() * 0.5;
+                if (progress > 95) progress = 95;
+                
+                mainProgress.style.width = progress + '%';
+                progressPercent.textContent = Math.floor(progress) + '%';
+                
+                // Update phase based on progress
+                const phaseIdx = phases.findIndex((p, i) => 
+                    progress >= p.progress && (i === phases.length - 1 || progress < phases[i + 1].progress)
+                );
+                if (phaseIdx !== -1 && phaseIdx !== currentPhase) {
+                    currentPhase = phaseIdx;
+                    updatePhase();
+                }
+
+                // Update process statuses
+                if (progress > 10) document.getElementById('proc-neural_net_init').className = 'process-item running';
+                if (progress > 20) document.getElementById('proc-neural_net_init').className = 'process-item complete';
+                if (progress > 25) document.getElementById('proc-llm_loader').className = 'process-item running';
+                if (progress > 40) document.getElementById('proc-voice_synth').className = 'process-item running';
+                if (progress > 50) document.getElementById('proc-llm_loader').className = 'process-item complete';
+                if (progress > 55) document.getElementById('proc-embeddings').className = 'process-item running';
+                if (progress > 60) document.getElementById('proc-voice_synth').className = 'process-item complete';
+                if (progress > 65) document.getElementById('proc-hw_monitor').className = 'process-item running';
+                if (progress > 70) document.getElementById('proc-hw_monitor').className = 'process-item complete';
+                if (progress > 75) document.getElementById('proc-api_proxy').className = 'process-item running';
+                if (progress > 80) document.getElementById('proc-api_proxy').className = 'process-item complete';
+                if (progress > 85) document.getElementById('proc-ui_renderer').className = 'process-item running';
+                if (progress > 90) document.getElementById('proc-security').className = 'process-item running';
+                if (progress > 92) {
+                    document.getElementById('proc-ui_renderer').className = 'process-item complete';
+                    document.getElementById('proc-security').className = 'process-item complete';
+                    document.getElementById('proc-embeddings').className = 'process-item complete';
+                }
+            }
+        }, 200);
+
+        // Check if JARVIS is ready
+        let checkInterval;
+        let attempts = 0;
+
+        function checkReady() {
+            attempts++;
+            fetch('http://localhost:3000', { mode: 'no-cors' })
+                .then(() => {
+                    clearInterval(checkInterval);
+                    clearInterval(progressInterval);
+                    stopProcessingHum();
+                    
+                    progress = 100;
+                    mainProgress.style.width = '100%';
+                    progressPercent.textContent = '100%';
+                    bootPhase.textContent = 'SYSTEM READY';
+                    
+                    // All processes complete
+                    document.querySelectorAll('.process-item').forEach(p => p.className = 'process-item complete');
+                    
+                    addLog('JARVIS online - Welcome back, sir', 'success');
+                    playReadySound();
+
+                    setTimeout(() => {
+                        document.body.classList.add('fade-out');
+                        setTimeout(() => {
+                            window.location.href = 'http://localhost:3000';
+                        }, 1500);
+                    }, 1200);
+                })
+                .catch(() => {
+                    if (attempts > 180) {
+                        clearInterval(checkInterval);
+                        bootPhase.textContent = 'CONNECTION TIMEOUT';
+                        bootPhase.style.color = '#ff4444';
+                        stopProcessingHum();
+                    }
+                });
+        }
+
+        // Start overlay
+        const startOverlay = document.getElementById('startOverlay');
+        let systemStarted = false;
+
+        startOverlay.addEventListener('click', () => {
+            if (systemStarted) return;
+            systemStarted = true;
+            
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            startOverlay.classList.add('hidden');
+            playBootSequence();
+            startProcessingHum();
+            updatePhase();
+            addLog('Boot sequence initiated...', 'info');
+            
+            setTimeout(() => {
+                checkInterval = setInterval(checkReady, 1000);
+            }, 10000);
+        });
+
+        // Auto-start after 1 second
+        setTimeout(() => {
+            if (!systemStarted) {
+                startOverlay.click();
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -10,7 +10,10 @@ interface BackendStats {
   gpuLoad: number;
   gpuMemoryUsage: number;
   gpuName: string;
-  temperature: number;
+  /** GPU temperature in Celsius */
+  gpuTemperature: number;
+  /** CPU temperature in Celsius (optional) */
+  cpuTemperature?: number;
   uptime: number;
   cpuName: string;
   lastUpdate: number;
@@ -21,7 +24,7 @@ class HardwareMonitor {
     cpuLoad: 0,
     memoryUsage: 0,
     gpuLoad: 0,
-    temperature: 0,
+    gpuTemperature: 0,
     uptime: 0
   };
   
@@ -123,7 +126,8 @@ class HardwareMonitor {
             cpuLoad: data.cpuLoad,
             memoryUsage: data.memoryUsage,
             gpuLoad: data.gpuLoad,
-            temperature: data.temperature,
+            gpuTemperature: data.gpuTemperature,
+            cpuTemperature: data.cpuTemperature,
             uptime: data.uptime
           };
           
@@ -165,7 +169,7 @@ class HardwareMonitor {
       cpuLoad: 0, // Can't get without backend
       memoryUsage: memoryUsage,
       gpuLoad: 0, // Can't get without backend
-      temperature: 0, // Can't get without backend
+      gpuTemperature: 0, // Can't get without backend
       uptime: Math.floor(performance.now() / 1000)
     };
     

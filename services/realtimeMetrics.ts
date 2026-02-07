@@ -13,6 +13,8 @@ import {
   getProcessStats, 
   getActiveAlerts,
   acknowledgeAlert,
+  startMonitoring,
+  isMonitoring,
   ProcessInfo,
   ProcessStats,
   SystemMetrics,
@@ -77,6 +79,13 @@ class RealtimeMetricsService {
 
     this.state.isRunning = true;
     logger.info('SYSTEM', `Starting realtime metrics service (${updateInterval}ms interval)`);
+    console.log('[RealtimeMetrics] Service started');
+
+    // Start coreOs system monitoring if not already running
+    if (!isMonitoring()) {
+      startMonitoring(updateInterval);
+      console.log('[RealtimeMetrics] CoreOS monitoring started');
+    }
 
     // Initial update
     this.updateMetrics();
@@ -212,9 +221,13 @@ class RealtimeMetricsService {
         alerts,
         history: this.state.metricsHistory,
       });
+      
+      // Debug logging
+      console.log(`[RealtimeMetrics] Updated: ${processes.length} processes, ${alerts.length} alerts`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.log('SYSTEM', `Failed to update metrics: ${msg}`, 'error');
+      console.error('[RealtimeMetrics] Update failed:', msg);
     }
   }
 
@@ -222,7 +235,10 @@ class RealtimeMetricsService {
    * Subscribe to real-time metrics updates
    */
   public subscribe(callback: (data: any) => void): () => void {
-    return eventBus.subscribe('system.performance', callback);
+    return eventBus.subscribe('system.performance', (event) => {
+      // Extract payload from the event - eventBus wraps data in event.payload
+      callback(event.payload);
+    });
   }
 }
 

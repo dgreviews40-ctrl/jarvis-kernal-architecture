@@ -1,6 +1,7 @@
 import { logger } from './logger';
 import { providerManager } from './providers';
 import { AIProvider } from '../types';
+import { registerVirtualProcess, unregisterVirtualProcess, updateVirtualProcessMetrics } from './coreOs';
 
 export type FileFormat = 'png' | 'jpeg' | 'svg' | 'pdf' | 'txt' | 'md';
 
@@ -43,14 +44,20 @@ export class FileGeneratorService {
   ): Promise<GeneratedFile> {
     logger.log('FILE_GENERATOR', `Generating ${format} for: "${prompt}"`, 'info');
 
+    const pid = registerVirtualProcess('file.generate', `Generate ${format}: ${prompt.substring(0, 40)}...`);
+    updateVirtualProcessMetrics(pid, 2 * 1024 * 1024, 25); // 2MB, 25% CPU for generation
+
     // Check cache for identical requests
     const cacheKey = `${prompt}-${format}-${JSON.stringify(options)}`;
     if (this.generationCache.has(cacheKey)) {
       logger.log('FILE_GENERATOR', 'Returning cached result', 'info');
+      unregisterVirtualProcess(pid);
       return this.generationCache.get(cacheKey)!;
     }
 
     let result: GeneratedFile;
+
+    try {
 
     switch (format) {
       case 'png':
@@ -83,6 +90,10 @@ export class FileGeneratorService {
     }
 
     return result;
+    } catch (error) {
+      unregisterVirtualProcess(pid);
+      throw error;
+    }
   }
 
   /**
@@ -100,9 +111,21 @@ export class FileGeneratorService {
     const cleanPrompt = this.extractImagePrompt(prompt);
 
     try {
-      // Get API key from providerManager
+      // Get API key from providerManager (handles decoding properly)
       const geminiProvider = providerManager.getProvider(AIProvider.GEMINI) as any;
-      const apiKey = geminiProvider?.getApiKey?.() || localStorage.getItem('GEMINI_API_KEY');
+      let apiKey = geminiProvider?.getApiKey?.();
+      
+      // Fallback to localStorage with proper decoding
+      if (!apiKey) {
+        const storedKey = localStorage.getItem('GEMINI_API_KEY');
+        if (storedKey) {
+          try {
+            apiKey = atob(storedKey);
+          } catch (e) {
+            logger.log('FILE_GENERATOR', 'Failed to decode API key from localStorage', 'warning');
+          }
+        }
+      }
       
       if (!apiKey) {
         logger.log('FILE_GENERATOR', 'No API key available for Imagen, falling back to SVG', 'warning');

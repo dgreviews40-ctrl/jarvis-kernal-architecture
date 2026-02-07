@@ -17,7 +17,8 @@ let currentStats = {
   memoryTotalGB: 0,
   gpuLoad: 0,
   gpuMemoryUsage: 0,
-  temperature: 0,
+  gpuTemperature: 0,
+  cpuTemperature: 0,
   uptime: 0,
   cpuName: '',
   gpuName: '',
@@ -25,7 +26,8 @@ let currentStats = {
 };
 
 // CPU tracking for accurate calculation
-let lastCpuInfo = null;
+let prevCpuTimes = null;
+let prevTimestamp = null;
 
 
 /**
@@ -45,6 +47,46 @@ function getMemoryUsage() {
     console.error('Memory error:', e.message);
     return { usagePercent: 0, usedGB: 0, totalGB: 0 };
   }
+}
+
+/**
+ * Get CPU Temperature via WMI (Windows)
+ * Note: This requires compatible hardware sensors and may not work on all systems
+ */
+function getCPUTemperature() {
+  try {
+    // Try MSAcpi_ThermalZoneTemperature first (works on some laptops)
+    const result = execSync(
+      'wmic /namespace:\\\\\root\\\\wmi PATH MSAcpi_ThermalZoneTemperature get CurrentTemperature /value 2>nul',
+      { encoding: 'utf8', timeout: 5000 }
+    );
+    const match = result.match(/CurrentTemperature=(\d+)/);
+    if (match) {
+      // Value is in tenths of Kelvin, convert to Celsius
+      const tempKelvinTenths = parseInt(match[1]);
+      return Math.round((tempKelvinTenths / 10) - 273.15);
+    }
+  } catch (e) {
+    // Silent fail - not all systems support this
+  }
+
+  try {
+    // Try Win32_TemperatureProbe as fallback
+    const result = execSync(
+      'wmic PATH Win32_TemperatureProbe get CurrentReading /value 2>nul',
+      { encoding: 'utf8', timeout: 5000 }
+    );
+    const match = result.match(/CurrentReading=(\d+)/);
+    if (match) {
+      return parseInt(match[1]);
+    }
+  } catch (e) {
+    // Silent fail
+  }
+
+  // CPU temperature monitoring requires hardware sensors that may not be available
+  // Common alternatives: OpenHardwareMonitor, LibreHardwareMonitor, or HWiNFO
+  return 0;
 }
 
 /**
@@ -160,10 +202,6 @@ function getCPUUsage() {
   }
 }
 
-// Variables to store previous CPU times for accurate calculation (for fallback)
-let prevCpuTimes = null;
-let prevTimestamp = null;
-
 /**
  * Update all stats
  */
@@ -172,6 +210,7 @@ function updateStats() {
     const cpu = getCPUUsage();
     const memory = getMemoryUsage();
     const gpu = getGPUUsage();
+    const cpuTemp = getCPUTemperature();
     const jarvisUptime = Math.floor((Date.now() - startTime) / 1000);
 
     currentStats = {
@@ -182,7 +221,8 @@ function updateStats() {
       gpuLoad: gpu.load,
       gpuMemoryUsage: gpu.memoryUsage,
       gpuName: gpu.name,
-      temperature: gpu.temperature,
+      gpuTemperature: gpu.temperature,
+      cpuTemperature: cpuTemp,
       uptime: jarvisUptime,
       cpuName: currentStats.cpuName,
       lastUpdate: Date.now()

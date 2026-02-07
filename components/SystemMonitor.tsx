@@ -17,7 +17,7 @@ export const SystemMonitor: React.FC = () => {
     cpuLoad: 0,
     gpuLoad: 0,
     memoryUsage: 0,
-    temperature: 0,
+    gpuTemperature: 0,
     uptime: 0
   });
 
@@ -54,10 +54,10 @@ export const SystemMonitor: React.FC = () => {
         color="text-green-500" 
       />
       <Metric 
-        label="TEMP" 
-        value={`${metrics.temperature.toFixed(1)}°C`} 
+        label="GPU TEMP" 
+        value={`${metrics.gpuTemperature.toFixed(1)}°C`} 
         icon={<Thermometer size={10} />} 
-        color={metrics.temperature > 50 ? "text-red-500" : "text-yellow-500"} 
+        color={metrics.gpuTemperature > 70 ? "text-red-500" : metrics.gpuTemperature > 50 ? "text-yellow-500" : "text-green-500"} 
       />
       <Metric 
         label="UPTIME" 

@@ -28,6 +28,7 @@ import { analyzeIntent } from './gemini';
 import { providerManager } from './providers';
 import { voice } from './voice';
 import { vision } from './vision';
+import { visionHACamera } from './vision_ha_camera';
 import { vectorMemoryService } from './vectorMemoryService';
 import { localVectorDB } from './localVectorDB';
 import { contextWindowService } from './contextWindowService';
@@ -41,7 +42,7 @@ import { isHomeAssistantQuery, searchEntities, generateEntityResponse } from './
 import { weatherService } from './weather';
 import { taskAutomation } from './integrations/taskAutomation';
 import { haService } from './home_assistant';
-import { useKernelStore } from '../stores';
+import { getKernelStoreState, setKernelDisplay } from '../stores';
 
 interface ProcessorContext {
   forcedMode: AIProvider | null;
@@ -233,7 +234,8 @@ export class KernelProcessor {
 
       // Update context window stats in store
       const utilization = contextWindowService.getUtilization(optimized, systemPrompt, selectedProvider);
-      useKernelStore.getState().setContextWindowStats({
+      const store = getKernelStoreState();
+      store?.setContextWindowStats?.({
         totalTurns: optimized.length,
         compressedTurns: wasCompressed ? turns.length - optimized.length : 0,
         summaryTokens: tokenCount.conversation,
@@ -407,15 +409,29 @@ export class KernelProcessor {
     context.setActiveModule('VISION');
     logger.log('KERNEL', 'Initiating Visual Analysis Protocol...', 'info');
 
-    if (vision.getState() !== 'ACTIVE') {
-      await vision.startCamera();
-      // Brief delay for camera to initialize - only when camera wasn't already active
-      await new Promise(r => setTimeout(r, 300));
+    let imageBase64: string | null = null;
+    let captureSource = 'local';
+
+    // Check if HA camera is active first
+    const haCameraState = visionHACamera.getState();
+    if (haCameraState.type === 'home_assistant' && haCameraState.isActive && haCameraState.currentCamera) {
+      logger.log('VISION', `Capturing from HA camera: ${haCameraState.currentCamera}`, 'info');
+      imageBase64 = await visionHACamera.captureCurrentFeed();
+      captureSource = 'ha_camera';
     }
 
-    const imageBase64 = vision.captureFrame();
+    // Fall back to local camera if HA camera not available
+    if (!imageBase64) {
+      if (vision.getState() !== 'ACTIVE') {
+        await vision.startCamera();
+        // Brief delay for camera to initialize - only when camera wasn't already active
+        await new Promise(r => setTimeout(r, 300));
+      }
+      imageBase64 = vision.captureFrame();
+      captureSource = 'local';
+    }
     if (imageBase64) {
-      logger.log('VISION', `Frame captured. Size: ${imageBase64.length} chars`, 'success');
+      logger.log('VISION', `Frame captured from ${captureSource}. Size: ${imageBase64.length} chars`, 'success');
       
       // Get current Ollama config to ensure we use the correct model
       const ollamaConfig = providerManager.getOllamaConfig();
@@ -526,7 +542,6 @@ export class KernelProcessor {
       }
     } else {
       // Check if this is an identity-related query
-      const lowerInput = input.toLowerCase();
       const isIdentityQuery = lowerInput.includes('my name') ||
                              lowerInput.includes('what is my name') ||
                              lowerInput.includes('who am i') ||
@@ -606,7 +621,8 @@ export class KernelProcessor {
         
         // Update vector DB stats
         const stats = await localVectorDB.getStats();
-        useKernelStore.getState().setVectorDBStats({
+        const store = getKernelStoreState();
+        store?.setVectorDBStats?.({
           ...stats,
           isInitialized: true
         });
@@ -859,9 +875,6 @@ export class KernelProcessor {
           });
 
           // Update the store with the generated diagram
-          const { useKernelStore } = await import('../stores');
-          useKernelStore.getState().setDisplayMode('SCHEMATIC');
-
           const displayContent = {
             type: 'SCHEMATIC' as const,
             title: diagramType,
@@ -874,7 +887,7 @@ export class KernelProcessor {
             }
           };
 
-          useKernelStore.getState().setDisplayContent(displayContent);
+          setKernelDisplay('SCHEMATIC', displayContent);
           logger.log('DISPLAY', `Successfully displayed ${diagramType}`, 'success');
           
           return `I've created a ${diagramType.toLowerCase()} for you. You can see it in the center display area and download it using the download button.`;
@@ -941,9 +954,6 @@ export class KernelProcessor {
           });
 
           // Update the store with the generated image
-          const { useKernelStore } = await import('../stores');
-          useKernelStore.getState().setDisplayMode('IMAGE');
-
           const displayContent = {
             type: 'IMAGE' as const,
             title: generatedFile.filename.replace(/\.[^/.]+$/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
@@ -956,7 +966,7 @@ export class KernelProcessor {
             }
           };
 
-          useKernelStore.getState().setDisplayContent(displayContent);
+          setKernelDisplay('IMAGE', displayContent);
           logger.log('DISPLAY', `Successfully displayed ${format} image`, 'success');
           
           const responseMessage = lowerInput.includes('3d printer') || lowerInput.includes('printer')
@@ -1018,9 +1028,7 @@ export class KernelProcessor {
         logger.log('DISPLAY', 'Skipping plugin system due to provider manager error', 'warning');
 
         // Always update the store directly to ensure display happens
-        const { useKernelStore } = await import('../stores');
-        useKernelStore.getState().setDisplayMode('WEB');
-        useKernelStore.getState().setDisplayContent({
+        setKernelDisplay('WEB', {
           type: 'WEB',
           title: 'Research Documentation',
           description: 'Documentation related to your request',

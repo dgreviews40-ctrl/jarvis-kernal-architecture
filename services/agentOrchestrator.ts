@@ -18,7 +18,7 @@ import { AIProvider } from '../types';
 import { logger } from './logger';
 import { providerManager } from './providers';
 import { eventBus } from './eventBus';
-import { useKernelStore } from '../stores';
+import { updateKernelHealth } from '../stores';
 
 // ==================== TYPES ====================
 
@@ -722,7 +722,7 @@ Provide a clear, actionable result.
     });
 
     // Update store for UI
-    useKernelStore.getState().setHealth({
+    updateKernelHealth({
       status: goal.progress < 100 ? 'healthy' : 'healthy',
     });
   }

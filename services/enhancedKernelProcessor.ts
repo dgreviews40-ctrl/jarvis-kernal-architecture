@@ -31,7 +31,8 @@ import { intelligence } from './intelligence';
 import { isHomeAssistantQuery, searchEntities, generateEntityResponse } from './haEntitySearch';
 import { weatherService } from './weather';
 import { haService } from './home_assistant';
-import { useKernelStore } from '../stores';
+import { setKernelStreaming } from '../stores';
+import { registerVirtualProcess, unregisterVirtualProcess, updateVirtualProcessMetrics } from './coreOs';
 
 interface EnhancedProcessorContext {
   forcedMode: AIProvider | null;
@@ -83,6 +84,15 @@ export class EnhancedKernelProcessor {
       interrupted: false 
     });
 
+    // Register virtual process for dashboard visibility
+    const processName = options.streaming !== false && context.streamingEnabled 
+      ? 'ai.streaming.request' 
+      : 'ai.standard.request';
+    const pid = registerVirtualProcess(
+      processName,
+      JSON.stringify({ input: input.substring(0, 100), streaming: options.streaming !== false && context.streamingEnabled })
+    );
+    
     try {
       let response: string;
 
@@ -90,9 +100,9 @@ export class EnhancedKernelProcessor {
       if (options.streaming !== false && context.streamingEnabled && 
           !context.forcedMode && this.shouldUseStreaming(input)) {
         
-        response = await this.processWithStreaming(input, context, options);
+        response = await this.processWithStreaming(input, context, options, pid);
       } else {
-        response = await this.processStandard(input, context, options);
+        response = await this.processStandard(input, context, options, pid);
       }
 
       // Add response to persistence
@@ -117,6 +127,8 @@ export class EnhancedKernelProcessor {
       return errorResponse;
     } finally {
       this.finalizeRequest(context);
+      // Unregister virtual process
+      unregisterVirtualProcess(pid);
     }
   }
 
@@ -126,9 +138,11 @@ export class EnhancedKernelProcessor {
   private async processWithStreaming(
     input: string,
     context: EnhancedProcessorContext,
-    options: { useTools?: boolean }
+    options: { useTools?: boolean },
+    pid?: number
   ): Promise<string> {
     context.setActiveModule('STREAMING');
+    if (pid) updateVirtualProcessMetrics(pid, 1024 * 1024, 15); // ~1MB, 15% CPU
     
     // Get conversation context
     const conversationContext = conversationPersistence.getContextAsString(6);
@@ -156,15 +170,15 @@ export class EnhancedKernelProcessor {
         if (!chunk.isComplete) {
           fullResponse += chunk.text;
           // Update UI with partial response
-          useKernelStore.getState().setStreamingText(fullResponse);
+          setKernelStreaming(true, fullResponse);
         }
       },
       onComplete: (text) => {
-        useKernelStore.getState().setStreamingText(null);
+        setKernelStreaming(false, null);
       },
       onError: (error) => {
         logger.log('ERROR', `Streaming error: ${error.message}`, 'error');
-        useKernelStore.getState().setStreamingText(null);
+        setKernelStreaming(false, null);
       }
     };
 
@@ -189,11 +203,13 @@ export class EnhancedKernelProcessor {
   private async processStandard(
     input: string,
     context: EnhancedProcessorContext,
-    options: { useTools?: boolean }
+    options: { useTools?: boolean },
+    pid?: number
   ): Promise<string> {
     
     // Intent analysis
     context.setActiveModule('PARSER');
+    if (pid) updateVirtualProcessMetrics(pid, 512 * 1024, 10); // ~512KB, 10% CPU
     const analysis = await analyzeIntent(input);
     
     context.setActiveModule('ROUTER');

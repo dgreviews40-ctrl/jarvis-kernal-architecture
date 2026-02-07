@@ -51,24 +51,42 @@ export class GeminiProvider implements IAIProvider {
   }
 
   public getApiKey(): string | null {
-    // Check environment variables first (VITE_ prefixed), then localStorage
-    let apiKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
+    // Priority: encrypted storage > legacy storage > env vars
+    // This ensures security while maintaining backward compatibility
+    let apiKey: string | null = null;
 
-    // If no environment variable, check localStorage
-    if (!apiKey) {
-      let storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
-
-      if (storedKey) {
+    // Check encrypted storage first
+    if (typeof localStorage !== 'undefined') {
+      const encryptedStoredKey = localStorage.getItem('jarvis_gemini_api_key_encrypted');
+      if (encryptedStoredKey) {
         try {
-          apiKey = atob(storedKey);
-        } catch (decodeError) {
-          console.error("Failed to decode API key:", decodeError);
-          return null;
+          apiKey = decodeURIComponent(atob(encryptedStoredKey));
+          console.log('[PROVIDERS] Using API key from encrypted localStorage');
+        } catch (e) {
+          console.warn('[PROVIDERS] Failed to decode encrypted API key, trying legacy format:', e);
+          // Try legacy format as fallback
+          const legacyStoredKey = localStorage.getItem('GEMINI_API_KEY');
+          if (legacyStoredKey) {
+            try {
+              apiKey = atob(legacyStoredKey);
+              console.log('[PROVIDERS] Using API key from legacy localStorage');
+            } catch (legacyError) {
+              console.error('[PROVIDERS] Failed to decode legacy API key:', legacyError);
+            }
+          }
         }
       }
     }
 
-    return apiKey || null;
+    // Fallback to environment variables
+    if (!apiKey && typeof process !== 'undefined') {
+      apiKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || null;
+      if (apiKey) {
+        console.log('[PROVIDERS] Using API key from environment');
+      }
+    }
+
+    return apiKey;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -167,8 +185,13 @@ export class GeminiProvider implements IAIProvider {
       });
 
       // Validate response before returning
-      if (!response || !response.text) {
-        throw new Error('Gemini API returned invalid response');
+      console.log('[GEMINI] Raw response:', response);
+      if (!response) {
+        throw new Error('Gemini API returned null/undefined response');
+      }
+      if (!response.text) {
+        console.warn('[GEMINI] Response missing text field:', response);
+        throw new Error('Gemini API returned empty response (no text field)');
       }
 
       return {

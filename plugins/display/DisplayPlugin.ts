@@ -109,14 +109,13 @@ export class DisplayPlugin implements Plugin {
       const { processedContent } = await this.contentPipeline.process(content);
 
       // Import and use the kernel store to update the display state
-      const { useKernelStore } = await import('../../stores');
+      const { setKernelDisplay } = await import('../../stores');
 
       // Map content type to display mode and update the store
       switch (processedContent.type) {
         case 'svg':
         case 'diagram':
-          useKernelStore.getState().setDisplayMode('SCHEMATIC');
-          useKernelStore.getState().setDisplayContent({
+          setKernelDisplay('SCHEMATIC', {
             schematic: {
               svgContent: processedContent.content as string,
               title: processedContent.title || 'Diagram',
@@ -126,8 +125,7 @@ export class DisplayPlugin implements Plugin {
           break;
 
         case 'image':
-          useKernelStore.getState().setDisplayMode('IMAGE');
-          useKernelStore.getState().setDisplayContent({
+          setKernelDisplay('IMAGE', {
             image: {
               src: processedContent.content as string,
               title: processedContent.title || 'Image',
@@ -138,8 +136,7 @@ export class DisplayPlugin implements Plugin {
           break;
 
         case 'pdf':
-          useKernelStore.getState().setDisplayMode('WEB');
-          useKernelStore.getState().setDisplayContent({
+          setKernelDisplay('WEB', {
             web: {
               url: processedContent.content as string,
               title: processedContent.title || 'PDF Document',
@@ -149,8 +146,7 @@ export class DisplayPlugin implements Plugin {
           break;
 
         case 'web':
-          useKernelStore.getState().setDisplayMode('WEB');
-          useKernelStore.getState().setDisplayContent({
+          setKernelDisplay('WEB', {
             web: {
               url: processedContent.content as string,
               title: processedContent.title || 'Web Content',
@@ -160,8 +156,7 @@ export class DisplayPlugin implements Plugin {
           break;
 
         case 'interactive':
-          useKernelStore.getState().setDisplayMode('CUSTOM');
-          useKernelStore.getState().setDisplayContent({
+          setKernelDisplay('CUSTOM', {
             custom: {
               component: processedContent.content,
               title: processedContent.title || 'Interactive Content',
@@ -172,8 +167,7 @@ export class DisplayPlugin implements Plugin {
 
         case 'text':
         default:
-          useKernelStore.getState().setDisplayMode('SCHEMATIC');
-          useKernelStore.getState().setDisplayContent({
+          setKernelDisplay('SCHEMATIC', {
             schematic: {
               svgContent: `<div><h3>${processedContent.title || 'Text Content'}</h3><p>${processedContent.content}</p></div>`,
               title: processedContent.title || 'Text Content',

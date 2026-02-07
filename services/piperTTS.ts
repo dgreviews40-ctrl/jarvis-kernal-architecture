@@ -74,6 +74,8 @@ class PiperTTSService {
   private currentSource: AudioBufferSourceNode | null = null;
   private activeSources: Set<AudioBufferSourceNode> = new Set();
 
+  private hasUserInteracted = false;
+  
   constructor() {
     // Load saved config
     const saved = localStorage.getItem('jarvis_piper_config');
@@ -85,8 +87,25 @@ class PiperTTSService {
       }
     }
     
-    // NEW: Pre-warm audio context
-    this.prewarmAudioContext();
+    // Defer pre-warming until first user interaction to avoid autoplay policy warnings
+    this.setupUserInteractionListener();
+  }
+  
+  private setupUserInteractionListener(): void {
+    const startAudioContext = () => {
+      if (!this.hasUserInteracted) {
+        this.hasUserInteracted = true;
+        this.prewarmAudioContext();
+        // Remove listeners after first interaction
+        document.removeEventListener('click', startAudioContext);
+        document.removeEventListener('keydown', startAudioContext);
+        document.removeEventListener('touchstart', startAudioContext);
+      }
+    };
+    
+    document.addEventListener('click', startAudioContext);
+    document.addEventListener('keydown', startAudioContext);
+    document.addEventListener('touchstart', startAudioContext);
   }
   
   /**

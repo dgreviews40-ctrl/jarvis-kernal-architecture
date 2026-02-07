@@ -5,6 +5,28 @@ import App from './App';
 import { JARVISErrorBoundary } from './components/ErrorBoundary';
 import { checkStorageVersion } from './stores';
 
+// Suppress Chrome extension message channel errors (these are from browser extensions, not our code)
+const originalConsoleError = console.error;
+console.error = (...args: any[]) => {
+  const message = args[0]?.toString() || '';
+  // Filter out Chrome extension message channel errors
+  if (message.includes('message channel closed') || 
+      message.includes('A listener indicated an asynchronous response') ||
+      message.includes('Unchecked runtime.lastError')) {
+    return; // Silently ignore
+  }
+  originalConsoleError.apply(console, args);
+};
+
+// Also suppress unhandled promise rejections from extensions
+window.addEventListener('unhandledrejection', (event) => {
+  const message = event.reason?.toString() || '';
+  if (message.includes('message channel closed') ||
+      message.includes('A listener indicated an asynchronous response')) {
+    event.preventDefault(); // Prevent console error
+  }
+});
+
 // Force clear old plugin registry cache on startup
 // This ensures stale mock plugins are removed when registry definition changes
 try {

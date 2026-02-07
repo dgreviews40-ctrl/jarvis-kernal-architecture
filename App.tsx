@@ -7,9 +7,10 @@ import { NetworkControl } from './components/NetworkControl';
 import { VoiceHUD } from './components/VoiceHUD';
 import { SystemMonitor } from './components/SystemMonitor';
 import { BootSequence } from './components/BootSequence';
+import { BootSequenceFast } from './components/BootSequenceFast';
 import { MainDashboard } from './components/MainDashboard';
 import { NotificationSystem } from './components/NotificationSystem';
-import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell, Database } from 'lucide-react';
+import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell, Database, Power } from 'lucide-react';
 import { textStyle, textColor, fontFamily, tracking } from './constants/typography';
 import { logger } from './services/logger';
 import { TIMING, LIMITS } from './constants/config';
@@ -256,6 +257,10 @@ const App: React.FC = () => {
 
     providerManager.setForcedMode(forcedMode);
     graphService.rebuild();
+    
+    // Expose engine on window for kernelProcessor and other services
+    (window as any).engine = engine;
+    console.log('[App] Execution engine exposed on window');
 
     // Initial state refresh
     const initState = async () => {
@@ -548,7 +553,7 @@ const App: React.FC = () => {
 
     // Delegate to the refactored kernel processor
     await kernelProcessor.processRequest(input, context);
-  }, [refreshSystemState, forcedMode]);
+  }, [forcedMode]);
 
   useEffect(() => {
     voice.setCommandCallback((text) => {
@@ -565,7 +570,10 @@ const App: React.FC = () => {
   };
 
   if (!isSystemReady) {
-    return <BootSequence onComplete={() => setSystemReady(true)} />;
+    // Use fast boot by default, can toggle with localStorage flag
+    const useFastBoot = localStorage.getItem('jarvis_fast_boot') !== 'false';
+    const BootComponent = useFastBoot ? BootSequenceFast : BootSequence;
+    return <BootComponent onComplete={() => setSystemReady(true)} />;
   }
 
   if (view === 'DEV') return <div className="h-screen w-screen"><LazyViewWrapper><DevDashboard onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
@@ -577,6 +585,17 @@ const App: React.FC = () => {
   if (view === 'REALTIME') return <div className="h-screen w-screen"><LazyViewWrapper><RealtimeDashboard onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
 
   const isMainDashboard = activeTab === 'DASHBOARD';
+
+  // Shutdown JARVIS - calls launcher API to stop all services
+  const handleExit = async () => {
+    if (confirm('Shutdown JARVIS? This will close all services and the browser.')) {
+      try {
+        await fetch('http://localhost:9999/api/shutdown', { method: 'POST' });
+      } catch (e) {
+        console.log('Shutdown requested');
+      }
+    }
+  };
 
   return (
     <JARVISErrorBoundary>
@@ -612,6 +631,7 @@ const App: React.FC = () => {
              <button onClick={() => setView('REALTIME')} className="jarvis-btn-icon text-red-500" title="Real-Time Dashboard"><Activity size={18} /></button>
              <button onClick={() => setView('DEV')} className="jarvis-btn-icon text-yellow-500" title="Dev Tools"><Bug size={18} /></button>
              <button onClick={() => setView('SETTINGS')} className="jarvis-btn-icon text-gray-500" title="Settings"><SettingsIcon size={18} /></button>
+             <button onClick={handleExit} className="jarvis-btn-icon text-red-600 hover:text-red-400" title="Exit JARVIS"><Power size={18} /></button>
            </div>
         </div>
       </header>

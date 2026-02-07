@@ -206,12 +206,12 @@ class LoggerService {
     return this.log(source, message, 'error', details);
   }
 
-  public debug(source: LogEntry['source'], message: string, details?: any): LogEntry {
+  public debug(source: LogEntry['source'], message: string, details?: any): void {
     // Debug messages are only logged to console, not stored
     if (this.config.enableConsole) {
       console.debug(`[DEBUG] [${source}] ${message}`, details || '');
     }
-    return this.log(source, message, 'info', details);
+    // Intentionally not calling this.log() to avoid storing debug messages
   }
 
   private outputToConsole(entry: LogEntry): void {

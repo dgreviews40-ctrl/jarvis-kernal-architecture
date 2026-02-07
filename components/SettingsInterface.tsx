@@ -88,7 +88,28 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'AI' | 'DEVICES' | 'PLUGINS' | 'ARCHIVE' | 'DISTRIBUTION' | 'DOCS' | 'SECURITY' | 'BACKUP'>('GENERAL');
   
   // States
-  const [apiKey, setApiKey] = useState<string>(localStorage.getItem('GEMINI_API_KEY') || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || '');
+  // Load API key - try to decode from base64 if it exists in localStorage
+  const loadApiKey = (): string => {
+    const envKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || '';
+    const storedKey = localStorage.getItem('GEMINI_API_KEY');
+    if (storedKey) {
+      try {
+        // Try to decode base64
+        const decoded = atob(storedKey);
+        console.log('[SETTINGS] Loaded API key from localStorage (decoded)');
+        return decoded;
+      } catch {
+        // If decoding fails, return as-is (might be old format)
+        console.log('[SETTINGS] Loaded API key from localStorage (raw, not base64)');
+        return storedKey;
+      }
+    }
+    if (envKey) {
+      console.log('[SETTINGS] Loaded API key from environment variables');
+    }
+    return envKey;
+  };
+  const [apiKey, setApiKey] = useState<string>(loadApiKey());
   const [aiConfig, setAiConfig] = useState<AIConfig>(providerManager.getAIConfig());
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>(providerManager.getOllamaConfig());
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>(voice.getConfig());
@@ -198,35 +219,21 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
       if (selectedCam) vision.setDeviceId(selectedCam);
       
       if (apiKey.trim()) {
-        // Store API key in localStorage (fallback for immediate use)
-        localStorage.setItem('GEMINI_API_KEY', btoa(apiKey.trim()));
-        // Also update the process.env for immediate use
-        (process.env as any).API_KEY = apiKey.trim();
-        
-        // Save to .env.local file via proxy server
-        try {
-          const response = await fetch('http://localhost:3101/save-api-key', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              provider: 'gemini',
-              key: apiKey.trim()
-            })
-          });
-          
-          const result = await response.json();
-          
-          if (result.success) {
-            console.log('[SETTINGS] API key saved to .env.local:', result.file);
-            setSaveMessage('API key saved to .env.local successfully');
-          } else {
-            console.warn('[SETTINGS] Failed to save API key to file:', result.message);
-            setSaveMessage('Saved locally but failed to write to .env file');
-          }
-        } catch (err) {
-          console.warn('[SETTINGS] Proxy server not available, key saved to localStorage only:', err);
-          setSaveMessage('Proxy server offline - key saved to browser only');
+        // Validate key format (Gemini keys typically start with 'AIza')
+        const trimmedKey = apiKey.trim();
+        if (!trimmedKey.startsWith('AIza')) {
+          console.warn('[SETTINGS] Warning: API key does not start with expected "AIza" prefix');
         }
+        
+        // Store API key in localStorage (base64 encoded for basic obfuscation)
+        const encodedKey = btoa(trimmedKey);
+        localStorage.setItem('GEMINI_API_KEY', encodedKey);
+        console.log('[SETTINGS] API key saved to localStorage (base64 encoded, length:', encodedKey.length, ')');
+        
+        // Also update the process.env for immediate use
+        (process.env as any).API_KEY = trimmedKey;
+        
+        setSaveMessage('API key saved successfully');
       }
       
       providerManager.setAIConfig(aiConfig);

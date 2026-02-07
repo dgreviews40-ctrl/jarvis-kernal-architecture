@@ -138,6 +138,28 @@ export interface PredictiveAnalysis {
  * Get real-time system memory, CPU, and process metrics
  */
 export function getSystemMetrics(): SystemMetrics {
+  // Check if running in browser (no process.memoryUsage)
+  if (typeof process === 'undefined' || !process.memoryUsage) {
+    // Return browser-compatible metrics using performance API
+    const memory = (performance as any).memory;
+    
+    return {
+      memory: {
+        heapUsed: memory?.usedJSHeapSize || 0,
+        heapTotal: memory?.totalJSHeapSize || 0,
+        rss: memory?.totalJSHeapSize || 0,
+        external: 0,
+      },
+      cpu: {
+        usagePercent: 0,
+        loadAvg: [0, 0, 0],
+        supported: false,
+      },
+      uptime: performance.now() / 1000,
+      timestamp: Date.now(),
+    };
+  }
+  
   const memUsage = process.memoryUsage();
   
   // Calculate memory pressure
@@ -339,10 +361,15 @@ function getEstimatedFPS(): number {
 
 /**
  * Get CPU usage percentage (Node.js only)
+ * Returns null in browser environment since real CPU metrics aren't available
  */
-function getCPUUsage(): number {
+function getCPUUsage(): number | null {
+  if (typeof process === 'undefined' || !process.platform) {
+    return null; // Browser environment - no real CPU data available
+  }
+  
   if (process.platform === 'win32') {
-    return 0; // Windows requires different approach
+    return null; // Windows requires different approach
   }
   
   try {
@@ -351,7 +378,7 @@ function getCPUUsage(): number {
     let totalIdle = 0;
     let totalTick = 0;
     
-    cpus.forEach(cpu => {
+    cpus.forEach((cpu: any) => {
       for (const type in cpu.times) {
         totalTick += cpu.times[type];
       }
@@ -360,7 +387,7 @@ function getCPUUsage(): number {
     
     return 100 - Math.floor(100 * totalIdle / totalTick);
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -563,9 +590,10 @@ export function getActiveAlerts(): SystemAlert[] {
  * Clear all acknowledged alerts
  */
 export function clearAcknowledgedAlerts(): void {
-  const index = activeAlerts.findIndex(a => a.acknowledged);
-  if (index !== -1) {
-    activeAlerts.splice(index, 1);
+  for (let i = activeAlerts.length - 1; i >= 0; i--) {
+    if (activeAlerts[i].acknowledged) {
+      activeAlerts.splice(i, 1);
+    }
   }
 }
 
@@ -587,6 +615,23 @@ interface VirtualProcess {
 
 const virtualProcesses = new Map<number, VirtualProcess>();
 let nextVirtualPid = 10000;
+
+// Recent execution history buffer (for dashboard visibility)
+interface RecentExecution {
+  pid: number;
+  name: string;
+  status: ProcessInfo['status'];
+  cpu: number;
+  memory: number;
+  uptime: number;
+  timestamp: number;
+  command?: string;
+  completedAt?: number;
+}
+const recentExecutions: RecentExecution[] = [];
+const MAX_RECENT_EXECUTIONS = 100;
+const RECENT_EXECUTION_TTL_MS = 60000; // Keep completed processes visible for 60 seconds
+const systemStartTime = Date.now();
 
 /**
  * Register a virtual process for tracking
@@ -612,6 +657,7 @@ export function registerVirtualProcess(
 
 /**
  * Unregister a virtual process
+ * Moves process to recent executions buffer for dashboard visibility
  */
 export function unregisterVirtualProcess(pid: number): boolean {
   const proc = virtualProcesses.get(pid);
@@ -623,7 +669,27 @@ export function unregisterVirtualProcess(pid: number): boolean {
         console.error(`[core.os] Cleanup error for process ${pid}:`, e);
       }
     }
+    
+    // Move to recent executions before deleting
+    recentExecutions.unshift({
+      pid: proc.pid,
+      name: proc.name,
+      status: 'stopped',
+      cpu: proc.cpu,
+      memory: proc.memory,
+      uptime: (Date.now() - proc.startTime) / 1000,
+      timestamp: Date.now(),
+      command: proc.command,
+      completedAt: Date.now(),
+    });
+    
+    // Trim recent executions buffer
+    if (recentExecutions.length > MAX_RECENT_EXECUTIONS) {
+      recentExecutions.pop();
+    }
+    
     virtualProcesses.delete(pid);
+    console.log(`[core.os] Process ${pid} moved to recent executions`);
     return true;
   }
   return false;
@@ -656,24 +722,39 @@ export function setVirtualProcessStatus(pid: number, status: ProcessInfo['status
 
 /**
  * Get list of running processes
- * Combines Node.js processes (if available) with virtual processes
+ * Combines Node.js processes (if available) with virtual processes and recent executions
  */
 export async function getProcessList(filter?: ProcessFilter): Promise<ProcessInfo[]> {
   const processes: ProcessInfo[] = [];
+  const now = Date.now();
   
-  // Add Node.js process info
-  processes.push({
-    pid: process.pid || 0,
-    name: 'jarvis-kernel',
-    status: 'running',
-    cpu: getCPUUsage(),
-    memory: process.memoryUsage().rss,
-    uptime: process.uptime(),
-    timestamp: Date.now(),
-    command: 'node jarvis-kernel',
-  });
+  // Add Node.js process info (only if in Node environment)
+  if (typeof process !== 'undefined' && process.memoryUsage) {
+    processes.push({
+      pid: process.pid || 0,
+      name: 'jarvis-kernel',
+      status: 'running',
+      cpu: getCPUUsage(),
+      memory: process.memoryUsage().rss,
+      uptime: process.uptime(),
+      timestamp: now,
+      command: 'node jarvis-kernel',
+    });
+  } else {
+    // Browser environment - add a placeholder kernel process
+    processes.push({
+      pid: 1,
+      name: 'jarvis-kernel',
+      status: 'running',
+      cpu: getCPUUsage(),
+      memory: performance && (performance as any).memory ? (performance as any).memory.usedJSHeapSize : 0,
+      uptime: (now - systemStartTime) / 1000,
+      timestamp: now,
+      command: 'browser-runtime',
+    });
+  }
   
-  // Add virtual processes
+  // Add virtual processes (currently running)
   virtualProcesses.forEach(proc => {
     processes.push({
       pid: proc.pid,
@@ -681,11 +762,35 @@ export async function getProcessList(filter?: ProcessFilter): Promise<ProcessInf
       status: proc.status,
       cpu: proc.cpu,
       memory: proc.memory,
-      uptime: (Date.now() - proc.startTime) / 1000,
-      timestamp: Date.now(),
+      uptime: (now - proc.startTime) / 1000,
+      timestamp: now,
       command: proc.command,
     });
   });
+  
+  // Add recent executions (completed within TTL)
+  recentExecutions.forEach(exec => {
+    if (exec.completedAt && (now - exec.completedAt) < RECENT_EXECUTION_TTL_MS) {
+      processes.push({
+        pid: exec.pid,
+        name: exec.name,
+        status: exec.status,
+        cpu: exec.cpu,
+        memory: exec.memory,
+        uptime: exec.uptime,
+        timestamp: exec.timestamp,
+        command: exec.command,
+      });
+    }
+  });
+  
+  // Clean up expired recent executions
+  for (let i = recentExecutions.length - 1; i >= 0; i--) {
+    const exec = recentExecutions[i];
+    if (exec.completedAt && (now - exec.completedAt) >= RECENT_EXECUTION_TTL_MS) {
+      recentExecutions.splice(i, 1);
+    }
+  }
   
   // Apply filters
   let filtered = processes;
@@ -822,6 +927,48 @@ export function formatProcessStats(stats: ProcessStats): string {
     `║  Total Memory:    ${formatBytes(stats.totalMemory).padStart(45)} ║`,
     '╚════════════════════════════════════════════════════════════════╝',
   ].join('\n');
+}
+
+// ============================================================================
+// TEST & DEBUG FUNCTIONS
+// ============================================================================
+
+/**
+ * Generate test activity for dashboard verification
+ * Creates fake processes to verify the real-time dashboard is working
+ */
+export function generateTestActivity(count: number = 5): void {
+  console.log(`[core.os] Generating ${count} test processes...`);
+  
+  const testNames = [
+    'ai.chat.completion',
+    'memory.vector.search',
+    'plugin.execute',
+    'file.generate',
+    'system.diagnostic',
+    'voice.transcribe',
+    'vision.analyze',
+    'web.search',
+  ];
+  
+  for (let i = 0; i < count; i++) {
+    const name = testNames[Math.floor(Math.random() * testNames.length)];
+    const pid = registerVirtualProcess(
+      name,
+      JSON.stringify({ test: true, iteration: i }),
+      undefined
+    );
+    
+    // Simulate some CPU/memory usage
+    updateVirtualProcessMetrics(pid, Math.random() * 1000000, Math.random() * 100);
+    
+    // Unregister after random delay (100-500ms)
+    setTimeout(() => {
+      unregisterVirtualProcess(pid);
+    }, 100 + Math.random() * 400);
+  }
+  
+  console.log(`[core.os] Test activity generated`);
 }
 
 // ============================================================================
@@ -1083,6 +1230,8 @@ export const coreOs = {
   getTopMemoryProcesses,
   formatProcessList,
   formatProcessStats,
+  // test functions
+  generateTestActivity,
 };
 
 export default coreOs;

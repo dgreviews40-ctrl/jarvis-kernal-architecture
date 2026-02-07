@@ -17,10 +17,13 @@ import { RealtimeMetricsChart } from './RealtimeMetricsChart';
 import { RealtimeProcessList } from './RealtimeProcessList';
 import { RealtimeAlertPanel } from './RealtimeAlertPanel';
 import { realtimeMetrics } from '../services/realtimeMetrics';
+import { hardware } from '../services/hardware';
 import { 
   getProcessStats, 
+  getProcessList,
   ProcessStats, 
-  formatBytes 
+  formatBytes,
+  generateTestActivity
 } from '../services/coreOs';
 
 interface RealtimeDashboardProps {
@@ -41,11 +44,28 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'processes' | 'alerts'>('overview');
   const [updateInterval, setUpdateInterval] = useState(2000);
+  const [debugInfo, setDebugInfo] = useState<string>('Initializing...');
+  const [rawProcessCount, setRawProcessCount] = useState(0);
+  
+  // Hardware metrics for real CPU data
+  const [hardwareMetrics, setHardwareMetrics] = useState<{ cpuLoad: number; memoryUsage: number; gpuTemperature: number; cpuTemperature?: number } | null>(null);
+  const [hardwareConnected, setHardwareConnected] = useState(false);
 
   // Start/stop metrics service
   useEffect(() => {
-    if (!realtimeMetrics.isRunning()) {
-      realtimeMetrics.start(updateInterval);
+    const running = realtimeMetrics.isRunning();
+    setDebugInfo(`Service running: ${running}`);
+    console.log('[RealtimeDashboard] Mounting, metrics running:', running);
+    
+    if (!running) {
+      try {
+        realtimeMetrics.start(updateInterval);
+        setDebugInfo('Service started successfully');
+        console.log('[RealtimeDashboard] Started metrics service');
+      } catch (e) {
+        setDebugInfo(`Start error: ${e}`);
+        console.error('[RealtimeDashboard] Failed to start:', e);
+      }
     }
     setIsRunning(realtimeMetrics.isRunning());
 
@@ -56,16 +76,23 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
 
   // Subscribe to metrics updates for summary stats
   useEffect(() => {
+    console.log('[RealtimeDashboard] Subscribing to metrics...');
+    setDebugInfo(prev => prev + ' | Subscribing...');
+    
     const unsubscribe = realtimeMetrics.subscribe(async (data) => {
+      console.log('[RealtimeDashboard] Received event:', data.type);
+      setDebugInfo(`Last event: ${data.type} at ${new Date().toLocaleTimeString()}`);
+      
       if (data.type === 'metrics:update') {
         setIsRunning(true);
+        setRawProcessCount(data.processes?.length || 0);
         
         // Fetch additional stats
         const processStats = await getProcessStats();
         
         // Find top processes
-        const topCpu = data.processes.reduce((max, p) => p.cpu > max.cpu ? p : max, data.processes[0]);
-        const topMem = data.processes.reduce((max, p) => p.memory > max.memory ? p : max, data.processes[0]);
+        const topCpu = data.processes.reduce((max: any, p: any) => p.cpu > max.cpu ? p : max, data.processes[0]);
+        const topMem = data.processes.reduce((max: any, p: any) => p.memory > max.memory ? p : max, data.processes[0]);
         
         setStats({
           totalProcesses: processStats.total,
@@ -75,6 +102,27 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
           topCpuProcess: topCpu?.name || 'N/A',
           topMemoryProcess: topMem?.name || 'N/A',
         });
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Subscribe to hardware metrics for real CPU data
+  useEffect(() => {
+    console.log('[RealtimeDashboard] Subscribing to hardware metrics...');
+    setHardwareConnected(hardware.isBackendConnected());
+    
+    const unsubscribe = hardware.subscribe((metrics) => {
+      setHardwareMetrics({
+        cpuLoad: metrics.cpuLoad,
+        memoryUsage: metrics.memoryUsage,
+        gpuTemperature: metrics.gpuTemperature,
+        cpuTemperature: metrics.cpuTemperature
+      });
+      // Mark as connected if we receive data
+      if (metrics.cpuLoad > 0 || metrics.memoryUsage > 0) {
+        setHardwareConnected(true);
       }
     });
 
@@ -102,11 +150,11 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
                 <ArrowLeft size={20} />
               </button>
             )}
-            <h1 style={styles.title}>🔴 Real-Time System Dashboard</h1>
+            <h1 style={styles.title}>[RT] Real-Time System Dashboard</h1>
           </div>
           <div style={styles.subtitle}>
             <span style={isRunning ? styles.statusActive : styles.statusInactive}>
-              {isRunning ? '● Live' : '○ Stopped'}
+              {isRunning ? '[LIVE]' : '[STOPPED]'}
             </span>
             <span style={styles.separator}>|</span>
             <span style={styles.version}>core.os v1.2.1</span>
@@ -131,9 +179,36 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
             onClick={toggleMonitoring}
             style={isRunning ? styles.stopBtn : styles.startBtn}
           >
-            {isRunning ? '⏹ Stop' : '▶ Start'}
+            {isRunning ? '[STOP]' : '[START]'}
+          </button>
+          
+          <button
+            onClick={() => generateTestActivity(3)}
+            style={styles.testBtn}
+            title="Generate test processes"
+          >
+            [TEST]
+          </button>
+          
+          <button
+            onClick={async () => {
+              const processes = await getProcessList();
+              setRawProcessCount(processes.length);
+              setDebugInfo(`Manual check: ${processes.length} processes found`);
+              console.log('[RealtimeDashboard] Manual check:', processes);
+            }}
+            style={styles.refreshBtn}
+            title="Manual refresh"
+          >
+            [REFRESH]
           </button>
         </div>
+      </div>
+
+      {/* Debug Info */}
+      <div style={{ padding: '10px 20px', background: '#1a1a1a', borderBottom: '1px solid #333', fontSize: '11px', color: '#888' }}>
+        <div>Debug: {debugInfo}</div>
+        <div>Raw processes: {rawProcessCount} | Service: {isRunning ? 'Running' : 'Stopped'} | Hardware: {hardwareConnected ? 'Connected' : 'Not Connected'}</div>
       </div>
 
       {/* Stats Summary */}
@@ -148,20 +223,36 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
             <span style={styles.statLabel}>Running</span>
           </div>
           <div style={styles.statItem}>
-            <span style={styles.statValue}>{stats.totalCpu.toFixed(1)}%</span>
-            <span style={styles.statLabel}>Total CPU</span>
+            <span style={styles.statValue}>
+              {hardwareMetrics ? `${hardwareMetrics.cpuLoad.toFixed(0)}%` : `${stats.totalCpu.toFixed(1)}%`}
+            </span>
+            <span style={styles.statLabel}>{hardwareMetrics ? 'Real CPU' : 'Total CPU'}</span>
           </div>
           <div style={styles.statItem}>
-            <span style={styles.statValue}>{formatBytes(stats.totalMemory)}</span>
-            <span style={styles.statLabel}>Total Memory</span>
+            <span style={styles.statValue}>
+              {hardwareMetrics ? `${hardwareMetrics.memoryUsage.toFixed(0)}%` : formatBytes(stats.totalMemory)}
+            </span>
+            <span style={styles.statLabel}>{hardwareMetrics ? 'System RAM' : 'Total Memory'}</span>
           </div>
+          {hardwareMetrics && hardwareMetrics.gpuTemperature > 0 && (
+            <div style={styles.statItem}>
+              <span style={styles.statValue}>{hardwareMetrics.gpuTemperature.toFixed(0)}°C</span>
+              <span style={styles.statLabel}>GPU Temp</span>
+            </div>
+          )}
+          {hardwareMetrics && hardwareMetrics.cpuTemperature && hardwareMetrics.cpuTemperature > 0 && (
+            <div style={styles.statItem}>
+              <span style={styles.statValue}>{hardwareMetrics.cpuTemperature.toFixed(0)}°C</span>
+              <span style={styles.statLabel}>CPU Temp</span>
+            </div>
+          )}
           <div style={styles.statItem}>
             <span style={styles.statValue} title={stats.topCpuProcess}>
               {stats.topCpuProcess.length > 12 
                 ? stats.topCpuProcess.substring(0, 12) + '...' 
                 : stats.topCpuProcess}
             </span>
-            <span style={styles.statLabel}>Top CPU</span>
+            <span style={styles.statLabel}>Top Process</span>
           </div>
         </div>
       )}
@@ -172,19 +263,19 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
           onClick={() => setActiveTab('overview')}
           style={activeTab === 'overview' ? styles.tabActive : styles.tab}
         >
-          📊 Overview
+          [OVERVIEW]
         </button>
         <button
           onClick={() => setActiveTab('processes')}
           style={activeTab === 'processes' ? styles.tabActive : styles.tab}
         >
-          ⚙️ Processes
+          [PROCESSES]
         </button>
         <button
           onClick={() => setActiveTab('alerts')}
           style={activeTab === 'alerts' ? styles.tabActive : styles.tab}
         >
-          🚨 Alerts
+          [ALERTS]
         </button>
       </div>
 
@@ -205,11 +296,15 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
         )}
 
         {activeTab === 'processes' && (
-          <RealtimeProcessList maxProcesses={50} />
+          <div style={styles.processesTabContainer}>
+            <RealtimeProcessList maxProcesses={50} fullHeight />
+          </div>
         )}
 
         {activeTab === 'alerts' && (
-          <RealtimeAlertPanel maxAlerts={50} showAcknowledged />
+          <div style={styles.alertsTabContainer}>
+            <RealtimeAlertPanel maxAlerts={50} showAcknowledged fullHeight />
+          </div>
         )}
       </div>
 
@@ -217,7 +312,8 @@ export const RealtimeDashboard: React.FC<RealtimeDashboardProps> = ({ onClose })
       <div style={styles.footer}>
         <span style={styles.footerText}>
           Real-Time Metrics Service • Updates every {updateInterval/1000}s • 
-          Data retention: 2 minutes
+          Data retention: 2 minutes • 
+          Hardware Monitor: {hardwareConnected ? '[CONNECTED]' : '[NOT CONNECTED - Run: node server/hardware-monitor.cjs]'}
         </span>
       </div>
     </div>
@@ -323,6 +419,26 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 'bold',
     fontSize: '13px',
   },
+  testBtn: {
+    background: '#4488ff',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    padding: '8px 16px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '13px',
+  },
+  refreshBtn: {
+    background: '#ffaa44',
+    color: '#000',
+    border: 'none',
+    borderRadius: '4px',
+    padding: '8px 16px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '13px',
+  },
   statsBar: {
     display: 'flex',
     justifyContent: 'space-around',
@@ -394,10 +510,26 @@ const styles: Record<string, React.CSSProperties> = {
   alertsSection: {
     gridColumn: '2 / 3',
     gridRow: '1 / 3',
+    overflow: 'auto',
+    maxHeight: 'calc(100vh - 250px)', // Limit height in overview mode
   },
   processesSection: {
     gridColumn: '1 / 2',
     gridRow: '2 / 3',
+    overflow: 'auto',
+    maxHeight: 'calc(100vh - 250px)', // Limit height in overview mode
+  },
+  alertsTabContainer: {
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+  processesTabContainer: {
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   footer: {
     padding: '15px 20px',

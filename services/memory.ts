@@ -5,6 +5,8 @@
 
 import { MemoryNode, MemoryType, MemorySearchResult } from "../types";
 import { optimizer } from "./performance";
+import { vectorDB } from "./vectorDB";
+import { logger } from "./logger";
 
 // Simulated "Pre-existing" Long Term Memory
 const INITIAL_MEMORY: MemoryNode[] = [
@@ -107,7 +109,49 @@ class MemoryCoreOptimized {
       // Build search index
       this.rebuildIndex();
       this.isLoaded = true;
+      
+      // Sync existing memories to Vector DB (migration)
+      this.syncToVectorDB();
     });
+  }
+
+  /**
+   * Sync all existing memories to Vector DB (one-time migration)
+   * Returns number of memories synced
+   */
+  public async syncToVectorDB(): Promise<number> {
+    try {
+      if (!vectorDB.initialized) {
+        await vectorDB.initialize();
+      }
+      
+      const allNodes = Array.from(this.nodes.values());
+      let synced = 0;
+      
+      for (const node of allNodes) {
+        try {
+          await vectorDB.store({
+            id: node.id,
+            content: node.content,
+            type: node.type,
+            tags: node.tags,
+            created: node.created,
+            lastAccessed: node.lastAccessed || node.created
+          });
+          synced++;
+        } catch (e) {
+          // Already exists or other error, skip
+        }
+      }
+      
+      if (synced > 0) {
+        logger.log('MEMORY', `Migrated ${synced} memories to Vector DB`, 'info');
+      }
+      return synced;
+    } catch (error) {
+      logger.log('MEMORY', `Vector DB migration failed: ${error}`, 'warning');
+      return 0;
+    }
   }
 
   private loadDefaults(): void {
@@ -268,6 +312,12 @@ class MemoryCoreOptimized {
     this.indexNode(newNode);
     this.persistDebounced();
     this.triggerAutoBackup();
+    
+    // Also store to Vector DB for semantic search
+    this.storeToVectorDB(newNode).catch(err => {
+      logger.log('MEMORY', `Vector DB store failed: ${err}`, 'warning');
+    });
+    
     this.notify();
 
     return newNode;
@@ -415,6 +465,12 @@ class MemoryCoreOptimized {
       this.nodes.delete(id);
       this.persistDebounced();
       this.triggerAutoBackup();
+      
+      // Also delete from Vector DB
+      vectorDB.delete(id).catch(err => {
+        logger.log('MEMORY', `Vector DB delete failed: ${err}`, 'warning');
+      });
+      
       this.notify();
       return true;
     }
@@ -432,6 +488,12 @@ class MemoryCoreOptimized {
     this.rebuildIndex();
     this.persist();
     this.triggerAutoBackup();
+    
+    // Also restore to Vector DB
+    for (const node of nodes) {
+      await this.storeToVectorDB(node);
+    }
+    
     this.notify();
   }
 
@@ -666,6 +728,27 @@ class MemoryCoreOptimized {
     };
   }
 
+  /**
+   * Get Vector DB stats for dashboard
+   */
+  public async getVectorDBStats(): Promise<{
+    totalVectors: number;
+    indexSize: number;
+    cacheSize: number;
+    backend: string;
+    embeddingCacheSize: number;
+  } | null> {
+    try {
+      if (!vectorDB.initialized) {
+        await vectorDB.initialize();
+      }
+      return await vectorDB.getStats();
+    } catch (error) {
+      logger.log('MEMORY', `Failed to get Vector DB stats: ${error}`, 'warning');
+      return null;
+    }
+  }
+
   // ==================== SUBSCRIPTION ====================
 
   public subscribe(callback: () => void): () => void {
@@ -677,6 +760,51 @@ class MemoryCoreOptimized {
 
   private notify(): void {
     this.observers.forEach(cb => cb());
+  }
+
+  // ==================== VECTOR DB BRIDGE ====================
+
+  /**
+   * Store memory node to Vector DB for semantic search
+   */
+  private async storeToVectorDB(node: MemoryNode): Promise<void> {
+    try {
+      // Ensure vector DB is initialized
+      if (!vectorDB.initialized) {
+        await vectorDB.initialize();
+      }
+      
+      await vectorDB.store({
+        id: node.id,
+        content: node.content,
+        type: node.type,
+        tags: node.tags,
+        created: node.created,
+        lastAccessed: node.lastAccessed || node.created
+      });
+      
+      logger.log('MEMORY', `Stored to Vector DB: ${node.id}`, 'info');
+    } catch (error) {
+      // Don't throw - vector DB is optional enhancement
+      logger.log('MEMORY', `Vector DB store error: ${error}`, 'warning');
+    }
+  }
+
+  /**
+   * Semantic recall using Vector DB
+   */
+  public async recallSemantic(query: string, limit: number = 5): Promise<MemorySearchResult[]> {
+    try {
+      if (!vectorDB.initialized) {
+        await vectorDB.initialize();
+      }
+      
+      const results = await vectorDB.search(query, { maxResults: limit, minScore: 0.6 });
+      return results;
+    } catch (error) {
+      logger.log('MEMORY', `Semantic recall failed, falling back to keyword search: ${error}`, 'warning');
+      return this.recall(query, limit);
+    }
   }
 }
 

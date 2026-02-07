@@ -13,7 +13,7 @@ import { contextWindowService } from './contextWindowService';
 import { memoryConsolidationService } from './memoryConsolidationService';
 import { agentOrchestrator } from './agentOrchestrator';
 import { logger } from './logger';
-import { useKernelStore } from '../stores';
+import { getKernelStoreState } from '../stores';
 
 export interface KernelInitStatus {
   vectorDB: boolean;
@@ -44,7 +44,8 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
     
     if (status.vectorDB) {
       const stats = await localVectorDB.getStats();
-      useKernelStore.getState().setVectorDBStats({
+      const store = getKernelStoreState();
+      store?.setVectorDBStats?.({
         ...stats,
         isInitialized: true
       });
@@ -104,10 +105,11 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
  * Get current initialization status
  */
 export function getKernelStatus(): KernelInitStatus {
-  const { vectorDBStats } = useKernelStore.getState();
+  const store = getKernelStoreState();
+  const vectorDBStats = store?.vectorDBStats;
   
   return {
-    vectorDB: vectorDBStats.isInitialized,
+    vectorDB: vectorDBStats?.isInitialized ?? false,
     contextWindow: true, // Always available
     memoryConsolidation: true, // Default to true
     agentSystem: true, // Default to true
@@ -156,7 +158,8 @@ export async function importVectorDB(jsonData: string): Promise<{ imported: numb
     
     // Update stats
     const stats = await localVectorDB.getStats();
-    useKernelStore.getState().setVectorDBStats({
+    const store = getKernelStoreState();
+    store?.setVectorDBStats?.({
       ...stats,
       isInitialized: true
     });
@@ -176,7 +179,8 @@ export async function clearVectorDB(): Promise<void> {
     await localVectorDB.clear();
     
     // Update stats
-    useKernelStore.getState().setVectorDBStats({
+    const store = getKernelStoreState();
+    store?.setVectorDBStats?.({
       totalVectors: 0,
       indexSize: 0,
       cacheSize: 0,

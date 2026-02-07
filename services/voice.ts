@@ -225,9 +225,12 @@ class VoiceCoreOptimized {
 
       const blob = new Blob([workerCode], { type: 'application/javascript' });
       const blobUrl = URL.createObjectURL(blob);
-      this.wakeWordWorker = new Worker(blobUrl);
-      // Revoke the blob URL after worker is created to prevent memory leak
-      URL.revokeObjectURL(blobUrl);
+      try {
+        this.wakeWordWorker = new Worker(blobUrl);
+      } finally {
+        // Always revoke the blob URL to prevent memory leak
+        URL.revokeObjectURL(blobUrl);
+      }
     } catch (error) {
       console.warn('[VOICE] Web Worker not supported, using main thread for wake word detection:', error);
     }
@@ -1363,8 +1366,13 @@ class VoiceCoreOptimized {
   /**
    * Try to switch to Whisper STT fallback
    */
+  private whisperAvailabilityLogged = false;
+  
   private async tryWhisperFallback(): Promise<boolean> {
-    console.log('[VOICE] Checking Whisper availability...');
+    // Only log availability check once to reduce console noise
+    if (!this.whisperAvailabilityLogged) {
+      console.log('[VOICE] Checking Whisper availability...');
+    }
     const available = await whisperSTT.isAvailable();
 
     if (available) {
@@ -1383,6 +1391,7 @@ class VoiceCoreOptimized {
       if (started) {
         console.log('[VOICE] Whisper STT started successfully');
         this.networkErrorCount = 0; // Reset error count
+        this.whisperAvailabilityLogged = true; // Mark as logged since we confirmed it's working
         return true;
       } else {
         console.error('[VOICE] Failed to start Whisper STT');
@@ -1390,7 +1399,11 @@ class VoiceCoreOptimized {
         return false;
       }
     } else {
-      console.log('[VOICE] Whisper server not available. Run: python whisper_server.py');
+      // Only log unavailability once per session to reduce console noise
+      if (!this.whisperAvailabilityLogged) {
+        console.log('[VOICE] Whisper server not available (port 5001). Run: python whisper_server.py to enable local STT.');
+        this.whisperAvailabilityLogged = true;
+      }
       return false;
     }
   }

@@ -13,7 +13,7 @@ import { enhancedKernelProcessor } from '../services/enhancedKernelProcessor';
 import { streamingHandler } from '../services/streaming';
 import { conversationPersistence } from '../services/conversationPersistence';
 import { toolRegistry } from '../services/tools';
-import { useKernelStore } from '../stores';
+import { useKernelStore, setKernelStreaming, setKernelProcessorState, setKernelActiveModule, setKernelProvider } from '../stores';
 
 interface UseAIEngineOptions {
   streaming?: boolean;
@@ -57,15 +57,15 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
   const forcedMode = useKernelStore((state) => state.forcedMode);
   
   const setState = useCallback((state: any) => {
-    useKernelStore.getState().setProcessorState(state);
+    setKernelProcessorState(state);
   }, []);
   
   const setActiveModule = useCallback((module: string | null) => {
-    useKernelStore.getState().setActiveModule(module);
+    setKernelActiveModule(module);
   }, []);
   
   const setProvider = useCallback((provider: AIProvider | null) => {
-    useKernelStore.getState().setProvider(provider);
+    setKernelProvider(provider);
   }, []);
 
   const processMessage = useCallback(async (input: string): Promise<string> => {
@@ -75,7 +75,7 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
     abortControllerRef.current = new AbortController();
     
     setIsProcessing(true);
-    useKernelStore.getState().setIsStreaming(options.streaming !== false && streamingEnabled);
+    setKernelStreaming(options.streaming !== false && streamingEnabled);
     
     try {
       const response = await enhancedKernelProcessor.processRequest(
@@ -103,14 +103,14 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
       return response;
     } finally {
       setIsProcessing(false);
-      useKernelStore.getState().setIsStreaming(false);
+      setKernelStreaming(false);
     }
   }, [isProcessing, forcedMode, streamingEnabled, toolsEnabled, options.origin, options.streaming, options.useTools]);
 
   const abortStreaming = useCallback(() => {
     streamingHandler.abort();
     abortControllerRef.current?.abort();
-    useKernelStore.getState().setIsStreaming(false);
+    setKernelStreaming(false);
   }, []);
   
   // Cleanup on unmount

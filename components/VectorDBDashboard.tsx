@@ -5,7 +5,7 @@
  * management functions for the semantic memory system.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Database, Search, Trash2, Download, Upload, RefreshCw, Brain, Hash, Server, Layers } from 'lucide-react';
 import { vectorDB, VectorDBStats } from '../services/vectorDB';
 import { logger } from '../services/logger';
@@ -25,17 +25,42 @@ export const VectorDBDashboard: React.FC<VectorDBDashboardProps> = ({ isOpen, on
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const hasInitialized = useRef(false);
 
   const initializeDB = useCallback(async () => {
+    // Check if already initialized by trying to get stats quickly
+    try {
+      const quickStats = await Promise.race([
+        vectorDB.getStats(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))
+      ]);
+      if (quickStats) {
+        setIsInitialized(true);
+        setStats(quickStats);
+        return true;
+      }
+    } catch {
+      // Not initialized yet, continue with initialization
+    }
+
     try {
       setIsInitializing(true);
       setError(null);
       
-      const initialized = await vectorDB.initialize();
+      // Set a maximum initialization time of 10 seconds
+      const initPromise = vectorDB.initialize();
+      const timeoutPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          logger.log('VECTOR_DB', 'Dashboard: Initialization timeout reached', 'warning');
+          resolve(false);
+        }, 10000);
+      });
+      
+      const initialized = await Promise.race([initPromise, timeoutPromise]);
       setIsInitialized(initialized);
       
       if (!initialized) {
-        setError('Vector DB failed to initialize. Using fallback mode.');
+        setError('Vector DB initialization timed out. Using fallback mode.');
       }
       return initialized;
     } catch (err) {
@@ -53,51 +78,48 @@ export const VectorDBDashboard: React.FC<VectorDBDashboardProps> = ({ isOpen, on
       setIsLoading(true);
       setError(null);
       
-      // Ensure initialized first
-      if (!isInitialized) {
-        const initialized = await initializeDB();
-        if (!initialized) {
-          setStats(null);
-          return;
-        }
-      }
+      logger.log('VECTOR_DB', 'Dashboard: Loading stats...', 'info');
       
-      // Load stats with timeout
+      // Load stats with timeout - will fail if not initialized
       const statsPromise = vectorDB.getStats();
       const timeoutPromise = new Promise<never>((_, reject) => 
         setTimeout(() => reject(new Error('Timeout')), 5000)
       );
       
       const newStats = await Promise.race([statsPromise, timeoutPromise]);
+      logger.log('VECTOR_DB', `Dashboard: Stats loaded - ${newStats.totalVectors} vectors`, 'success');
       setStats(newStats);
+      setIsInitialized(true);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      setError(`Failed to load statistics: ${errMsg}`);
-      logger.log('VECTOR_DB', `Failed to load stats: ${errMsg}`, 'error');
+      logger.log('VECTOR_DB', `Dashboard: Failed to load stats: ${errMsg}`, 'warning');
     } finally {
       setIsLoading(false);
     }
-  }, [isInitialized, initializeDB]);
+  }, []);
 
+  // Single initialization attempt when opened
   useEffect(() => {
-    if (isOpen) {
-      // Initial load
-      initializeDB().then(success => {
-        if (success) {
-          loadStats();
-        }
-      });
-      
-      // Set up refresh interval
-      const interval = setInterval(() => {
-        if (isInitialized) {
-          loadStats();
-        }
-      }, 5000);
-      
-      return () => clearInterval(interval);
+    if (isOpen && !hasInitialized.current) {
+      hasInitialized.current = true;
+      initializeDB();
     }
-  }, [isOpen, loadStats, initializeDB, isInitialized]);
+  }, [isOpen, initializeDB]);
+
+  // Separate effect for refresh interval
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    // Load stats immediately
+    loadStats();
+    
+    // Set up refresh interval
+    const interval = setInterval(() => {
+      loadStats();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -226,8 +248,8 @@ export const VectorDBDashboard: React.FC<VectorDBDashboardProps> = ({ isOpen, on
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {/* Initialization Status */}
-          {(isInitializing || !isInitialized) && (
+          {/* Initialization Status - only show when no stats yet */}
+          {!stats && (isInitializing || !isInitialized) && (
             <div className={`p-4 rounded-lg border ${isInitializing ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -271,8 +293,8 @@ export const VectorDBDashboard: React.FC<VectorDBDashboardProps> = ({ isOpen, on
             </div>
           )}
 
-          {/* Stats Grid -- only show when initialized */}
-          {isInitialized && stats && (
+          {/* Stats Grid -- show when we have stats */}
+          {stats && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="p-4 rounded-lg bg-gray-800/50 border border-cyan-500/20">
                 <div className="text-2xl font-bold text-white">{stats.totalVectors.toLocaleString()}</div>
@@ -294,7 +316,7 @@ export const VectorDBDashboard: React.FC<VectorDBDashboardProps> = ({ isOpen, on
           )}
 
           {/* Backend Status */}
-          {isInitialized && stats && (
+          {stats && (
             <div className="p-4 rounded-lg bg-gray-800/30 border border-cyan-500/20">
               <div className="flex items-center justify-between">
                 <span className="text-gray-400">Embedding Backend</span>
@@ -397,10 +419,12 @@ export const VectorDBDashboard: React.FC<VectorDBDashboardProps> = ({ isOpen, on
 
         {/* Footer */}
         <div className="p-4 border-t border-cyan-500/20 bg-gray-900/50 text-center text-sm text-gray-500">
-          {isInitialized && stats ? (
+          {stats ? (
             <>Using HNSW indexing with {stats.indexSize.toLocaleString()} nodes • {getBackendLabel(stats.backend)}</>
+          ) : isInitializing ? (
+            <>Vector Database initializing...</>
           ) : (
-            <>Vector Database {isInitializing ? 'initializing...' : 'not initialized'}</>
+            <>Vector Database not initialized</>
           )}
         </div>
       </div>

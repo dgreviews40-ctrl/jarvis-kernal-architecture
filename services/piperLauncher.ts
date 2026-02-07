@@ -29,6 +29,9 @@ class PiperLauncherService {
   private readonly START_SCRIPT = 'start-jarvis-server.bat';
   private hasCheckedInstall = false;
   private isActuallyInstalled: boolean | null = null;
+  private lastCheckTime = 0;
+  private readonly MIN_CHECK_INTERVAL = 2000; // Minimum 2 seconds between checks
+  private pendingCheck: Promise<PiperLauncherStatus> | null = null;
 
   constructor() {
     // Don't auto-check on construct - wait for explicit check
@@ -71,8 +74,32 @@ class PiperLauncherService {
 
   /**
    * Check current Piper status
+   * Rate-limited to prevent duplicate checks
    */
   public async checkStatus(): Promise<PiperLauncherStatus> {
+    const now = Date.now();
+    
+    // Return cached status if checked recently
+    if (now - this.lastCheckTime < this.MIN_CHECK_INTERVAL) {
+      return this.status;
+    }
+    
+    // Return existing promise if check is already in progress
+    if (this.pendingCheck) {
+      return this.pendingCheck;
+    }
+    
+    this.pendingCheck = this.doCheckStatus();
+    try {
+      const result = await this.pendingCheck;
+      return result;
+    } finally {
+      this.pendingCheck = null;
+      this.lastCheckTime = Date.now();
+    }
+  }
+  
+  private async doCheckStatus(): Promise<PiperLauncherStatus> {
     this.setStatus('CHECKING', 'Checking Piper status...');
 
     // Check if server is running first (works in both Node and browser)

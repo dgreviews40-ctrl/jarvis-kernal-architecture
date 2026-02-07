@@ -245,7 +245,10 @@ export interface SystemMetrics {
   cpuLoad: number; 
   memoryUsage: number; 
   gpuLoad: number; 
-  temperature: number; 
+  /** GPU temperature in Celsius (from nvidia-smi) */
+  gpuTemperature: number;
+  /** CPU temperature in Celsius (optional - requires additional hardware monitoring) */
+  cpuTemperature?: number;
   uptime: number; 
 }
 

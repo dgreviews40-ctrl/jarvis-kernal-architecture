@@ -63,7 +63,34 @@ export function createNamespacedStorage(prefix: string): StateStorage {
       try {
         localStorage.setItem(`${prefix}${name}`, value);
       } catch (e) {
-        console.warn(`[PERSISTENCE] Failed to set ${name}:`, e);
+        // Handle quota exceeded error specifically
+        if (e instanceof Error && (e.name === 'QuotaExceededError' || 
+            e.message?.includes('quota') || 
+            e.message?.includes('storage'))) {
+          console.error(`[PERSISTENCE] Storage quota exceeded for ${name}. Data size: ${new Blob([value]).size} bytes`);
+          // Try to free up space by clearing old stores
+          try {
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key?.startsWith(prefix) && !key.includes(name)) {
+                keysToRemove.push(key);
+              }
+            }
+            // Remove oldest entries first (based on key name, assuming chronological naming)
+            keysToRemove.sort();
+            const keysToDelete = keysToRemove.slice(0, Math.max(1, Math.floor(keysToRemove.length * 0.2)));
+            keysToDelete.forEach(key => localStorage.removeItem(key));
+            console.log(`[PERSISTENCE] Cleared ${keysToDelete.length} old entries to free space`);
+            
+            // Retry saving
+            localStorage.setItem(`${prefix}${name}`, value);
+          } catch (retryError) {
+            console.error(`[PERSISTENCE] Failed to save even after cleanup:`, retryError);
+          }
+        } else {
+          console.warn(`[PERSISTENCE] Failed to set ${name}:`, e);
+        }
       }
     },
     removeItem: (name: string): void => {

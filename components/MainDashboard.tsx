@@ -80,7 +80,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ onCommand, onNavig
   const displayContent = useKernelStore((s) => s.displayContent);
   const clearDisplay = useKernelStore((s) => s.clearDisplay);
 
-  const [metrics, setMetrics] = useState<SystemMetrics>({ cpuLoad: 0, gpuLoad: 0, memoryUsage: 0, temperature: 0, uptime: 0 });
+  const [metrics, setMetrics] = useState<SystemMetrics>({ cpuLoad: 0, gpuLoad: 0, memoryUsage: 0, gpuTemperature: 0, uptime: 0 });
   const scrollRef = useRef<HTMLDivElement>(null);
   const [atmosphere, setAtmosphere] = useState({ humidity: 42, pressure: 1013 });
 

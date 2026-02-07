@@ -38,8 +38,10 @@ export const RealtimeMetricsChart: React.FC<RealtimeMetricsChartProps> = ({
 
   // Subscribe to metrics updates
   useEffect(() => {
+    console.log('[RealtimeMetricsChart] Subscribing to metrics...');
     const unsubscribe = realtimeMetrics.subscribe((data) => {
       if (data.type === 'metrics:update' && data.history) {
+        console.log('[RealtimeMetricsChart] Received history:', data.history.length, 'points');
         setHistory(data.history);
       }
     });
@@ -215,9 +217,9 @@ export const RealtimeMetricsChart: React.FC<RealtimeMetricsChartProps> = ({
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <span style={styles.title}>📊 Real-Time Metrics</span>
+        <span style={styles.title}>[CHART] Real-Time Metrics</span>
         <span style={isRunning ? styles.statusActive : styles.statusInactive}>
-          {isRunning ? '● Live' : '○ Stopped'}
+          {isRunning ? '[LIVE]' : '[STOPPED]'}
         </span>
       </div>
       <canvas

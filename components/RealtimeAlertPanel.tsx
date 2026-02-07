@@ -11,11 +11,13 @@ import { SystemAlert } from '../services/coreOs';
 interface RealtimeAlertPanelProps {
   maxAlerts?: number;
   showAcknowledged?: boolean;
+  fullHeight?: boolean; // When true, fill available space with scrolling
 }
 
 export const RealtimeAlertPanel: React.FC<RealtimeAlertPanelProps> = ({
   maxAlerts = 10,
   showAcknowledged = false,
+  fullHeight = false,
 }) => {
   const [alerts, setAlerts] = useState<SystemAlert[]>([]);
   const [acknowledgedAlerts, setAcknowledgedAlerts] = useState<Set<string>>(new Set());
@@ -85,10 +87,10 @@ export const RealtimeAlertPanel: React.FC<RealtimeAlertPanelProps> = ({
 
   const getAlertIcon = (type: string) => {
     switch (type) {
-      case 'critical': return '🔴';
-      case 'warning': return '🟡';
-      case 'info': return '🔵';
-      default: return '⚪';
+      case 'critical': return '[CRIT]';
+      case 'warning': return '[WARN]';
+      case 'info': return '[INFO]';
+      default: return '[NOTE]';
     }
   };
 
@@ -103,13 +105,13 @@ export const RealtimeAlertPanel: React.FC<RealtimeAlertPanelProps> = ({
 
   if (displayAlerts.length === 0) {
     return (
-      <div style={styles.container}>
+      <div style={fullHeight ? styles.containerFull : styles.container}>
         <div style={styles.header}>
-          <span style={styles.title}>🚨 System Alerts</span>
+          <span style={styles.title}>[!] System Alerts</span>
           <span style={styles.badgeInactive}>0</span>
         </div>
         <div style={styles.emptyState}>
-          <span style={styles.emptyIcon}>✓</span>
+          <span style={styles.emptyIcon}>[OK]</span>
           <p>No active alerts</p>
           <p style={styles.emptySubtext}>System is operating normally</p>
         </div>
@@ -119,13 +121,13 @@ export const RealtimeAlertPanel: React.FC<RealtimeAlertPanelProps> = ({
 
   return (
     <div style={{
-      ...styles.container,
+      ...(fullHeight ? styles.containerFull : styles.container),
       borderColor: criticalCount > 0 ? '#ff4444' : warningCount > 0 ? '#ffcc00' : '#00ff88',
       animation: pulseAnimation ? 'pulse 0.5s ease-in-out 3' : undefined,
     }}>
       <div style={styles.header}>
         <div style={styles.titleRow}>
-          <span style={styles.title}>🚨 System Alerts</span>
+          <span style={styles.title}>[!] System Alerts</span>
           <div style={styles.badges}>
             {criticalCount > 0 && (
               <span style={styles.badgeCritical}>{criticalCount}</span>
@@ -146,12 +148,12 @@ export const RealtimeAlertPanel: React.FC<RealtimeAlertPanelProps> = ({
       {activeCount > 0 && (
         <div style={styles.actions}>
           <button onClick={handleAcknowledgeAll} style={styles.ackAllBtn}>
-            ✓ Acknowledge All ({activeCount})
+            [OK] Acknowledge All ({activeCount})
           </button>
         </div>
       )}
 
-      <div style={styles.alertList}>
+      <div style={fullHeight ? styles.alertListFull : styles.alertList}>
         {displayAlerts.map((alert) => (
           <div
             key={alert.id}
@@ -183,7 +185,7 @@ export const RealtimeAlertPanel: React.FC<RealtimeAlertPanelProps> = ({
                     style={styles.ackBtn}
                     title="Acknowledge"
                   >
-                    ✓
+                    [OK]
                   </button>
                 )}
                 <span style={styles.expandIcon}>
@@ -246,6 +248,17 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '15px',
     marginBottom: '15px',
     transition: 'border-color 0.3s ease',
+  },
+  containerFull: {
+    background: '#111',
+    border: '2px solid',
+    borderRadius: '8px',
+    padding: '15px',
+    transition: 'border-color 0.3s ease',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    overflow: 'hidden',
   },
   header: {
     display: 'flex',
@@ -323,6 +336,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '8px',
     maxHeight: '300px',
     overflowY: 'auto',
+  },
+  alertListFull: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    flex: 1,
+    overflowY: 'auto',
+    minHeight: 0, // Important for flex child scrolling
   },
   alert: {
     background: '#1a1a1a',

@@ -11,8 +11,9 @@
  */
 
 import { MemoryNode, MemoryType, MemorySearchResult } from '../types';
-import { logger } from './logger';
+
 import { VECTOR_DB } from '../constants/config';
+import { logger } from './logger';
 
 // Embedding types
 export type EmbeddingBackend = 'transformers' | 'api' | 'local' | 'hash';
@@ -58,6 +59,10 @@ export class VectorDB {
   private vectorCache: Map<string, VectorRecord> = new Map();
   private embeddingCache: Map<string, EmbeddingCacheEntry> = new Map();
   private isInitialized = false;
+  
+  public get initialized(): boolean {
+    return this.isInitialized;
+  }
   private isInitializing = false;
   private initCallbacks: ((success: boolean) => void)[] = [];
   
@@ -98,20 +103,16 @@ export class VectorDB {
     logger.log('VECTOR_DB', 'Initializing vector database...', 'info');
 
     try {
-      // Initialize embedding backend with timeout
-      const embedderPromise = this.initializeEmbedder();
-      const embedderTimeout = new Promise<void>((resolve) => {
-        setTimeout(() => {
-          logger.log('VECTOR_DB', 'Embedder initialization timed out, using fallback', 'warning');
-          this.embeddingBackend = 'hash';
-          this.embedder = null;
-          resolve();
-        }, 10000); // 10 second timeout
-      });
-      await Promise.race([embedderPromise, embedderTimeout]);
+      // Initialize embedding backend (has internal 8s timeout)
+      await this.initializeEmbedder();
       
-      // Initialize IndexedDB
-      await this.initializeIndexedDB();
+      // Initialize IndexedDB (with error handling)
+      try {
+        await this.initializeIndexedDB();
+      } catch (dbError) {
+        logger.log('VECTOR_DB', 'IndexedDB failed, using memory-only mode', 'warning');
+        this.db = null;
+      }
       
       // Rebuild HNSW index from stored vectors
       await this.rebuildIndex();
@@ -151,7 +152,9 @@ export class VectorDB {
     // Try API embeddings first if configured
     if (this.apiEmbeddingUrl && this.apiEmbeddingKey) {
       try {
-        // Test the API
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        
         const testResponse = await fetch(this.apiEmbeddingUrl, {
           method: 'POST',
           headers: {
@@ -161,8 +164,11 @@ export class VectorDB {
           body: JSON.stringify({
             input: 'test',
             model: 'text-embedding-ada-002'
-          })
+          }),
+          signal: controller.signal
         });
+        
+        clearTimeout(timeout);
         
         if (testResponse.ok) {
           this.embeddingBackend = 'api';
@@ -174,32 +180,14 @@ export class VectorDB {
       }
     }
 
-    // Try Transformers.js
+    // Try Transformers.js with a strict timeout
     try {
-      const transformers = await import('@xenova/transformers');
+      const transformersPromise = this.loadTransformersJs();
+      const timeoutPromise = new Promise<void>((_, reject) => {
+        setTimeout(() => reject(new Error('Transformers.js loading timeout')), 8000);
+      });
       
-      // Set cache directory to avoid CORS issues
-      transformers.env.cacheDir = '/models';
-      transformers.env.allowLocalModels = true;
-      transformers.env.allowRemoteModels = true;
-      
-      this.embedder = await transformers.pipeline(
-        'feature-extraction', 
-        'Xenova/all-MiniLM-L6-v2',
-        {
-          quantized: true,
-          revision: 'main',
-          // Use a more reliable loading approach
-          progress_callback: (progress: any) => {
-            if (progress.status === 'progress') {
-              logger.log('VECTOR_DB', `Loading model: ${Math.round(progress.progress)}%`, 'info');
-            }
-          }
-        }
-      );
-      
-      this.embeddingBackend = 'transformers';
-      logger.log('VECTOR_DB', 'Using Transformers.js embeddings', 'success');
+      await Promise.race([transformersPromise, timeoutPromise]);
       return;
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -213,14 +201,54 @@ export class VectorDB {
   }
 
   /**
+   * Load Transformers.js with proper timeout handling
+   */
+  private async loadTransformersJs(): Promise<void> {
+    const transformers = await import('@xenova/transformers');
+    
+    // Set cache directory to avoid CORS issues
+    transformers.env.cacheDir = '/models';
+    transformers.env.allowLocalModels = true;
+    // Enable remote models with local fallback - required for first-time model download
+    transformers.env.allowRemoteModels = true;
+    
+    this.embedder = await transformers.pipeline(
+      'feature-extraction', 
+      'Xenova/all-MiniLM-L6-v2',
+      {
+        quantized: true,
+        revision: 'main',
+        progress_callback: (progress: any) => {
+          if (progress.status === 'progress') {
+            logger.log('VECTOR_DB', `Loading model: ${Math.round(progress.progress)}%`, 'info');
+          }
+        }
+      }
+    );
+    
+    this.embeddingBackend = 'transformers';
+    logger.log('VECTOR_DB', 'Using Transformers.js embeddings', 'success');
+  }
+
+  /**
    * Initialize IndexedDB
    */
   private initializeIndexedDB(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Set a timeout for IndexedDB operations
+      const timeout = setTimeout(() => {
+        reject(new Error('IndexedDB initialization timeout'));
+      }, 5000);
+      
       const request = indexedDB.open(VECTOR_DB.DB_NAME, VECTOR_DB.DB_VERSION);
 
-      request.onerror = () => reject(new Error('Failed to open IndexedDB'));
+      request.onerror = () => {
+        clearTimeout(timeout);
+        reject(new Error('Failed to open IndexedDB'));
+      };
+      
       request.onsuccess = () => {
+        clearTimeout(timeout);
         this.db = request.result;
         resolve();
       };
@@ -813,14 +841,32 @@ export class VectorDB {
   }
 
   private async rebuildIndex(): Promise<void> {
-    const vectors = await this.getAll();
-
-    for (const record of vectors) {
-      this.vectorCache.set(record.id, record);
-      this.addToHNSW(record.id, record.vector);
+    // Don't use getAll() here - it requires initialization to be complete
+    // which causes a deadlock during initialization
+    if (!this.db) {
+      logger.log('VECTOR_DB', 'No IndexedDB available, skipping index rebuild', 'info');
+      return;
     }
 
-    logger.log('VECTOR_DB', `Rebuilt index with ${vectors.length} vectors`, 'info');
+    try {
+      const vectors = await new Promise<VectorRecord[]>((resolve, reject) => {
+        const transaction = this.db!.transaction([VECTOR_DB.STORE_NAME], 'readonly');
+        const store = transaction.objectStore(VECTOR_DB.STORE_NAME);
+        const request = store.getAll();
+
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(new Error('Failed to get all vectors'));
+      });
+
+      for (const record of vectors) {
+        this.vectorCache.set(record.id, record);
+        this.addToHNSW(record.id, record.vector);
+      }
+
+      logger.log('VECTOR_DB', `Rebuilt index with ${vectors.length} vectors`, 'info');
+    } catch (error) {
+      logger.log('VECTOR_DB', 'Failed to rebuild index, continuing with empty index', 'warning');
+    }
   }
 
   // ==================== HNSW INDEX ====================

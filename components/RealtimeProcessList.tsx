@@ -11,11 +11,13 @@ import { ProcessInfo, formatBytes, formatUptime } from '../services/coreOs';
 interface RealtimeProcessListProps {
   maxProcesses?: number;
   autoRefresh?: boolean;
+  fullHeight?: boolean; // When true, fill available space with scrolling
 }
 
 export const RealtimeProcessList: React.FC<RealtimeProcessListProps> = ({
   maxProcesses = 20,
   autoRefresh = true,
+  fullHeight = false,
 }) => {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [sortBy, setSortBy] = useState<'cpu' | 'memory' | 'name' | 'pid'>('cpu');
@@ -33,7 +35,9 @@ export const RealtimeProcessList: React.FC<RealtimeProcessListProps> = ({
 
   // Subscribe to process updates
   useEffect(() => {
+    console.log('[RealtimeProcessList] Subscribing to metrics...');
     const unsubscribe = realtimeMetrics.subscribe((data) => {
+      console.log('[RealtimeProcessList] Received data:', data.type, 'processes:', data.processes?.length);
       if (data.type === 'metrics:update' && data.processes) {
         setProcesses(data.processes);
         setLastUpdate(new Date());
@@ -103,10 +107,10 @@ export const RealtimeProcessList: React.FC<RealtimeProcessListProps> = ({
   const displayProcesses = sortedProcesses();
 
   return (
-    <div style={styles.container}>
+    <div style={fullHeight ? styles.containerFull : styles.container}>
       <div style={styles.header}>
         <div style={styles.titleRow}>
-          <span style={styles.title}>⚙️ Processes ({processes.length})</span>
+          <span style={styles.title}>[PROCS] Processes ({processes.length})</span>
           <span style={styles.timestamp}>
             Updated: {lastUpdate.toLocaleTimeString()}
           </span>
@@ -124,12 +128,12 @@ export const RealtimeProcessList: React.FC<RealtimeProcessListProps> = ({
             onClick={() => realtimeMetrics.isRunning() ? realtimeMetrics.stop() : realtimeMetrics.start()}
             style={realtimeMetrics.isRunning() ? styles.stopBtn : styles.startBtn}
           >
-            {realtimeMetrics.isRunning() ? '⏹️ Stop' : '▶️ Start'}
+            {realtimeMetrics.isRunning() ? '[STOP]' : '[START]'}
           </button>
         </div>
       </div>
 
-      <div style={styles.tableContainer}>
+      <div style={fullHeight ? styles.tableContainerFull : styles.tableContainer}>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -172,15 +176,15 @@ export const RealtimeProcessList: React.FC<RealtimeProcessListProps> = ({
                 </td>
                 <td style={styles.td}>
                   <div style={styles.barContainer}>
-                    <span style={styles.barValue}>{proc.cpu.toFixed(1)}%</span>
+                    <span style={styles.barValue}>{(proc.cpu ?? 0).toFixed(1)}%</span>
                     <div style={{
                       ...styles.bar,
-                      width: `${Math.min(proc.cpu, 100)}%`,
-                      backgroundColor: proc.cpu > 50 ? '#ff4444' : proc.cpu > 20 ? '#ffcc00' : '#00ff88',
+                      width: `${Math.min(proc.cpu ?? 0, 100)}%`,
+                      backgroundColor: (proc.cpu ?? 0) > 50 ? '#ff4444' : (proc.cpu ?? 0) > 20 ? '#ffcc00' : '#00ff88',
                     }} />
                   </div>
                 </td>
-                <td style={styles.td}>{formatBytes(proc.memory)}</td>
+                <td style={styles.td}>{formatBytes(proc.memory ?? 0)}</td>
                 <td style={styles.td}>{formatUptime(proc.uptime || 0)}</td>
                 <td style={styles.td}>
                   {proc.pid >= 10000 && ( // Only show kill for virtual processes
@@ -200,18 +204,18 @@ export const RealtimeProcessList: React.FC<RealtimeProcessListProps> = ({
         
         {displayProcesses.length === 0 && (
           <div style={styles.emptyState}>
-            {filter ? 'No processes match your filter.' : 'No processes running.'}
+            {filter ? 'No processes match your filter.' : 'No active processes. The system is idle or operations complete too quickly to track.'}
           </div>
         )}
       </div>
 
       <div style={styles.footer}>
         <span style={styles.legend}>
-          <span style={styles.legendItem}>🟢 Running</span>
-          <span style={styles.legendItem}>⚪ Sleeping</span>
-          <span style={styles.legendItem}>🔴 Stopped</span>
-          <span style={styles.legendItem}>🟡 System (PID &lt; 1000)</span>
-          <span style={styles.legendItem}>🟣 Virtual (PID ≥ 10000)</span>
+          <span style={styles.legendItem}>[RUN] Running</span>
+          <span style={styles.legendItem}>[SLEEP] Sleeping</span>
+          <span style={styles.legendItem}>[STOP] Stopped</span>
+          <span style={styles.legendItem}>[SYS] System (PID &lt; 1000)</span>
+          <span style={styles.legendItem}>[VIRT] Virtual (PID ≥ 10000)</span>
         </span>
       </div>
     </div>
@@ -238,6 +242,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '8px',
     padding: '15px',
     marginBottom: '15px',
+  },
+  containerFull: {
+    background: '#111',
+    border: '1px solid #333',
+    borderRadius: '8px',
+    padding: '15px',
+    display: 'flex',
+    flexDirection: 'column',
+    height: '100%',
+    overflow: 'hidden',
   },
   header: {
     marginBottom: '15px',
@@ -294,6 +308,12 @@ const styles: Record<string, React.CSSProperties> = {
     overflowX: 'auto',
     maxHeight: '400px',
     overflowY: 'auto',
+  },
+  tableContainerFull: {
+    overflowX: 'auto',
+    overflowY: 'auto',
+    flex: 1,
+    minHeight: 0, // Important for flex child scrolling
   },
   table: {
     width: '100%',

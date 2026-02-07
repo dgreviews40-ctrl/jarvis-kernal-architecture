@@ -74,6 +74,8 @@ class EventBus {
     this.subscriptions.set(channel, existing);
     this.updateStats();
 
+    console.log(`[EventBus] Subscribed to '${channel}' (${existing.length} total subscribers)`);
+
     return () => this.unsubscribe(subscription.id);
   }
 
@@ -110,6 +112,8 @@ class EventBus {
       correlationId: options.correlationId
     };
 
+
+
     // Store in history
     this.history.unshift(event);
     if (this.history.length > this.maxHistorySize) {
@@ -134,6 +138,8 @@ class EventBus {
         handlers.push(...subs);
       }
     }
+
+
 
     // Execute handlers by priority
     const priorityOrder: EventPriority[] = ['critical', 'high', 'normal', 'low'];

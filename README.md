@@ -266,14 +266,15 @@ jarvis-kernel-architect/
 
 | Chunk | Size (gzipped) | Description |
 |-------|----------------|-------------|
-| index | 92 KB | Main application |
-| feature-voice | 62 KB | Voice services |
-| feature-intelligence | 2 KB | AI/ML (consolidated) |
-| vendor-icons | 10 KB | Icons |
-| vendor-react | 1.5 KB | React |
+| index | 363 KB | Main application |
+| feature-voice | 93 KB | Voice services |
+| feature-intelligence | 13 KB | AI/ML (consolidated) |
+| feature-vision | 5 KB | Vision services |
+| vendor-icons | 17 KB | Icons |
+| vendor-react | 3 KB | React |
 | vendor-zustand | 0.4 KB | Zustand |
 
-**Total initial load:** ~92 KB (down from 214 KB)
+**Total initial load:** ~363 KB (main chunk)
 > Note: Bundle sizes are approximate and may vary with build configuration.
 
 ## Voice Setup (Piper TTS)

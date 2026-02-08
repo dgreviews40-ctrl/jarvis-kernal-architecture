@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Roadmap
+- **[v1.5.1] WebGL Neural Networks** - Client-side AI inference
+  - WebGPU/WebGL compute shaders for neural network execution
+  - Hardware detection and automatic backend selection
+  - Tensor service with lazy evaluation and memory pooling
+  - ONNX Runtime Web integration for model inference
+  - KV-cache management for efficient context windows
+  - **Features:** Smart Reply, Semantic Search, Code Assistant, Vision
+  - **Target Models:** Phi-3 Mini, MobileCLIP, all-MiniLM, TinyLlama
+  - **Privacy:** Zero data transmission, on-device only
+  - See: `docs/roadmaps/v1.5.1-webgl-neural-networks.md`
+
 ### Added
 - **Real-Time System Dashboard** - Live monitoring dashboard with:
   - Real-time CPU and Memory usage charts with 2-minute history

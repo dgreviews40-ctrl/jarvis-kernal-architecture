@@ -8,16 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Roadmap
-- **[v1.5.1] WebGL Neural Networks** - Client-side AI inference
-  - WebGPU/WebGL compute shaders for neural network execution
-  - Hardware detection and automatic backend selection
-  - Tensor service with lazy evaluation and memory pooling
-  - ONNX Runtime Web integration for model inference
-  - KV-cache management for efficient context windows
-  - **Features:** Smart Reply, Semantic Search, Code Assistant, Vision
-  - **Target Models:** Phi-3 Mini, MobileCLIP, all-MiniLM, TinyLlama
-  - **Privacy:** Zero data transmission, on-device only
-  - See: `docs/roadmaps/v1.5.1-webgl-neural-networks.md`
+- **[v1.5.1] Native Desktop AI** - Full hardware utilization
+  - **Architecture:** Tauri + Rust native app (replaces browser limitations)
+  - **GPU:** Direct CUDA bindings for GTX 1080 Ti 11GB
+  - **LLM:** llama.cpp integration (Llama 3.1 70B, Mixtral 8x7B, CodeLlama 34B)
+  - **Voice:** Local Whisper.cpp (no cloud, Ryzen 5 CPU)
+  - **Vision:** LLaVA 34B multi-modal understanding
+  - **Memory:** Vector DB using 32GB RAM (1M+ document RAG)
+  - **Monitoring:** Real-time GPU temps, VRAM, power draw
+  - **Features:** Hot model swapping, concurrent AI agents, voice cloning
+  - **Performance:** 10 tok/s (70B), 45 tok/s (8B), 128K context window
+  - **Privacy:** 100% offline capable, zero data transmission
+  - See: `docs/roadmaps/v1.5.1-native-desktop-ai.md`
 
 ### Added
 - **Real-Time System Dashboard** - Live monitoring dashboard with:

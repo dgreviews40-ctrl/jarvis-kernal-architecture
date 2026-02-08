@@ -97,6 +97,14 @@ npm run dev
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Real Implementation
+
+For the actual architecture (how browser UI talks to Ollama/Whisper/Piper on your hardware):
+
+📄 **[docs/ARCHITECTURE_REAL.md](docs/ARCHITECTURE_REAL.md)** - Real system design  
+📄 **[docs/HARDWARE_GUIDE.md](docs/HARDWARE_GUIDE.md)** - Optimize for your GPU  
+📄 **[docs/SERVICES_OVERVIEW.md](docs/SERVICES_OVERVIEW.md)** - All services explained
+
 ### System Core (core.os v1.2.0)
 
 The System Core plugin provides low-level system monitoring, predictive analytics, and automated alerting:

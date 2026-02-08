@@ -8,18 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Roadmap
-- **[v1.5.1] Native Desktop AI** - Full hardware utilization
-  - **Architecture:** Tauri + Rust native app (replaces browser limitations)
-  - **GPU:** Direct CUDA bindings for GTX 1080 Ti 11GB
-  - **LLM:** llama.cpp integration (Llama 3.1 70B, Mixtral 8x7B, CodeLlama 34B)
-  - **Voice:** Local Whisper.cpp (no cloud, Ryzen 5 CPU)
-  - **Vision:** LLaVA 34B multi-modal understanding
-  - **Memory:** Vector DB using 32GB RAM (1M+ document RAG)
-  - **Monitoring:** Real-time GPU temps, VRAM, power draw
-  - **Features:** Hot model swapping, concurrent AI agents, voice cloning
-  - **Performance:** 10 tok/s (70B), 45 tok/s (8B), 128K context window
-  - **Privacy:** 100% offline capable, zero data transmission
-  - See: `docs/roadmaps/v1.5.1-native-desktop-ai.md`
+- **[v1.5.1] Realistic Hardware Optimizations** - Actual improvements for your setup
+  - **Embedding Server** - Python/CUDA embeddings (10x faster than browser)
+  - **Model Manager** - Smart preloading, quick model switching (<2s)
+  - **Hardware Dashboard** - Real-time GPU monitoring (temps, VRAM, usage)
+  - **Vision Pipeline** - Better video/image processing with llava
+  - **LoRA Personalization** - Small fine-tuning on your 1080 Ti
+  - **KV-Cache** - Persist system prompt processing (if Ollama exposes it)
+  - **Targets:** 7B-13B models (what actually fits in 11GB VRAM)
+  - See: `docs/roadmaps/v1.5.1-realistic-improvements.md`
 
 ### Added
 - **Real-Time System Dashboard** - Live monitoring dashboard with:

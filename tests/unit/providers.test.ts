@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { OllamaProvider } from '../services/providers';
-import { AIProvider } from '../types';
+import { OllamaProvider } from '../../services/providers';
+import { AIProvider } from '../../types';
 
 describe('OllamaProvider', () => {
   let provider: OllamaProvider;

@@ -1,6 +1,6 @@
 /**
- * core.os v1.2.0 - System Core Service
- * Enhanced with real-time system metrics, hardware monitoring, and predictive analytics
+ * core.os v1.2.1 - System Core Service
+ * Enhanced with real-time system metrics, process management, hardware monitoring, and predictive analytics
  */
 
 import { registry } from './registry';
@@ -173,7 +173,7 @@ export function getSystemMetrics(): SystemMetrics {
       external: memUsage.external,
     },
     cpu: {
-      usagePercent: getCPUUsage(),
+      usagePercent: getCPUUsage() ?? 0,
       loadAvg: process.platform !== 'win32' ? require('os').loadavg() : [0, 0, 0],
       supported: process.platform !== 'win32',
     },
@@ -734,7 +734,7 @@ export async function getProcessList(filter?: ProcessFilter): Promise<ProcessInf
       pid: process.pid || 0,
       name: 'jarvis-kernel',
       status: 'running',
-      cpu: getCPUUsage(),
+      cpu: getCPUUsage() ?? 0,
       memory: process.memoryUsage().rss,
       uptime: process.uptime(),
       timestamp: now,
@@ -746,7 +746,7 @@ export async function getProcessList(filter?: ProcessFilter): Promise<ProcessInf
       pid: 1,
       name: 'jarvis-kernel',
       status: 'running',
-      cpu: getCPUUsage(),
+      cpu: getCPUUsage() ?? 0,
       memory: performance && (performance as any).memory ? (performance as any).memory.usedJSHeapSize : 0,
       uptime: (now - systemStartTime) / 1000,
       timestamp: now,

@@ -67,7 +67,7 @@ export class CacheService {
       logger.log('SYSTEM', `Cached key: ${key}, TTL: ${ttl}ms`, 'info');
       return true;
     } catch (error) {
-      logger.log('SYSTEM', `Failed to cache key ${key}: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Failed to cache key ${key}: ${(error as Error).message}`, 'error');
       return false;
     }
   }
@@ -85,7 +85,9 @@ export class CacheService {
       }
 
       // Check if entry is expired
-      if (Date.now() - entry.timestamp > entry.ttl) {
+      // Zero TTL: expires if any time has passed (Date.now() > timestamp)
+      // Positive TTL: expires if elapsed time >= TTL
+      if ((entry.ttl === 0 && Date.now() > entry.timestamp) || (entry.ttl > 0 && Date.now() - entry.timestamp >= entry.ttl)) {
         this.delete(key);
         logger.log('SYSTEM', `Cache entry expired for key: ${key}`, 'info');
         return null;
@@ -94,7 +96,7 @@ export class CacheService {
       logger.log('SYSTEM', `Cache hit for key: ${key}`, 'info');
       return entry.value as T;
     } catch (error) {
-      logger.log('SYSTEM', `Error retrieving key ${key}: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Error retrieving key ${key}: ${(error as Error).message}`, 'error');
       return null;
     }
   }
@@ -107,7 +109,9 @@ export class CacheService {
     if (!entry) return false;
 
     // Check if entry is expired
-    if (Date.now() - entry.timestamp > entry.ttl) {
+    // Zero TTL: expires if any time has passed (Date.now() > timestamp)
+    // Positive TTL: expires if elapsed time >= TTL
+    if ((entry.ttl === 0 && Date.now() > entry.timestamp) || (entry.ttl > 0 && Date.now() - entry.timestamp >= entry.ttl)) {
       this.delete(key);
       return false;
     }
@@ -205,7 +209,9 @@ export class CacheService {
     let cleanedCount = 0;
 
     for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.timestamp > entry.ttl) {
+      // Zero TTL: expires if any time has passed (now > timestamp)
+      // Positive TTL: expires if elapsed time >= TTL
+      if ((entry.ttl === 0 && now > entry.timestamp) || (entry.ttl > 0 && now - entry.timestamp >= entry.ttl)) {
         this.cache.delete(key);
         this.currentSize--;
         cleanedCount++;
@@ -278,7 +284,7 @@ export class CacheService {
       this.set(key, freshValue, ttl, tags);
       return freshValue;
     } catch (error) {
-      logger.log('SYSTEM', `Failed to fetch and cache key ${key}: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Failed to fetch and cache key ${key}: ${(error as Error).message}`, 'error');
       throw error;
     }
   }

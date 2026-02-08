@@ -4,6 +4,7 @@
  * Tests for toast notification functionality
  */
 
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { notificationService, NotificationOptions } from '../../services/notificationService';
 
 describe('NotificationService', () => {
@@ -165,9 +166,9 @@ describe('NotificationService', () => {
 
   describe('subscribe', () => {
     it('should call listener with current notifications', () => {
+      const listener = vi.fn();
       notificationService.show({ message: 'Test' });
       
-      const listener = jest.fn();
       notificationService.subscribe(listener);
       
       expect(listener).toHaveBeenCalledWith(
@@ -178,7 +179,7 @@ describe('NotificationService', () => {
     });
 
     it('should call listener on changes', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       notificationService.subscribe(listener);
       listener.mockClear();
       
@@ -188,7 +189,7 @@ describe('NotificationService', () => {
     });
 
     it('should return unsubscribe function', () => {
-      const listener = jest.fn();
+      const listener = vi.fn();
       const unsubscribe = notificationService.subscribe(listener);
       
       unsubscribe();
@@ -231,7 +232,7 @@ describe('NotificationService', () => {
 
   describe('actions', () => {
     it('should include actions in notification', () => {
-      const actionFn = jest.fn();
+      const actionFn = vi.fn();
       
       notificationService.show({
         message: 'Test',
@@ -241,6 +242,7 @@ describe('NotificationService', () => {
       });
       
       const notification = notificationService.getNotifications()[0];
+      expect(notification.actions).toBeDefined();
       expect(notification.actions).toHaveLength(1);
       expect(notification.actions![0].label).toBe('Action');
     });

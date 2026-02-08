@@ -4,6 +4,7 @@
  * Tests for performance monitoring functionality
  */
 
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { 
   performanceMonitor, 
   useRenderTime 
@@ -25,10 +26,9 @@ describe('PerformanceMonitor', () => {
 
     it('should not initialize twice', () => {
       performanceMonitor.init();
-      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-      performanceMonitor.init();
-      // Should not log initialization message twice
-      consoleSpy.mockRestore();
+      // init() should be idempotent - calling twice shouldn't cause errors
+      // or create duplicate intervals
+      expect(() => performanceMonitor.init()).not.toThrow();
     });
   });
 

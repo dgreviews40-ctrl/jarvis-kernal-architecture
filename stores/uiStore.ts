@@ -3,7 +3,7 @@
  * 
  * Manages UI-related state:
  * - View modes (DASHBOARD, SETTINGS, DEV, INTEGRATIONS)
- * - Active tabs (DASHBOARD, ARCH, MEMORY, VISION, HEALTH, GRAPH, LOGS)
+ * - Active tabs (DASHBOARD, ARCH, MEMORY, VISION, HEALTH, GRAPH, LOGS, HOME_ASSISTANT, WEATHER, AGENT)
  * - Modal visibility
  * - System ready state
  */

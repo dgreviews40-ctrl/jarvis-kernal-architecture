@@ -176,7 +176,7 @@ const setVoiceState = useKernelStore((s) => s.setVoiceState);
 
 ### Intelligence System (Consolidated)
 
-Previously 6 separate services, now consolidated into 3:
+Previously 9 separate services, now consolidated into 3:
 
 | New Service | Consolidated From | Responsibility |
 |-------------|-------------------|----------------|
@@ -274,6 +274,7 @@ jarvis-kernel-architect/
 | vendor-zustand | 0.4 KB | Zustand |
 
 **Total initial load:** ~92 KB (down from 214 KB)
+> Note: Bundle sizes are approximate and may vary with build configuration.
 
 ## Voice Setup (Piper TTS)
 
@@ -344,6 +345,21 @@ See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for detailed architecture dec
 - ADR-002: Intelligence Service Consolidation
 - ADR-003: Plugin System v2 Architecture
 - ADR-004: Code Splitting Strategy
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/STORES.md](./docs/STORES.md) | State management with Zustand |
+| [docs/ERROR_HANDLING.md](./docs/ERROR_HANDLING.md) | Error handling and retry strategies |
+| [docs/CIRCUIT_BREAKER.md](./docs/CIRCUIT_BREAKER.md) | Circuit breaker pattern |
+| [docs/ENHANCED_TTS.md](./docs/ENHANCED_TTS.md) | Enhanced TTS with natural speech |
+| [docs/AGENT_ORCHESTRATOR.md](./docs/AGENT_ORCHESTRATOR.md) | Autonomous task execution |
+| [docs/TESTING.md](./docs/TESTING.md) | Testing guide (unit, integration, performance) |
+| [docs/SEARCH_SERVICE.md](./docs/SEARCH_SERVICE.md) | Web search integration |
+| [docs/SERVICES_OVERVIEW.md](./docs/SERVICES_OVERVIEW.md) | Complete service index (91 services) |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Architecture decision records |
+| [docs/VOICE.md](./docs/VOICE.md) | Voice setup and configuration |
 
 ## License
 

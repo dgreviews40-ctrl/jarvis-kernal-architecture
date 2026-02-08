@@ -253,7 +253,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [x] Performance metrics
 - [x] Predictive analytics
 - [x] System alerts
-- [x] Process list and management (v1.2.1)
+
+### core.os v1.2.1 (Completed) ✅
+- [x] Process list and management
 
 ### core.os v1.3.0 (Planned)
 - [ ] CPU temperature monitoring (node-systeminformation)

@@ -78,7 +78,11 @@ export interface LogEntry {
     // v1.1+ Additional sources
     'FILE_GENERATOR' | 'VECTOR_DB' | 'CONTEXT_WINDOW' | 'INTELLIGENCE' | 'DISPLAY' | 'WEATHER' | 'PIPER' | 'TIMER' |
     'ERROR_HANDLER' | 'NOTIFICATION' | 'GLOBAL' | 'PLUGIN_LOADER' | 'VECTOR_MEMORY' | 'STREAMING' | 'CORE_OS' | 'BOOT' |
-    'IMAGE_GENERATOR' | 'SUGGESTION' | 'PREDICTION' | 'ANALYTICS' | 'MIGRATION' | 'LEARNING' | 'SEARCH' | 'QUERY';
+    'IMAGE_GENERATOR' | 'SUGGESTION' | 'PREDICTION' | 'ANALYTICS' | 'MIGRATION' | 'LEARNING' | 'SEARCH' | 'QUERY' |
+    // v1.5+ Offline Queue
+    'QUEUE' |
+    // v1.5.1+ Hardware
+    'GPU_MONITOR' | 'MODEL_MANAGER' | 'GPU_DASHBOARD';
   message: string;
   details?: Record<string, unknown> | string | number | boolean | object;
   type: 'info' | 'success' | 'warning' | 'error';
@@ -161,7 +165,13 @@ export interface MemoryNode {
   tags: string[];
   created: number;
   lastAccessed?: number;
-  relevanceScore?: number; 
+  relevanceScore?: number;
+  /** Whether this node's content is compressed */
+  compressed?: boolean;
+  /** Original content size in bytes (when compressed) */
+  originalSize?: number;
+  /** Compressed content size in bytes */
+  compressedSize?: number;
 }
 
 export interface MemorySearchResult {
@@ -309,7 +319,7 @@ export interface OperationalEvent {
     alertType?: string;
     healthScore?: number;
     pluginErrors?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -510,7 +520,98 @@ declare global {
     env?: {
       DEV?: boolean;
       PROD?: boolean;
-      [key: string]: any;
+      [key: string]: unknown;
+    };
+  }
+}
+
+// ============================================
+// Offline Queue Types - v1.5
+// ============================================
+
+export type QueuedOperationType = 
+  | 'AI_REQUEST' 
+  | 'INTENT_CLASSIFICATION' 
+  | 'STREAMING_REQUEST' 
+  | 'MEMORY_SYNC'
+  | 'PLUGIN_NETWORK_CALL';
+
+export type OperationPriority = 'HIGH' | 'NORMAL' | 'LOW';
+export type OperationStatus = 'PENDING' | 'PROCESSING' | 'FAILED' | 'COMPLETED' | 'CANCELLED';
+
+export interface QueuedOperation {
+  id: string;
+  type: QueuedOperationType;
+  payload: unknown;
+  timestamp: number;
+  retryCount: number;
+  maxRetries: number;
+  priority: OperationPriority;
+  status: OperationStatus;
+  error?: string;
+  lastAttempt?: number;
+  nextRetryAt?: number;
+  context?: {
+    conversationId?: string;
+    requestId?: string;
+    userInput?: string;
+  };
+}
+
+export interface QueueStats {
+  total: number;
+  pending: number;
+  processing: number;
+  failed: number;
+  completed: number;
+  isOnline: boolean;
+  isProcessing: boolean;
+  estimatedCompletionTime?: number;
+}
+
+export interface QueueOptions {
+  maxRetries?: number;
+  baseRetryDelayMs?: number;
+  maxRetryDelayMs?: number;
+  retryJitter?: boolean;
+  processIntervalMs?: number;
+  maxConcurrent?: number;
+}
+
+export interface ResilientAIOptions {
+  queueWhenOffline?: boolean;
+  priority?: OperationPriority;
+  context?: {
+    conversationId?: string;
+    requestId?: string;
+    userInput?: string;
+  };
+  notifyUser?: boolean;
+}
+
+// Extend global window interface for speech recognition and audio context
+declare global {
+  interface Window {
+    SpeechRecognition: {
+      new(): SpeechRecognition;
+    };
+    webkitSpeechRecognition: {
+      new(): SpeechRecognition;
+    };
+    AudioContext: {
+      new(options?: AudioContextOptions): AudioContext;
+    };
+    webkitAudioContext: {
+      new(options?: AudioContextOptions): AudioContext;
+    };
+  }
+  
+  // Extend ImportMeta for env access
+  interface ImportMeta {
+    env?: {
+      DEV?: boolean;
+      PROD?: boolean;
+      [key: string]: unknown;
     };
   }
 }

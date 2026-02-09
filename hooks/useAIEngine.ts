@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useState, useEffect, useRef } from 'react';
-import { AIProvider } from '../types';
+import { AIProvider, ProcessorState } from '../types';
 import { enhancedKernelProcessor } from '../services/enhancedKernelProcessor';
 import { streamingHandler } from '../services/streaming';
 import { conversationPersistence } from '../services/conversationPersistence';
@@ -56,7 +56,7 @@ export function useAIEngine(options: UseAIEngineOptions = {}): UseAIEngineReturn
   const isStreaming = useKernelStore((state) => state.isStreaming);
   const forcedMode = useKernelStore((state) => state.forcedMode);
   
-  const setState = useCallback((state: any) => {
+  const setState = useCallback((state: ProcessorState) => {
     setKernelProcessorState(state);
   }, []);
   

@@ -1,28 +1,66 @@
 /**
- * Global Error Handler Service
+ * Global Error Handler Service v2
  * 
  * Centralized error handling with:
- * - Retry mechanisms with exponential backoff
- * - Error classification and prioritization
+ * - Structured error types (JARVISError hierarchy)
+ * - Smart retry mechanisms with error-specific strategies
  * - Graceful degradation
  * - User notifications
+ * - Error tracking and reporting
  */
 
 import { logger } from './logger';
 import { cortex } from './cortex';
 import { HealthEventType, ImpactLevel } from '../types';
+import {
+  JARVISError,
+  ErrorCode,
+  ErrorSeverity,
+  RetryStrategy,
+  classifyError,
+  calculateRetryDelay,
+  isRetryableError,
+  getRetryStrategy,
+  logError,
+  NetworkError,
+  TimeoutError,
+  AuthError,
+  QuotaError,
+  ValidationError
+} from './errorTypes';
 
-// Error classification
-export type ErrorCategory = 
-  | 'network'           // Network/connection errors
-  | 'timeout'           // Timeout errors
-  | 'auth'              // Authentication errors
-  | 'permission'        // Permission denied
-  | 'validation'        // Input validation
-  | 'runtime'           // Runtime JavaScript errors
-  | 'resource'          // Resource not found
-  | 'unknown';          // Unknown errors
+// Re-export error types for convenience
+export {
+  JARVISError,
+  ErrorCode,
+  ErrorSeverity,
+  NetworkError,
+  TimeoutError,
+  AuthError,
+  QuotaError,
+  ValidationError,
+  PluginError,
+  SecurityError,
+  classifyError,
+  calculateRetryDelay,
+  isRetryableError,
+  getRetryStrategy,
+  logError
+} from './errorTypes';
 
+/** Legacy error category - maintained for backward compatibility */
+export type ErrorCategory =
+  | 'network'
+  | 'timeout'
+  | 'auth'
+  | 'permission'
+  | 'validation'
+  | 'runtime'
+  | 'resource'
+  | 'quota'
+  | 'unknown';
+
+/** Operation context for error handling */
 export interface ErrorContext {
   operation: string;
   component?: string;
@@ -30,31 +68,31 @@ export interface ErrorContext {
   metadata?: Record<string, unknown>;
 }
 
-export interface RetryConfig {
-  maxAttempts: number;
-  baseDelay: number;
-  maxDelay: number;
-  backoffMultiplier: number;
-  retryableErrors: ErrorCategory[];
+/** Enhanced retry configuration */
+export interface RetryConfig extends RetryStrategy {
+  /** Custom error classifier */
+  errorClassifier?: (error: unknown) => JARVISError;
+  /** Called before each retry attempt */
+  onRetry?: (error: JARVISError, attempt: number, nextDelay: number) => void;
+  /** Called when all retries exhausted */
+  onFailed?: (error: JARVISError, attempts: number) => void;
 }
 
-const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxAttempts: 3,
-  baseDelay: 1000,
-  maxDelay: 10000,
-  backoffMultiplier: 2,
-  retryableErrors: ['network', 'timeout', 'resource']
+/** Default retry configuration (uses error-specific strategy) */
+export const DEFAULT_RETRY_CONFIG: Partial<RetryConfig> = {
+  useJitter: true
 };
 
-// Error state tracking
+/** Error state tracking */
 const errorCounts = new Map<string, number>();
 const errorTimestamps = new Map<string, number[]>();
 const degradedFeatures = new Set<string>();
 
 /**
- * Classify an error into a category
+ * Legacy error classifier - maps to ErrorCategory
+ * @deprecated Use classifyError() from errorTypes.ts instead
  */
-export function classifyError(error: Error): ErrorCategory {
+export function classifyErrorLegacy(error: Error): ErrorCategory {
   const message = error.message.toLowerCase();
   
   if (message.includes('network') || message.includes('fetch') || message.includes('connection')) {
@@ -75,6 +113,9 @@ export function classifyError(error: Error): ErrorCategory {
   if (message.includes('validation') || message.includes('invalid')) {
     return 'validation';
   }
+  if (message.includes('rate limit') || message.includes('quota')) {
+    return 'quota';
+  }
   if (message.includes('reference') || message.includes('undefined') || message.includes('null')) {
     return 'runtime';
   }
@@ -83,125 +124,207 @@ export function classifyError(error: Error): ErrorCategory {
 }
 
 /**
- * Check if an error is retryable
+ * Legacy retry check - maintained for backward compatibility
+ * @deprecated Use isRetryableError() from errorTypes.ts instead
  */
-export function isRetryable(error: Error, config: RetryConfig = DEFAULT_RETRY_CONFIG): boolean {
-  const category = classifyError(error);
-  return config.retryableErrors.includes(category);
+export function isRetryable(error: Error, config?: { retryableErrors?: ErrorCategory[] }): boolean {
+  const category = classifyErrorLegacy(error);
+  const retryableCategories = config?.retryableErrors || ['network', 'timeout', 'resource'];
+  return retryableCategories.includes(category);
 }
 
 /**
- * Calculate delay for retry attempt
+ * Legacy delay calculation - maintained for backward compatibility
+ * @deprecated Use calculateRetryDelay() from errorTypes.ts instead
  */
-export function calculateRetryDelay(attempt: number, config: RetryConfig = DEFAULT_RETRY_CONFIG): number {
-  const delay = config.baseDelay * Math.pow(config.backoffMultiplier, attempt - 1);
-  return Math.min(delay, config.maxDelay);
+export function calculateRetryDelayLegacy(
+  attempt: number,
+  config: { baseDelay?: number; maxDelay?: number; backoffMultiplier?: number } = {}
+): number {
+  const baseDelay = config.baseDelay ?? 1000;
+  const maxDelay = config.maxDelay ?? 10000;
+  const backoffMultiplier = config.backoffMultiplier ?? 2;
+  
+  const delay = baseDelay * Math.pow(backoffMultiplier, attempt - 1);
+  return Math.min(delay, maxDelay);
 }
 
 /**
- * Execute a function with retry logic
+ * Execute a function with intelligent retry logic based on error type
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
   context: ErrorContext,
   config: Partial<RetryConfig> = {}
 ): Promise<T> {
-  const fullConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
   const operationKey = `${context.component}:${context.operation}`;
-  
-  for (let attempt = 1; attempt <= fullConfig.maxAttempts; attempt++) {
-    try {
-      const result = await operation();
-      
-      // Clear error count on success
-      if (attempt > 1) {
-        errorCounts.delete(operationKey);
-        logger.info('ERROR_HANDLER', `${operationKey} succeeded after ${attempt} attempts`);
-      }
-      
-      return result;
-    } catch (error) {
-      const err = error as Error;
-      const category = classifyError(err);
-      
-      // Log the error
-      logger.warning('ERROR_HANDLER', `${operationKey} failed (attempt ${attempt}/${fullConfig.maxAttempts})`, {
-        error: err.message,
-        category,
-        attempt
-      });
-      
-      // Track error
-      trackError(operationKey, err);
-      
-      // Check if we should retry
-      if (attempt < fullConfig.maxAttempts && isRetryable(err, fullConfig)) {
-        const delay = calculateRetryDelay(attempt, fullConfig);
-        logger.info('ERROR_HANDLER', `Retrying ${operationKey} in ${delay}ms`);
-        await sleep(delay);
-      } else {
-        // Final attempt failed
-        handleFinalError(err, context);
-        throw error;
-      }
-    }
-  }
-  
-  throw new Error(`${operationKey} failed after ${fullConfig.maxAttempts} attempts`);
-}
+  let lastError: JARVISError | undefined;
+  let attempt = 0;
 
-/**
- * Execute a function with graceful degradation
- */
-export async function withDegradation<T>(
-  operation: () => Promise<T>,
-  fallback: T,
-  context: ErrorContext,
-  featureName: string
-): Promise<T> {
-  // Check if feature is already degraded
-  if (degradedFeatures.has(featureName)) {
-    logger.info('ERROR_HANDLER', `Using degraded mode for ${featureName}`);
-    return fallback;
-  }
-  
   try {
     return await operation();
   } catch (error) {
-    const err = error as Error;
-    
-    logger.error('ERROR_HANDLER', `${featureName} failed, degrading to fallback`, {
-      error: err.message,
-      context
-    });
-    
-    // Mark feature as degraded
-    degradedFeatures.add(featureName);
-    
-    // Report to cortex
-    cortex.reportEvent({
-      sourceId: context.component || 'unknown',
-      type: HealthEventType.ERROR,
-      impact: ImpactLevel.MEDIUM,
-      latencyMs: 0,
-      context: {
-        operation: context.operation,
-        error: err.message,
-        degradedFeature: featureName
+    // Classify the error
+    lastError = config.errorClassifier 
+      ? config.errorClassifier(error)
+      : classifyError(error, { operation: operationKey, ...context.metadata });
+
+    // Get retry strategy from error type, merged with config
+    const strategy: RetryStrategy = {
+      ...lastError.retryStrategy,
+      ...config
+    };
+
+    // If not retryable, fail fast
+    if (!strategy.retryable) {
+      logError(lastError, operationKey);
+      handleFinalError(lastError, context);
+      throw lastError;
+    }
+
+    // Attempt retries
+    for (attempt = 1; attempt <= strategy.maxAttempts; attempt++) {
+      const delay = calculateRetryDelay(lastError, attempt);
+      
+      if (delay < 0) {
+        break; // No more retries
       }
+
+      logger.warning('ERROR_HANDLER', `${operationKey} failed (attempt ${attempt}/${strategy.maxAttempts}), retrying in ${delay}ms`, {
+        error: lastError.message,
+        code: lastError.code,
+        isRetryable: true
+      });
+
+      // Callback before retry
+      config.onRetry?.(lastError, attempt, delay);
+
+      // Wait before retry
+      await sleep(delay);
+
+      try {
+        const result = await operation();
+        
+        // Success after retry
+        logger.info('ERROR_HANDLER', `${operationKey} succeeded after ${attempt} retry attempts`, {
+          code: lastError.code,
+          attempts: attempt
+        });
+        
+        // Clear error tracking
+        errorCounts.delete(operationKey);
+        
+        return result;
+      } catch (retryError) {
+        lastError = config.errorClassifier
+          ? config.errorClassifier(retryError)
+          : classifyError(retryError, { operation: operationKey, ...context.metadata });
+
+        // Track the error
+        trackError(operationKey, lastError);
+      }
+    }
+
+    // All retries exhausted
+    logError(lastError, operationKey);
+    config.onFailed?.(lastError, attempt);
+    handleFinalError(lastError, context);
+    throw lastError;
+  }
+}
+
+/**
+ * Execute a function with fallback on failure
+ */
+export async function withFallback<T>(
+  operation: () => Promise<T>,
+  fallback: T | (() => T | Promise<T>),
+  context: ErrorContext,
+  options?: {
+    featureName?: string;
+    logFailure?: boolean;
+  }
+): Promise<T> {
+  const featureName = options?.featureName || context.operation;
+
+  // Check if feature is already degraded
+  if (degradedFeatures.has(featureName)) {
+    logger.info('ERROR_HANDLER', `Using degraded mode for ${featureName}`);
+    return typeof fallback === 'function' ? await (fallback as () => Promise<T>)() : fallback;
+  }
+
+  try {
+    return await operation();
+  } catch (error) {
+    const jarvisError = classifyError(error, { 
+      operation: context.operation,
+      component: context.component 
     });
-    
-    // Notify user
-    notifyUser('warning', `${featureName} is running in limited mode. Some features may be unavailable.`);
-    
-    return fallback;
+
+    if (options?.logFailure !== false) {
+      logger.warning('ERROR_HANDLER', `${featureName} failed, using fallback`, {
+        error: jarvisError.message,
+        code: jarvisError.code,
+        severity: jarvisError.severity
+      });
+    }
+
+    // Mark feature as degraded if it's a persistent error
+    if (jarvisError.severity === ErrorSeverity.ERROR || jarvisError.severity === ErrorSeverity.FATAL) {
+      degradedFeatures.add(featureName);
+      
+      // Report to cortex
+      cortex.reportEvent({
+        sourceId: context.component || 'unknown',
+        type: HealthEventType.ERROR,
+        impact: jarvisError.severity === ErrorSeverity.FATAL ? ImpactLevel.HIGH : ImpactLevel.MEDIUM,
+        latencyMs: 0,
+        context: {
+          operation: context.operation,
+          error: jarvisError.message,
+          code: jarvisError.code,
+          degradedFeature: featureName
+        }
+      });
+
+      // Notify user for certain errors
+      if (jarvisError instanceof AuthError) {
+        notifyUser('error', 'Authentication failed. Please check your credentials.');
+      } else if (jarvisError instanceof NetworkError) {
+        notifyUser('warning', 'Network connection issue. Running in limited mode.');
+      } else if (jarvisError instanceof QuotaError) {
+        notifyUser('warning', 'API quota exceeded. Some features may be limited.');
+      }
+    }
+
+    return typeof fallback === 'function' ? await (fallback as () => Promise<T>)() : fallback;
+  }
+}
+
+/**
+ * Execute with both retry and fallback
+ */
+export async function withResilience<T>(
+  operation: () => Promise<T>,
+  fallback: T | (() => T | Promise<T>),
+  context: ErrorContext,
+  retryConfig?: Partial<RetryConfig>
+): Promise<T> {
+  try {
+    return await withRetry(operation, context, retryConfig);
+  } catch (error) {
+    return withFallback(
+      () => Promise.reject(error), // Already failed, this won't be called
+      fallback,
+      context
+    );
   }
 }
 
 /**
  * Track error for rate limiting and circuit breaking
  */
-function trackError(key: string, error: Error): void {
+function trackError(key: string, error: JARVISError): void {
   const now = Date.now();
   
   // Update error count
@@ -221,7 +344,8 @@ function trackError(key: string, error: Error): void {
   if (recentTimestamps.length >= 10) {
     logger.error('ERROR_HANDLER', `Error threshold exceeded for ${key}`, {
       errorCount: recentTimestamps.length,
-      timeWindow: '5 minutes'
+      timeWindow: '5 minutes',
+      lastError: error.code
     });
   }
 }
@@ -229,34 +353,28 @@ function trackError(key: string, error: Error): void {
 /**
  * Handle final error after all retries exhausted
  */
-function handleFinalError(error: Error, context: ErrorContext): void {
-  const category = classifyError(error);
-  
-  logger.error('ERROR_HANDLER', `Final error in ${context.operation}`, {
-    error: error.message,
-    category,
-    context
-  });
-  
+function handleFinalError(error: JARVISError, context: ErrorContext): void {
   // Report to cortex
   cortex.reportEvent({
     sourceId: context.component || 'unknown',
     type: HealthEventType.ERROR,
-    impact: category === 'runtime' ? ImpactLevel.HIGH : ImpactLevel.MEDIUM,
+    impact: error.severity === ErrorSeverity.FATAL ? ImpactLevel.HIGH : ImpactLevel.MEDIUM,
     latencyMs: 0,
     context: {
       operation: context.operation,
       error: error.message,
-      category,
-      userId: context.userId
+      code: error.code,
+      severity: error.severity,
+      userId: context.userId,
+      ...error.context
     }
   });
-  
+
   // Show user notification for certain errors
-  if (category === 'auth') {
-    notifyUser('error', 'Authentication failed. Please check your credentials.');
-  } else if (category === 'network') {
-    notifyUser('error', 'Network connection failed. Please check your internet connection.');
+  if (error instanceof AuthError) {
+    notifyUser('error', 'Authentication failed. Please check your API credentials in settings.');
+  } else if (error instanceof NetworkError && error.code === ErrorCode.SSL_CERTIFICATE_ERROR) {
+    notifyUser('error', 'SSL certificate error. Please check your system clock and network security.');
   }
 }
 
@@ -308,12 +426,10 @@ export function clearErrorTracking(): void {
  * User notification helper
  */
 function notifyUser(type: 'error' | 'warning' | 'info', message: string): void {
-  // Dispatch custom event for UI to handle
   window.dispatchEvent(new CustomEvent('jarvis-notification', {
     detail: { type, message, timestamp: Date.now() }
   }));
   
-  // Also log
   logger.log('NOTIFICATION', message, type);
 }
 
@@ -324,21 +440,60 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Global error event listener
+/**
+ * Create a timeout promise that rejects after specified duration
+ */
+export function createTimeoutPromise<T>(
+  ms: number,
+  context?: string
+): Promise<T> {
+  return new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(new TimeoutError(
+        `Operation timed out after ${ms}ms`,
+        ms,
+        ErrorCode.CONNECTION_TIMEOUT,
+        context ? { context } : undefined
+      ));
+    }, ms);
+  });
+}
+
+/**
+ * Race between an operation and a timeout
+ */
+export async function withTimeout<T>(
+  operation: () => Promise<T>,
+  timeoutMs: number,
+  context?: ErrorContext
+): Promise<T> {
+  return Promise.race([
+    operation(),
+    createTimeoutPromise<T>(timeoutMs, context?.operation)
+  ]);
+}
+
+// Global error event listeners
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (event) => {
-    logger.error('GLOBAL', 'Uncaught error', {
-      message: event.message,
-      filename: event.filename,
-      lineno: event.lineno,
-      colno: event.colno,
-      error: event.error?.stack
-    });
+    const error = classifyError(
+      event.error || new Error(event.message),
+      {
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno
+      }
+    );
+    
+    logger.error('GLOBAL', 'Uncaught error', error.toJSON());
   });
   
   window.addEventListener('unhandledrejection', (event) => {
-    logger.error('GLOBAL', 'Unhandled promise rejection', {
-      reason: event.reason?.message || event.reason
-    });
+    const error = classifyError(
+      event.reason,
+      { type: 'unhandledrejection' }
+    );
+    
+    logger.error('GLOBAL', 'Unhandled promise rejection', error.toJSON());
   });
 }

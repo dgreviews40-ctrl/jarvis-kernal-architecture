@@ -43,11 +43,11 @@ export interface AgentTask {
   
   // Execution
   tool?: string;               // Tool to use
-  toolParams?: Record<string, any>;
+  toolParams?: Record<string, unknown>;
   dependencies: string[];      // Task IDs that must complete first
   
   // State
-  result?: any;
+  result?: unknown;
   error?: string;
   retryCount: number;
   maxRetries: number;
@@ -64,7 +64,7 @@ export interface AgentTask {
 
 export interface TaskContext {
   originalRequest: string;
-  accumulatedData: Record<string, any>;
+  accumulatedData: Record<string, unknown>;
   userPreferences: string[];
   constraints: string[];
 }
@@ -88,8 +88,8 @@ export interface Tool {
   name: string;
   description: string;
   parameters: ToolParameter[];
-  execute: (params: Record<string, any>, context: TaskContext) => Promise<any>;
-  estimateDuration: (params: Record<string, any>) => number;
+  execute: (params: Record<string, unknown>, context: TaskContext) => Promise<unknown>;
+  estimateDuration: (params: Record<string, unknown>) => number;
 }
 
 export interface ToolParameter {
@@ -97,7 +97,7 @@ export interface ToolParameter {
   type: 'string' | 'number' | 'boolean' | 'array' | 'object';
   description: string;
   required: boolean;
-  default?: any;
+  default?: unknown;
 }
 
 export interface ExecutionPlan {
@@ -113,7 +113,7 @@ export interface AgentEvent {
         'task_retrying' | 'progress_update' | 'goal_completed' | 'goal_failed';
   goalId: string;
   taskId?: string;
-  data?: any;
+  data?: unknown;
   timestamp: number;
 }
 
@@ -243,7 +243,7 @@ Guidelines:
       logger.log('AGENT', `Decomposed into ${tasks.length} tasks`, 'info');
       return tasks;
     } catch (error) {
-      logger.log('AGENT', `Decomposition failed: ${error.message}`, 'error');
+      logger.log('AGENT', `Decomposition failed: ${(error as Error).message}`, 'error');
       // Fallback: treat as single task
       return [request];
     }
@@ -347,7 +347,7 @@ Or {"toolId": null} if no tool matches.
         return { toolId: selection.toolId, params: selection.params || {} };
       }
     } catch (error) {
-      logger.log('AGENT', `Tool selection failed: ${error.message}`, 'warning');
+      logger.log('AGENT', `Tool selection failed: ${(error as Error).message}`, 'warning');
     }
 
     return null;
@@ -455,8 +455,8 @@ Or {"toolId": null} if no tool matches.
       }
     } catch (error) {
       goal.status = 'failed';
-      this.emitEvent({ type: 'goal_failed', goalId, data: { error: error.message }, timestamp: Date.now() });
-      logger.log('AGENT', `Goal execution error: ${error.message}`, 'error');
+      this.emitEvent({ type: 'goal_failed', goalId, data: { error: (error as Error).message }, timestamp: Date.now() });
+      logger.log('AGENT', `Goal execution error: ${(error as Error).message}`, 'error');
     } finally {
       this.stopProgressUpdates(goalId);
     }
@@ -484,7 +484,7 @@ Or {"toolId": null} if no tool matches.
     this.emitEvent({ type: 'task_started', goalId, taskId, timestamp: Date.now() });
 
     try {
-      let result: any;
+      let result: unknown;
 
       if (task.tool && this.tools.has(task.tool)) {
         // Execute tool
@@ -505,7 +505,7 @@ Or {"toolId": null} if no tool matches.
       this.emitEvent({ type: 'task_completed', goalId, taskId, data: { result }, timestamp: Date.now() });
       logger.log('AGENT', `Task completed: ${taskId}`, 'success');
     } catch (error) {
-      task.error = error.message;
+      task.error = (error as Error).message;
       task.retryCount++;
 
       if (task.retryCount < task.maxRetries) {
@@ -530,8 +530,8 @@ Or {"toolId": null} if no tool matches.
       } else {
         // Max retries exceeded
         task.status = 'failed';
-        this.emitEvent({ type: 'task_failed', goalId, taskId, data: { error: error.message }, timestamp: Date.now() });
-        logger.log('AGENT', `Task failed: ${taskId} - ${error.message}`, 'error');
+        this.emitEvent({ type: 'task_failed', goalId, taskId, data: { error: (error as Error).message }, timestamp: Date.now() });
+        logger.log('AGENT', `Task failed: ${taskId} - ${(error as Error).message}`, 'error');
       }
     }
   }
@@ -620,9 +620,9 @@ Provide a clear, actionable result.
         const { localVectorDB } = await import('./localVectorDB');
         await localVectorDB.store({
           id: `memory_${Date.now()}`,
-          content: params.content,
+          content: params.content as string,
           type: 'FACT',
-          tags: params.tags || ['agent_stored'],
+          tags: (params.tags as string[]) || ['agent_stored'],
           created: Date.now(),
           lastAccessed: Date.now(),
         });
@@ -642,7 +642,7 @@ Provide a clear, actionable result.
       ],
       execute: async (params) => {
         const { localVectorDB } = await import('./localVectorDB');
-        const results = await localVectorDB.search(params.query, { maxResults: params.maxResults });
+        const results = await localVectorDB.search(params.query as string, { maxResults: params.maxResults as number });
         return { memories: results.map(r => r.node.content) };
       },
       estimateDuration: () => 1000,
@@ -678,11 +678,11 @@ Provide a clear, actionable result.
       execute: async (params) => {
         const { taskAutomation } = await import('./integrations/taskAutomation');
         const task = taskAutomation.createTask({
-          title: params.label,
-          dueDate: new Date(Date.now() + params.duration * 60000),
+          title: params.label as string,
+          dueDate: new Date(Date.now() + (params.duration as number) * 60000),
           status: 'pending',
         });
-        return { timerId: task.id, duration: params.duration };
+        return { timerId: task.id, duration: params.duration as number };
       },
       estimateDuration: () => 500,
     });

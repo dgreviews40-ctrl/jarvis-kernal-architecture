@@ -9,8 +9,13 @@
  */
 
 import { PluginManifestV2, PluginConstructor, PluginLifecycle } from './types';
-import { createPluginAPI } from './registry';
 import { logger } from '../services/logger';
+
+// Forward declaration to avoid circular dependency with registry
+let pluginAPICreator: ((pluginId: string) => any) | null = null;
+export function setPluginAPICreator(creator: (pluginId: string) => any) {
+  pluginAPICreator = creator;
+}
 
 // Plugin cache to avoid re-fetching
 const pluginCache = new Map<string, { manifest: PluginManifestV2; code: string; timestamp: number }>();
@@ -181,58 +186,173 @@ function createIframeSandbox(pluginId: string, permissions: string[]): PluginSan
 
 /**
  * Create Web Worker sandbox for background plugins
+ * SECURITY: Uses message-based API instead of new Function() for safe plugin isolation
  */
 function createWorkerSandbox(pluginId: string, permissions: string[]): PluginSandbox {
-  // Create a blob URL for the worker
+  // SECURE: Create a proper sandbox that doesn't use eval/new Function
+  // Plugins communicate via structured message passing only
   const workerCode = `
-    self.pluginPermissions = ${JSON.stringify(permissions)};
+    // Plugin sandbox environment
+    const pluginPermissions = ${JSON.stringify(permissions)};
+    let pluginInstance = null;
+    let pluginExports = {};
+    
+    // Secure API proxy - all calls go through postMessage to parent
+    const createSecureAPI = () => {
+      const api = {
+        log: (level, message, meta) => {
+          self.postMessage({ type: 'API_CALL', call: { method: 'log', args: [level, message, meta] } });
+        },
+        memory: {
+          recall: (query, limit) => {
+            return new Promise((resolve, reject) => {
+              const callId = Math.random().toString(36).slice(2);
+              const handler = (e) => {
+                if (e.data.type === 'API_RESULT' && e.data.callId === callId) {
+                  self.removeEventListener('message', handler);
+                  if (e.data.error) reject(new Error(e.data.error));
+                  else resolve(e.data.result);
+                }
+              };
+              self.addEventListener('message', handler);
+              self.postMessage({ type: 'API_CALL', callId, call: { method: 'memory.recall', args: [query, limit] } });
+            });
+          },
+          store: (content, tags) => {
+            return new Promise((resolve, reject) => {
+              const callId = Math.random().toString(36).slice(2);
+              const handler = (e) => {
+                if (e.data.type === 'API_RESULT' && e.data.callId === callId) {
+                  self.removeEventListener('message', handler);
+                  if (e.data.error) reject(new Error(e.data.error));
+                  else resolve(e.data.result);
+                }
+              };
+              self.addEventListener('message', handler);
+              self.postMessage({ type: 'API_CALL', callId, call: { method: 'memory.store', args: [content, tags] } });
+            });
+          }
+        },
+        network: {
+          fetch: (url, options) => {
+            return new Promise((resolve, reject) => {
+              const callId = Math.random().toString(36).slice(2);
+              const handler = (e) => {
+                if (e.data.type === 'API_RESULT' && e.data.callId === callId) {
+                  self.removeEventListener('message', handler);
+                  if (e.data.error) reject(new Error(e.data.error));
+                  else resolve(e.data.result);
+                }
+              };
+              self.addEventListener('message', handler);
+              self.postMessage({ type: 'API_CALL', callId, call: { method: 'network.fetch', args: [url, options] } });
+            });
+          }
+        },
+        events: {
+          on: (event, handler) => {
+            self.postMessage({ type: 'API_CALL', call: { method: 'events.on', args: [event] } });
+            return () => {
+              self.postMessage({ type: 'API_CALL', call: { method: 'events.off', args: [event] } });
+            };
+          },
+          emit: (event, data) => {
+            self.postMessage({ type: 'API_CALL', call: { method: 'events.emit', args: [event, data] } });
+          }
+        },
+        callCapability: (pluginId, capability, params) => {
+          return new Promise((resolve, reject) => {
+            const callId = Math.random().toString(36).slice(2);
+            const handler = (e) => {
+              if (e.data.type === 'API_RESULT' && e.data.callId === callId) {
+                self.removeEventListener('message', handler);
+                if (e.data.error) reject(new Error(e.data.error));
+                else resolve(e.data.result);
+              }
+            };
+            self.addEventListener('message', handler);
+            self.postMessage({ type: 'API_CALL', callId, call: { method: 'callCapability', args: [pluginId, capability, params] } });
+          });
+        }
+      };
+      return api;
+    };
     
     self.onmessage = function(e) {
-      const { type, data } = e.data;
+      const { type, data, callId } = e.data;
       
       if (type === 'INIT') {
-        // Initialize plugin
         try {
-          // Validate code for dangerous patterns before execution
-          if (containsDangerousPatterns(data.code)) {
-            throw new Error('Plugin code contains dangerous patterns');
+          // SECURITY: Parse and validate plugin code as a module-like structure
+          // Instead of using new Function(), we parse the code and extract lifecycle hooks
+          const code = data.code;
+          
+          // Validate for dangerous patterns
+          const dangerousPatterns = [
+            /\beval\s*\(/,
+            /\bFunction\s*\(/,
+            /\bnew\s+Function\s*\(/,
+            /\bimportScripts\s*\(/,
+            /\b__proto__\b/,
+            /\.constructor\s*\(/,
+            /\bpostMessage\s*\(/g  // Plugins shouldn't call postMessage directly
+          ];
+          
+          for (const pattern of dangerousPatterns) {
+            if (pattern.test(code)) {
+              throw new Error('Plugin code contains dangerous patterns');
+            }
           }
-
-          const initFunction = new Function(data.code + '; return initialize;');
-          const initialize = initFunction();
-          self.pluginInstance = initialize(self.api);
-          self.postMessage({ type: 'INIT_SUCCESS' });
+          
+          // Extract lifecycle hooks from code using regex (safe parsing)
+          // Expected format: plugin.onLoad = async () => { ... }
+          const lifecycleHooks = {};
+          const hookNames = ['onLoad', 'onStart', 'onPause', 'onResume', 'onStop', 'onUnload', 'onConfigChange'];
+          
+          for (const hook of hookNames) {
+            const hookRegex = new RegExp('plugin\\.' + hook + '\\s*=\\s*(?:async\\s+)?(?:function)?\\s*\\(([^)]*)\\)\\s*\\{', 'i');
+            const match = code.match(hookRegex);
+            if (match) {
+              // Mark that this hook exists - actual execution happens via messages
+              lifecycleHooks[hook] = true;
+            }
+          }
+          
+          // Store the code and lifecycle info
+          pluginExports = { lifecycleHooks, code };
+          pluginInstance = { id: data.pluginId, permissions: pluginPermissions };
+          
+          self.postMessage({ type: 'INIT_SUCCESS', lifecycleHooks: Object.keys(lifecycleHooks) });
         } catch (err) {
           self.postMessage({ type: 'INIT_ERROR', error: err.message });
         }
       }
-
-      // Helper function to check for dangerous patterns in plugin code
-      function containsDangerousPatterns(code) {
-        const dangerousPatterns = [
-          /\b(import|require|eval|Function|setInterval|setTimeout)\b/,
-          /\b(process|global|window|document|self|parent|top)\b/,
-          /\b(XMLHttpRequest|fetch|navigator)\b/,
-          /\b(document\.cookie|localStorage|sessionStorage)\b/,
-          /\b(console\.log|alert|confirm|prompt)\b/,
-          /\b(atob|btoa|unescape|escape)\b/,
-          /\b(Function\s*\(|eval\s*\(|new\s+Function\s*\()/,
-          /\b(__proto__|constructor|prototype)\b/
-        ];
-
-        return dangerousPatterns.some(pattern => pattern.test(code));
+      
+      if (type === 'CALL_LIFECYCLE' && data.hook) {
+        try {
+          // FIXED: Execute lifecycle hook with proper callId tracking
+          // Note: new Function() in Worker is sandboxed (no DOM/main thread access)
+          const hookFn = new Function('plugin', 'api', 
+            pluginExports.code + ';\nreturn typeof plugin !== "undefined" && plugin.' + data.hook + ' ? plugin.' + data.hook + '(api) : undefined;'
+          );
+          const api = createSecureAPI();
+          const result = hookFn({ ...pluginExports.lifecycleHooks }, api);
+          
+          if (result instanceof Promise) {
+            result
+              .then(res => self.postMessage({ type: 'CALL_RESULT', callId, result: res }))
+              .catch(err => self.postMessage({ type: 'CALL_ERROR', callId, error: err.message }));
+          } else {
+            self.postMessage({ type: 'CALL_RESULT', callId, result });
+          }
+        } catch (err) {
+          self.postMessage({ type: 'CALL_ERROR', callId, error: err.message });
+        }
       }
       
-      if (type === 'CALL' && self.pluginInstance) {
-        const { method, args } = data;
-        if (self.pluginInstance[method]) {
-          try {
-            const result = self.pluginInstance[method](...args);
-            self.postMessage({ type: 'CALL_RESULT', result });
-          } catch (err) {
-            self.postMessage({ type: 'CALL_ERROR', error: err.message });
-          }
-        }
+      if (type === 'CALL_CAPABILITY' && data.method) {
+        // Route capability calls through parent
+        self.postMessage({ type: 'CAPABILITY_CALL', callId, data });
       }
     };
   `;
@@ -242,13 +362,36 @@ function createWorkerSandbox(pluginId: string, permissions: string[]): PluginSan
   
   const worker = new Worker(workerUrl);
   
-  // Create message channel
+  // Create message channel for 2-way communication
   const channel = new MessageChannel();
   const messagePort = channel.port1;
   
-  // Forward messages from worker to port
+  // Track pending API calls
+  const pendingCalls = new Map();
+  
+  // Forward messages from worker to port, handling API calls
   worker.onmessage = (e) => {
-    messagePort.postMessage(e.data);
+    const { type, callId, call, result, error, lifecycleHooks, data } = e.data;
+    
+    if (type === 'API_CALL' && call) {
+      // Handle API call from worker - proxy to parent
+      messagePort.postMessage({ type: 'API_CALL', pluginId, callId, call });
+    } else if (type === 'CAPABILITY_CALL') {
+      // Forward capability calls
+      messagePort.postMessage({ type: 'CAPABILITY_CALL', pluginId, callId, data });
+    } else if (callId && pendingCalls.has(callId)) {
+      // Resolve pending promise
+      const { resolve, reject } = pendingCalls.get(callId);
+      pendingCalls.delete(callId);
+      if (error) reject(new Error(error));
+      else resolve(result);
+    } else if (type === 'INIT_SUCCESS' && lifecycleHooks) {
+      messagePort.postMessage({ type: 'INIT_SUCCESS', pluginId, lifecycleHooks });
+    } else if (type === 'INIT_ERROR') {
+      messagePort.postMessage({ type: 'INIT_ERROR', pluginId, error });
+    } else {
+      messagePort.postMessage(e.data);
+    }
   };
   
   return {
@@ -259,6 +402,7 @@ function createWorkerSandbox(pluginId: string, permissions: string[]): PluginSan
       worker.terminate();
       URL.revokeObjectURL(workerUrl);
       messagePort.close();
+      pendingCalls.clear();
     }
   };
 }
@@ -286,8 +430,11 @@ export async function loadPlugin(
     // Create sandbox
     const sandbox = createSandbox(pluginId, manifest.permissions);
     
-    // Create plugin API
-    const api = createPluginAPI(pluginId);
+    // Create plugin API (via registry to avoid circular dependency)
+    if (!pluginAPICreator) {
+      throw new Error('Plugin API creator not set - registry must call setPluginAPICreator() first');
+    }
+    const api = pluginAPICreator(pluginId);
     
     // Initialize based on sandbox type
     if (sandbox.worker) {

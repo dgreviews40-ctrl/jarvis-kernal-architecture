@@ -21,6 +21,8 @@ J.A.R.V.I.S. is an advanced AI kernel architecture that integrates multiple AI p
   - ASCII-formatted diagnostic reports
 - **Plugin architecture v2** with sandboxing and lifecycle management
 - **Memory storage** and semantic recall system
+- **Vision Memory** - Persistent visual memory with CLIP embeddings for image search and recall
+- **Smart Model Manager** - Intelligent model preloading, quick switching, and VRAM-aware recommendations
 - **State management** with Zustand stores
 - **Code splitting** for optimal performance
 - **Comprehensive error handling** with recovery mechanisms

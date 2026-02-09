@@ -517,7 +517,7 @@ export class MemoryConsolidationService {
       try {
         await this.runConsolidation();
       } catch (error) {
-        logger.log('MEMORY', `Auto-consolidation error: ${error.message}`, 'error');
+        logger.log('MEMORY', `Auto-consolidation error: ${(error as Error).message}`, 'error');
       }
     }, this.config.consolidationIntervalMs);
 
@@ -558,7 +558,7 @@ export class MemoryConsolidationService {
       });
       localStorage.setItem('jarvis_session_summaries', data);
     } catch (error) {
-      logger.log('MEMORY', `Failed to persist summaries: ${error.message}`, 'error');
+      logger.log('MEMORY', `Failed to persist summaries: ${(error as Error).message}`, 'error');
     }
   }
 
@@ -572,7 +572,7 @@ export class MemoryConsolidationService {
         logger.log('MEMORY', `Loaded ${this.sessionSummaries.size} session summaries`, 'info');
       }
     } catch (error) {
-      logger.log('MEMORY', `Failed to load summaries: ${error.message}`, 'warning');
+      logger.log('MEMORY', `Failed to load summaries: ${(error as Error).message}`, 'warning');
     }
   }
 }

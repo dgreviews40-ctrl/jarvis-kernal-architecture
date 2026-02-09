@@ -2,10 +2,31 @@
 
 All notable changes to the JARVIS Kernel project.
 
-## [1.5.0] - Current
+## [1.5.1] - 2026-02-09
 
 ### Overview
-Kernel v1.5.0 is the current stable release with consolidated architecture and optimized performance.
+Maintenance release focusing on stability, bug fixes, and test reliability.
+
+### Fixed
+- **EventBus Race Condition** - `publish()` in `request()` now properly awaited to prevent missed events
+- **Notification Memory Leak** - Auto-dismiss timeouts now cleared on manual dismiss
+- **TypeScript Errors** - Added `@types/react` and `@types/react-dom` for type safety
+- **Flaky Performance Test** - Adjusted threshold for jsdom environment
+
+### Added
+- `@types/react` and `@types/react-dom` dev dependencies
+
+### Test Results
+- 421 tests passing (100%)
+- 0 TypeScript errors
+- 0 security vulnerabilities
+
+---
+
+## [1.5.0] - 2026-02-08
+
+### Overview
+Kernel v1.5.0 with consolidated architecture and optimized performance.
 
 ### Key Features
 - **Consolidated Architecture**: Unified service layer

@@ -9,6 +9,16 @@
 
 import { logger } from './logger';
 import { eventBus } from './eventBus';
+import { 
+  JARVISError, 
+  classifyError, 
+  isRetryableError, 
+  calculateRetryDelay,
+  ErrorCode,
+  NetworkError,
+  TimeoutError,
+  QuotaError
+} from './errorTypes';
 
 export enum CircuitState {
   CLOSED = 'CLOSED',
@@ -20,7 +30,7 @@ export interface CircuitBreakerConfig {
   failureThreshold: number; // Number of failures before opening circuit
   resetTimeout: number; // Time in ms before attempting reset
   timeout: number; // Operation timeout in ms
-  fallback?: (...args: any[]) => any; // Fallback function
+  fallback?: (...args: unknown[]) => unknown; // Fallback function
 }
 
 export interface CircuitBreakerStatus {
@@ -50,9 +60,9 @@ export class ResilienceService {
    */
   public async withCircuitBreaker<T>(
     operationId: string,
-    operation: (...args: any[]) => Promise<T>,
+    operation: (...args: unknown[]) => Promise<T>,
     config: CircuitBreakerConfig,
-    ...args: any[]
+    ...args: unknown[]
   ): Promise<T> {
     // Store config if not already present
     if (!this.breakerConfigs.has(operationId)) {
@@ -71,7 +81,7 @@ export class ResilienceService {
         // Still in open state, return fallback or throw
         if (config.fallback) {
           logger.log('SYSTEM', `Circuit breaker ${operationId} OPEN, using fallback`, 'warning');
-          return config.fallback(...args);
+          return config.fallback(...args) as Promise<T>;
         } else {
           throw new Error(`Circuit breaker ${operationId} is OPEN`);
         }
@@ -108,8 +118,9 @@ export class ResilienceService {
       
       // Use fallback if available
       if (config.fallback) {
-        logger.log('SYSTEM', `Using fallback for ${operationId} after error: ${error.message}`, 'warning');
-        return config.fallback(...args);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        logger.log('SYSTEM', `Using fallback for ${operationId} after error: ${errorMessage}`, 'warning');
+        return config.fallback(...args) as Promise<T>;
       }
       
       throw error;
@@ -122,11 +133,11 @@ export class ResilienceService {
   public async withRetry<T>(
     operation: () => Promise<T>,
     maxRetries: number = 3,
-    baseDelay: number = 1000, // Base delay in ms
-    maxDelay: number = 30000, // Max delay in ms
-    shouldRetry?: (error: any) => boolean // Custom retry condition
+    baseDelay: number = 1000,
+    maxDelay: number = 30000,
+    shouldRetry?: (error: unknown) => boolean
   ): Promise<T> {
-    let lastError: any;
+    let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -134,19 +145,49 @@ export class ResilienceService {
       } catch (error) {
         lastError = error;
         
+        // Convert to typed error for smart retry logic
+        const typedError = error instanceof JARVISError 
+          ? error 
+          : classifyError(error, { attempt, maxRetries });
+        
         // Check if we should retry
         if (attempt === maxRetries) {
-          break; // Last attempt, don't retry
+          logger.warning('RESILIENCE', `All ${maxRetries + 1} attempts exhausted`, {
+            error: typedError.message,
+            code: typedError.code,
+            isRetryable: typedError.isRetryable
+          });
+          break;
         }
         
+        // Use error-aware retry logic
+        if (!typedError.isRetryable) {
+          logger.warning('RESILIENCE', `Non-retryable error, failing fast`, {
+            error: typedError.message,
+            code: typedError.code,
+            severity: typedError.severity
+          });
+          break;
+        }
+        
+        // Custom condition can override
         if (shouldRetry && !shouldRetry(error)) {
-          break; // Custom condition says don't retry
+          break;
         }
         
-        // Calculate delay with exponential backoff and jitter
-        const delay = Math.min(baseDelay * Math.pow(2, attempt) + Math.random() * 1000, maxDelay);
+        // Calculate delay based on error type's retry strategy
+        const delay = calculateRetryDelay(typedError, attempt + 1);
         
-        logger.log('SYSTEM', `Retry attempt ${attempt + 1}/${maxRetries + 1} after ${delay}ms delay`, 'info');
+        if (delay < 0) {
+          logger.warning('RESILIENCE', `Retry strategy exhausted, failing`, {
+            error: typedError.message,
+            code: typedError.code,
+            attempt: attempt + 1
+          });
+          break;
+        }
+        
+        logger.log('RESILIENCE', `Retry attempt ${attempt + 1}/${maxRetries + 1} after ${delay}ms delay (${typedError.code})`, 'info');
         
         // Wait before retry
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -159,12 +200,17 @@ export class ResilienceService {
   /**
    * Execute an operation with timeout
    */
-  public async withTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
+  public async withTimeout<T>(operation: () => Promise<T>, timeoutMs: number, operationName?: string): Promise<T> {
     return Promise.race([
       operation(),
       new Promise<T>((_, reject) => {
         setTimeout(() => {
-          reject(new Error(`Operation timed out after ${timeoutMs}ms`));
+          reject(new TimeoutError(
+            `${operationName || 'Operation'} timed out after ${timeoutMs}ms`,
+            timeoutMs,
+            ErrorCode.CONNECTION_TIMEOUT,
+            operationName ? { operation: operationName } : undefined
+          ));
         }, timeoutMs);
       })
     ]);
@@ -181,7 +227,7 @@ export class ResilienceService {
       maxRetries?: number;
       baseDelay?: number;
       maxDelay?: number;
-      shouldRetry?: (error: any) => boolean;
+      shouldRetry?: (error: unknown) => boolean;
     }
   ): Promise<T> {
     // Wrap operation with timeout
@@ -340,6 +386,32 @@ export class ResilienceService {
       openCircuits: statuses.filter(s => s.state === CircuitState.OPEN).length,
       halfOpenCircuits: statuses.filter(s => s.state === CircuitState.HALF_OPEN).length,
       closedCircuits: statuses.filter(s => s.state === CircuitState.CLOSED).length
+    };
+  }
+
+  /**
+   * Check if an error is retryable based on its type
+   */
+  public isRetryableError(error: unknown): boolean {
+    return isRetryableError(error);
+  }
+
+  /**
+   * Get retry information for an error
+   */
+  public getRetryInfo(error: unknown): {
+    isRetryable: boolean;
+    maxAttempts: number;
+    recommendedDelayMs: number;
+  } {
+    const typedError = error instanceof JARVISError 
+      ? error 
+      : classifyError(error);
+    
+    return {
+      isRetryable: typedError.isRetryable,
+      maxAttempts: typedError.retryStrategy.maxAttempts,
+      recommendedDelayMs: typedError.retryStrategy.baseDelayMs
     };
   }
 }

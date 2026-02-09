@@ -1,101 +1,74 @@
 @echo off
-setlocal EnableDelayedExpansion
-TITLE JARVIS Launcher
+:: JARVIS Complete Launcher
+:: Starts all services (Node + Python) and manages shutdown
+
 cd /d "%~dp0"
 
-echo.
-echo ========================================
-echo  JARVIS LAUNCHER
-echo ========================================
-echo.
-
-REM Cleanup existing
-echo [INIT] Stopping any existing JARVIS processes...
-for %%p in (3000 3100 3101 5000) do (
-    for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr :%%p') do taskkill /F /PID %%a >nul 2>&1
+:: Check for node_modules
+if not exist "node_modules" (
+    echo ============================================
+    echo    JARVIS ERROR
+    echo ============================================
+    echo.
+    echo node_modules folder not found!
+    echo.
+    echo Please run: npm install
+    echo.
+    echo This will install all required Node.js packages.
+    echo.
+    pause
+    exit /b 1
 )
-timeout /t 2 /nobreak >nul
-echo [OK] Cleanup complete
-echo.
 
-REM Start services minimized
-echo [START] Starting JARVIS services...
-start /MIN "JARVIS-HW" cmd /c "node server/hardware-monitor.cjs"
-start /MIN "JARVIS-PROXY" cmd /c "node server/proxy.js"  
-start /MIN "JARVIS-PIPER" cmd /c "cd Piper && python piper_server.py"
-start /MIN "JARVIS-VITE" cmd /c "npx vite --config vite.config.fast.ts"
+:: Check Node.js
+node --version >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Node.js not found! Please install Node.js.
+    pause
+    exit /b 1
+)
 
-echo.
-echo [WAIT] Waiting for Vite server...
-set /a count=0
-:wait
-timeout /t 1 /nobreak >nul
-set /a count+=1
-curl -s http://localhost:3000 >nul 2>&1
-if errorlevel 1 (
-    if !count! lss 90 goto wait
-    echo [WARN] Timeout waiting for Vite, continuing...
+:: Check for admin rights (not required but helpful)
+net session >nul 2>&1
+if %ERRORLEVEL% == 0 (
+    echo [JARVIS] Running with administrator privileges
 ) else (
-    echo [OK] Vite ready in !count! seconds
+    echo [JARVIS] Running without administrator privileges
 )
 
 echo.
-echo [LAUNCH] Opening browser...
-set "chrome="
-if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" set "chrome=C:\Program Files\Google\Chrome\Application\chrome.exe"
-if exist "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" set "chrome=C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" set "chrome=%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"
+echo ============================================
+echo    JARVIS AI ASSISTANT
+echo ============================================
+echo.
+echo This will start ALL JARVIS services:
+echo   - Hardware Monitor (Node)
+echo   - HA Proxy (Node)
+echo   - Vite Dev Server (Node)
+echo   - Piper TTS (Python) [Optional]
+echo   - Embedding Server (Python) [Optional]
+echo   - GPU Monitor (Python) [Optional]
+echo   - Vision Server (Python) [Optional]
+echo.
+echo Python services are optional and can be installed later:
+echo   Install-Python-Deps.bat
+echo.
+echo Press any key to start...
+pause >nul
 
-if defined chrome (
-    start "" /B "%chrome%" --app=http://localhost:3000 --window-size=1920,1080
-) else (
-    start msedge --app=http://localhost:3000 --window-size=1920,1080
+:: Run the master launcher
+node launcher.cjs
+
+:: When it exits, clean up any leftovers
+echo.
+echo [JARVIS] Cleaning up...
+taskkill /F /FI "WINDOWTITLE eq JARVIS-*" /T >nul 2>&1
+for %%p in (3000 3100 3101 5000 5001 5002 5003 5004) do (
+    for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%%p ^| findstr LISTENING 2^>nul') do (
+        taskkill /F /PID %%a >nul 2>&1
+    )
 )
 
 echo.
-echo ========================================
-echo  JARVIS is Running!
-echo ========================================
-echo.
-echo  CLOSE THE BROWSER to stop all services
-echo.
-
-REM Monitor browser - when localhost:3000 window closes, shut down
-:monitor
-    timeout /t 2 /nobreak >nul
-    
-    REM Check if any chrome/msedge window with localhost:3000 exists
-    tasklist /FI "IMAGENAME eq chrome.exe" /FI "WINDOWTITLE eq localhost:3000*" 2>nul | findstr "chrome.exe" >nul
-    if not errorlevel 1 goto monitor
-    
-    tasklist /FI "IMAGENAME eq msedge.exe" /FI "WINDOWTITLE eq localhost:3000*" 2>nul | findstr "msedge.exe" >nul  
-    if not errorlevel 1 goto monitor
-    
-    REM Check again after short delay (browser might just be loading)
-    timeout /t 1 /nobreak >nul
-    tasklist /FI "IMAGENAME eq chrome.exe" /FI "WINDOWTITLE eq localhost:3000*" 2>nul | findstr "chrome.exe" >nul
-    if not errorlevel 1 goto monitor
-    
-    tasklist /FI "IMAGENAME eq msedge.exe" /FI "WINDOWTITLE eq localhost:3000*" 2>nul | findstr "msedge.exe" >nul
-    if not errorlevel 1 goto monitor
-    
-    REM Browser is really closed
-    goto shutdown
-
-:shutdown
-echo.
-echo [SHUTDOWN] Browser closed - stopping JARVIS services...
-
-REM Kill by port
-for %%p in (3000 3100 3101 5000) do (
-    for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr :%%p') do taskkill /F /PID %%a >nul 2>&1
-)
-
-REM Close CMD windows
-taskkill /F /FI "WINDOWTITLE eq JARVIS-HW*" >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq JARVIS-PROXY*" >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq JARVIS-PIPER*" >nul 2>&1
-taskkill /F /FI "WINDOWTITLE eq JARVIS-VITE*" >nul 2>&1
-
-echo [DONE] JARVIS stopped
-timeout /t 2 >nul
+echo JARVIS has been shut down.
+pause

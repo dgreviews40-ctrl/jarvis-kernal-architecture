@@ -168,7 +168,7 @@ class QueryEngine {
     subscriberId: string
   ): () => void {
     // Execute and subscribe
-    this.execute(queryId, input, { subscriberId }).then(callback);
+    this.execute(queryId, input, { subscriberId }).then(result => callback(result as T));
 
     return () => {
       // Unsubscribe

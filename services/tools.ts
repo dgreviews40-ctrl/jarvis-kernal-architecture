@@ -28,28 +28,28 @@ export interface ToolParameter {
   description: string;
   required: boolean;
   enum?: string[];  // For string parameters with specific values
-  default?: any;
+  default?: unknown;
 }
 
 export interface Tool {
   name: string;
   description: string;
   parameters: ToolParameter[];
-  execute: (params: Record<string, any>) => Promise<ToolResult>;
+  execute: (params: Record<string, unknown>) => Promise<ToolResult>;
   requiresConfirmation?: boolean;  // For destructive operations
   category: 'smart_home' | 'memory' | 'productivity' | 'information' | 'creative';
 }
 
 export interface ToolResult {
   success: boolean;
-  data: any;
+  data: unknown;
   error?: string;
   display?: string;  // Human-readable result for AI
 }
 
 export interface ToolCall {
   tool: string;
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
 }
 
 // ==================== TOOL REGISTRY ====================
@@ -81,7 +81,7 @@ class ToolRegistry {
   /**
    * Get tool definitions for AI provider
    */
-  getDefinitionsForProvider(provider: AIProvider): any[] {
+  getDefinitionsForProvider(provider: AIProvider): unknown[] {
     const tools = this.getAll();
     
     switch (provider) {
@@ -180,7 +180,7 @@ class ToolRegistry {
 
   // ==================== PRIVATE METHODS ====================
 
-  private toGeminiFormat(tool: Tool): any {
+  private toGeminiFormat(tool: Tool): Record<string, unknown> {
     return {
       name: tool.name,
       description: tool.description,
@@ -199,7 +199,7 @@ class ToolRegistry {
     };
   }
 
-  private toOllamaFormat(tool: Tool): any {
+  private toOllamaFormat(tool: Tool): Record<string, unknown> {
     return {
       type: 'function',
       function: {
@@ -241,26 +241,26 @@ class ToolRegistry {
 
         try {
           // Build entity ID from room
-          const room = params.room.toLowerCase().replace(/\s+/g, '_');
+          const room = String(params.room).toLowerCase().replace(/\s+/g, '_');
           const entityId = `light.${room}`;
           
           let result: string;
           switch (params.action) {
             case 'on':
-              result = await haService.executeSmartCommand(['turn on', params.room, 'light']);
+              result = await haService.executeSmartCommand(['turn on', String(params.room), 'light']);
               break;
             case 'off':
-              result = await haService.executeSmartCommand(['turn off', params.room, 'light']);
+              result = await haService.executeSmartCommand(['turn off', String(params.room), 'light']);
               break;
             case 'toggle':
-              result = await haService.executeSmartCommand(['toggle', params.room, 'light']);
+              result = await haService.executeSmartCommand(['toggle', String(params.room), 'light']);
               break;
             case 'brightness':
-              const brightness = Math.min(100, Math.max(0, params.brightness || 50));
-              result = await haService.executeSmartCommand(['set', params.room, 'light', 'brightness', brightness.toString()]);
+              const brightness = Math.min(100, Math.max(0, Number(params.brightness) || 50));
+              result = await haService.executeSmartCommand(['set', String(params.room), 'light', 'brightness', brightness.toString()]);
               break;
             default:
-              return { success: false, data: null, error: 'Invalid action' };
+              return { success: false, data: null, error: 'Invalid action', display: 'Invalid action requested' };
           }
 
           return {
@@ -289,10 +289,10 @@ class ToolRegistry {
         }
 
         try {
-          const query = params.entity_name || 
-                       `${params.room || ''} ${params.sensor_type}`.trim();
+          const query = String(params.entity_name || 
+                       `${params.room || ''} ${params.sensor_type}`.trim());
           
-          const { searchEntities } = await import('./haEntitySearch');
+          const { searchEntities } = await import('./haEntitySearch.js');
           const result = await searchEntities(query);
           
           if (result.matches.length === 0) {
@@ -329,13 +329,13 @@ class ToolRegistry {
       ],
       execute: async (params) => {
         try {
-          const tags = params.tags || [params.category || 'fact', 'user_stored'];
+          const tags = (params.tags as string[] | undefined) || [String(params.category || 'fact'), 'user_stored'];
           const memoryType = params.category === 'preference' ? 'PREFERENCE' : 
                             params.category === 'important' ? 'FACT' : 'FACT';
           
           await vectorMemoryService.store({
             id: `memory_${Date.now()}`,
-            content: params.content,
+            content: String(params.content),
             type: memoryType,
             tags,
             created: Date.now(),
@@ -363,7 +363,7 @@ class ToolRegistry {
       ],
       execute: async (params) => {
         try {
-          const results = await vectorMemoryService.recall(params.query);
+          const results = await vectorMemoryService.recall(String(params.query));
           
           if (results.length === 0) {
             return {
@@ -373,8 +373,8 @@ class ToolRegistry {
             };
           }
 
-          const limited = results.slice(0, params.limit || 3);
-          const display = limited.map((r, i) => `${i + 1}. ${r.node.content}`).join('\n');
+          const limited = results.slice(0, (params.limit as number | undefined) || 3);
+          const display = limited.map((r: typeof limited[0], i: number) => `${i + 1}. ${r.node.content}`).join('\n');
 
           return {
             success: true,
@@ -400,7 +400,7 @@ class ToolRegistry {
       execute: async (params) => {
         try {
           // Parse duration
-          const durationMatch = params.duration.match(/(\d+)\s*(second|seconds|minute|minutes|hour|hours)/i);
+          const durationMatch = String(params.duration).match(/(\d+)\s*(second|seconds|minute|minutes|hour|hours)/i);
           if (!durationMatch) {
             return { success: false, data: null, error: 'Could not parse duration' };
           }
@@ -412,8 +412,8 @@ class ToolRegistry {
           if (unit.includes('hour')) durationMs = amount * 60 * 60 * 1000;
 
           const task = taskAutomation.createTask({
-            title: params.label,
-            description: `Timer: ${params.duration}`,
+            title: String(params.label),
+            description: `Timer: ${String(params.duration)}`,
             status: 'pending',
             priority: 'medium',
             dueDate: new Date(Date.now() + durationMs),
@@ -424,7 +424,7 @@ class ToolRegistry {
           const timerId = setTimeout(() => {
             taskAutomation.completeTask(task.id);
             const { voice } = require('./voice');
-            voice.speak(`Timer complete: ${params.label}`).catch((err: any) => {
+            voice.speak(`Timer complete: ${String(params.label)}`).catch((err: Error) => {
               logger.log('ERROR', `Timer TTS error: ${err}`, 'error');
             });
           }, durationMs);
@@ -455,17 +455,17 @@ class ToolRegistry {
       execute: async (params) => {
         try {
           const task = taskAutomation.createTask({
-            title: params.title,
-            description: params.description,
+            title: String(params.title),
+            description: params.description as string | undefined,
             status: 'pending',
-            priority: params.priority,
+            priority: (params.priority as 'low' | 'medium' | 'high' | undefined) || 'medium',
             tags: ['user_created']
           });
 
           return {
             success: true,
             data: task,
-            display: `Task created: ${params.title}`
+            display: `Task created: ${String(params.title)}`
           };
         } catch (error) {
           return { success: false, data: null, error: String(error) };
@@ -529,10 +529,10 @@ class ToolRegistry {
       ],
       execute: async (params) => {
         try {
-          const searchResults = await searchService.search(params.query);
+          const searchResults = await searchService.search(String(params.query));
           // searchService returns SearchResults object with results array
           const results = searchResults.results || [];
-          const limited = results.slice(0, params.num_results || 3);
+          const limited = results.slice(0, Number(params.num_results) || 3);
           
           if (limited.length === 0) {
             return {
@@ -542,8 +542,8 @@ class ToolRegistry {
             };
           }
 
-          const display = limited.map((r: any, i: number) => 
-            `${i + 1}. ${r.title}\n${r.snippet}`
+          const display = limited.map((r: { title: string; url: string; snippet?: string }, i: number) => 
+            `${i + 1}. ${r.title}\n${r.snippet || ''}`
           ).join('\n\n');
 
           return {
@@ -604,15 +604,15 @@ class ToolRegistry {
       execute: async (params) => {
         try {
           const generated = await fileGeneratorService.generateFile(
-            params.description,
-            params.format as any,
-            { style: params.style, width: 800, height: 600 }
+            String(params.description),
+            String(params.format) as any,
+            { style: String(params.style) as 'realistic' | 'artistic' | 'diagram' | 'schematic', width: 800, height: 600 }
           );
 
           return {
             success: true,
             data: generated,
-            display: `I've generated a ${params.format.toUpperCase()} file: ${generated.filename}`
+            display: `I've generated a ${String(params.format).toUpperCase()} file: ${generated.filename}`
           };
         } catch (error) {
           return { success: false, data: null, error: String(error) };

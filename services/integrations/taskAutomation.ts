@@ -217,14 +217,14 @@ class TaskAutomationService {
       tasks = tasks.filter(t => t.priority === filters.priority);
     }
     if (filters?.tag) {
-      tasks = tasks.filter(t => t.tags.includes(filters.tag!));
+      tasks = tasks.filter(t => t.tags?.includes(filters.tag!));
     }
 
     return tasks.sort((a, b) => {
       // Sort by priority first
       const priorityOrder = { high: 0, medium: 1, low: 2 };
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      if (priorityOrder[a.priority!] !== priorityOrder[b.priority!]) {
+        return priorityOrder[a.priority!] - priorityOrder[b.priority!];
       }
       // Then by due date
       if (a.dueDate && b.dueDate) {
@@ -345,7 +345,7 @@ class TaskAutomationService {
       };
 
       if (dueText) {
-        task.dueDate = this.parseDateTime(dueText);
+        task.dueDate = this.parseDateTime(dueText) ?? undefined;
       }
 
       return task;

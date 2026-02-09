@@ -17,8 +17,14 @@ import {
 } from '../types';
 import { inputValidator } from './inputValidator';
 import { LIMITS, TIMING } from '../constants/config';
-import { analyzeIntent } from './gemini';
+import { analyzeIntent, ParsedIntent } from './gemini';
 import { providerManager } from './providers';
+import { 
+  resilientGenerate, 
+  resilientAnalyzeIntent, 
+  resilientStream,
+  initializeResilientAI 
+} from './resilientAI';
 import { voice } from './voice';
 import { vision } from './vision';
 import { streamingHandler, StreamingOptions } from './streaming';
@@ -174,19 +180,25 @@ export class EnhancedKernelProcessor {
         }
       },
       onComplete: (text) => {
-        setKernelStreaming(false, null);
+        setKernelStreaming(false, undefined);
       },
       onError: (error) => {
         logger.log('ERROR', `Streaming error: ${error.message}`, 'error');
-        setKernelStreaming(false, null);
+        setKernelStreaming(false, undefined);
       }
     };
 
     try {
-      await streamingHandler.stream(
+      // Use resilient streaming with offline queue support
+      await resilientStream(
         request,
         context.forcedMode || AIProvider.GEMINI,
-        streamingOptions
+        {
+          ...streamingOptions,
+          priority: 'HIGH',
+          context: { userInput: input },
+          notifyUser: true
+        }
       );
 
       return fullResponse || streamingHandler.getFullResponse();
@@ -207,10 +219,19 @@ export class EnhancedKernelProcessor {
     pid?: number
   ): Promise<string> {
     
-    // Intent analysis
+    // Intent analysis (with offline resilience)
     context.setActiveModule('PARSER');
     if (pid) updateVirtualProcessMetrics(pid, 512 * 1024, 10); // ~512KB, 10% CPU
-    const analysis = await analyzeIntent(input);
+    const analysis = await resilientAnalyzeIntent(input, {
+      priority: 'HIGH',
+      context: { userInput: input },
+      notifyUser: true
+    });
+    
+    // If queued, return the queued response
+    if ((analysis as ParsedIntent & { queued?: boolean }).queued) {
+      return analysis.reasoning;
+    }
     
     context.setActiveModule('ROUTER');
     const selectedProvider = context.forcedMode || 
@@ -325,7 +346,7 @@ export class EnhancedKernelProcessor {
       }
       
       // For vision tool, let the AI analyze the image
-      if (toolCall.tool === 'analyze_image' && result.data?.imageBase64) {
+      if (toolCall.tool === 'analyze_image' && (result.data as {imageBase64?: string})?.imageBase64) {
         return this.handleVisionAnalysis(input, context, AIProvider.GEMINI);
       }
       

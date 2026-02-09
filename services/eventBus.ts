@@ -191,7 +191,12 @@ class EventBus {
         { priority: 'critical' }
       );
 
-      this.publish(channel, payload, { correlationId, priority: 'high' });
+      // Wait for publish to complete to ensure subscriber is ready
+      this.publish(channel, payload, { correlationId, priority: 'high' }).catch(err => {
+        clearTimeout(timeout);
+        if (unsubscribeFn) unsubscribeFn();
+        reject(err);
+      });
     });
   }
 
@@ -258,6 +263,8 @@ class EventBus {
   clear(): void {
     this.subscriptions.clear();
     this.history = [];
+    this.stats.totalEvents = 0;
+    this.eventCount = 0;
     this.updateStats();
   }
 

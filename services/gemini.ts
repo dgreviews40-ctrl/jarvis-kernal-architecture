@@ -5,6 +5,7 @@ import { providerManager } from "./providers";
 import { AIProvider } from "../types";
 import { localIntentClassifier } from "./localIntent";
 import { geminiRateLimiter } from "./rateLimiter";
+import { RequestDeduplicator, createDedupKey } from "./deduplicator";
 
 // LRU Cache for intent analysis results
 const INTENT_CACHE_SIZE = 50;
@@ -86,6 +87,12 @@ class IntentCache {
 
 const intentCache = new IntentCache();
 
+// Deduplicator for intent analysis - prevents duplicate parallel API calls
+const intentDedup = new RequestDeduplicator<ParsedIntent>({
+  maxInFlightAgeMs: 30000, // 30s timeout
+  debug: false
+});
+
 // Export stats from shared rate limiter
 export const getGeminiStats = () => {
   const stats = geminiRateLimiter.getStats();
@@ -110,38 +117,39 @@ export const hasApiKey = (): boolean => {
 };
 
 const createClient = async () => {
-  // Priority: encrypted storage > legacy storage > env vars
-  // This ensures security while maintaining backward compatibility
+  // SECURITY FIX: Use secure apiKeyManager for encrypted storage
+  const { apiKeyManager } = await import('./apiKeyManager');
+  
   let apiKey: string | null = null;
 
-  // Check encrypted storage first
-  if (typeof localStorage !== 'undefined') {
-    const encryptedStoredKey = localStorage.getItem('jarvis_gemini_api_key_encrypted');
-    if (encryptedStoredKey) {
-      try {
-        apiKey = decodeURIComponent(atob(encryptedStoredKey));
-        console.log('[GEMINI] Using API key from encrypted localStorage');
-      } catch (e) {
-        console.warn("Failed to decode encrypted API key, trying legacy format:", e);
-        // Try legacy format as fallback
-        const legacyStoredKey = localStorage.getItem('GEMINI_API_KEY');
-        if (legacyStoredKey) {
-          try {
-            apiKey = atob(legacyStoredKey);
-            console.log('[GEMINI] Using API key from legacy localStorage');
-          } catch (legacyError) {
-            console.error("Failed to decode legacy API key:", legacyError);
-          }
-        }
-      }
+  // Priority 1: Secure storage (if initialized)
+  if (apiKeyManager.isInitialized() && apiKeyManager.isSecure()) {
+    apiKey = await apiKeyManager.getKey('gemini');
+    if (apiKey) {
+      console.log('[GEMINI] Using API key from secure storage');
     }
   }
 
-  // Fallback to environment variables
-  if (!apiKey && typeof process !== 'undefined') {
-    apiKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || null;
+  // Priority 2: Environment variables
+  if (!apiKey) {
+    apiKey = (import.meta.env?.VITE_GEMINI_API_KEY as string | undefined) || 
+             (import.meta.env?.VITE_API_KEY as string | undefined) || 
+             (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : null) || null;
     if (apiKey) {
       console.log('[GEMINI] Using API key from environment');
+    }
+  }
+
+  // Priority 3: Legacy storage (temporary - will be removed)
+  if (!apiKey && typeof localStorage !== 'undefined') {
+    const legacyKey = localStorage.getItem('GEMINI_API_KEY');
+    if (legacyKey) {
+      try {
+        apiKey = atob(legacyKey);
+        console.warn('[GEMINI] WARNING: Using legacy unencrypted API key. Please re-save in Settings for security.');
+      } catch {
+        // Invalid base64
+      }
     }
   }
 
@@ -177,13 +185,19 @@ export interface ParsedIntent {
 }
 
 export const analyzeIntent = async (input: string): Promise<ParsedIntent> => {
-  // Check cache first
+  // Check cache first (fast path)
   const cached = intentCache.get(input);
   if (cached) {
     console.log('[INTENT] Cache hit for:', input.substring(0, 30) + '...');
     return cached;
   }
 
+  // Deduplicate in-flight requests with same input and mode
+  const dedupKey = createDedupKey(['intent', input, providerManager.getMode() ?? 'auto']);
+  return intentDedup.dedup(dedupKey, () => analyzeIntentInternal(input));
+};
+
+async function analyzeIntentInternal(input: string): Promise<ParsedIntent> {
   const currentMode = providerManager.getMode();
   const hasValidApiKey = hasApiKey();
   

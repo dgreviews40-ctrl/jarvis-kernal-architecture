@@ -29,7 +29,7 @@ export const EncryptionSetup: React.FC<EncryptionSetupProps> = ({ onComplete, on
     setError(null);
     
     try {
-      await apiKeyManager.initializeEncryption(password);
+      await apiKeyManager.initialize(password);
       onComplete();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to initialize encryption');

@@ -85,9 +85,9 @@ export class CacheService {
       }
 
       // Check if entry is expired
-      // Zero TTL: expires if any time has passed (Date.now() > timestamp)
+      // Zero TTL: expires on next access (Date.now() >= timestamp)
       // Positive TTL: expires if elapsed time >= TTL
-      if ((entry.ttl === 0 && Date.now() > entry.timestamp) || (entry.ttl > 0 && Date.now() - entry.timestamp >= entry.ttl)) {
+      if ((entry.ttl === 0 && Date.now() >= entry.timestamp) || (entry.ttl > 0 && Date.now() - entry.timestamp >= entry.ttl)) {
         this.delete(key);
         logger.log('SYSTEM', `Cache entry expired for key: ${key}`, 'info');
         return null;
@@ -109,9 +109,9 @@ export class CacheService {
     if (!entry) return false;
 
     // Check if entry is expired
-    // Zero TTL: expires if any time has passed (Date.now() > timestamp)
+    // Zero TTL: expires on next access (Date.now() >= timestamp)
     // Positive TTL: expires if elapsed time >= TTL
-    if ((entry.ttl === 0 && Date.now() > entry.timestamp) || (entry.ttl > 0 && Date.now() - entry.timestamp >= entry.ttl)) {
+    if ((entry.ttl === 0 && Date.now() >= entry.timestamp) || (entry.ttl > 0 && Date.now() - entry.timestamp >= entry.ttl)) {
       this.delete(key);
       return false;
     }

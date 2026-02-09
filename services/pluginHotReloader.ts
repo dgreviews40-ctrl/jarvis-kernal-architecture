@@ -57,7 +57,7 @@ export class PluginHotReloader {
 
       logger.log('PLUGIN', `Started watching plugin: ${pluginId}`, 'success');
     } catch (error) {
-      logger.log('PLUGIN', `Failed to watch plugin ${pluginId}: ${error.message}`, 'error');
+      logger.log('PLUGIN', `Failed to watch plugin ${pluginId}: ${(error as Error).message}`, 'error');
     }
   }
 
@@ -132,7 +132,7 @@ export class PluginHotReloader {
 
       return true;
     } catch (error) {
-      logger.log('PLUGIN', `Failed to reload plugin ${pluginId}: ${error.message}`, 'error');
+      logger.log('PLUGIN', `Failed to reload plugin ${pluginId}: ${(error as Error).message}`, 'error');
       
       // Try to rollback to previous version
       const rolledBack = await this.rollbackPlugin(pluginId);
@@ -184,7 +184,7 @@ export class PluginHotReloader {
 
       return true;
     } catch (error) {
-      logger.log('PLUGIN', `Failed to rollback plugin ${pluginId}: ${error.message}`, 'error');
+      logger.log('PLUGIN', `Failed to rollback plugin ${pluginId}: ${(error as Error).message}`, 'error');
       return false;
     }
   }
@@ -206,7 +206,7 @@ export class PluginHotReloader {
           await this.reloadPlugin(pluginId);
         }
       } catch (error) {
-        logger.log('PLUGIN', `Error checking changes for plugin ${pluginId}: ${error.message}`, 'error');
+        logger.log('PLUGIN', `Error checking changes for plugin ${pluginId}: ${(error as Error).message}`, 'error');
       }
     }
   }

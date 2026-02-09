@@ -21,6 +21,7 @@ import { resourceManager } from './resourceManager';
 import { pluginLoader } from './pluginLoader';
 import { kernelApi, KERNEL_VERSION } from './kernelApi';
 import { getKernelStoreState } from '../stores';
+import { initializeResilientAI } from './resilientAI';
 
 export const BOOT_PHASES_V12: BootPhase[] = [
   { 
@@ -321,8 +322,17 @@ class BootOrchestrator {
     // Initialize kernel store
     const store = getKernelStoreState();
     
+    // Initialize resilient AI service (offline queue)
+    try {
+      await initializeResilientAI();
+      phaseLog('KERNEL MOUNT', 'Resilient AI service initialized');
+    } catch (error) {
+      phaseLog('KERNEL MOUNT', 'WARNING: Resilient AI initialization failed');
+    }
+    
     // Verify version compatibility
-    if (KERNEL_VERSION.major !== 1 || KERNEL_VERSION.minor !== 5) {
+    const versionParts = KERNEL_VERSION.split('.');
+    if (parseInt(versionParts[0]) !== 1 || parseInt(versionParts[1]) < 5) {
       phaseLog('KERNEL MOUNT', 'WARNING: Kernel version mismatch');
     }
   }

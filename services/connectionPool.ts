@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: ConnectionPoolConfig = {
 
 class ConnectionPool {
   private connections = new Map<string, PooledConnection>();
-  private queue: QueuedRequest<unknown>[] = [];
+  private queue: QueuedRequest<any>[] = [];
   private activeRequests = 0;
   private config: ConnectionPoolConfig;
 

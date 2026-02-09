@@ -4,6 +4,117 @@ import { GoogleGenAI } from "@google/genai";
 import { cortex } from "./cortex";
 import { geminiRateLimiter } from "./rateLimiter";
 import { EnhancedCircuitBreaker } from "./CircuitBreaker";
+import { RequestDeduplicator, createDedupKey } from "./deduplicator";
+import {
+  JARVISError,
+  ErrorCode,
+  NetworkError,
+  TimeoutError,
+  AuthError,
+  QuotaError,
+  ValidationError,
+  classifyError,
+  httpStatusToErrorCode
+} from "./errorTypes";
+
+/**
+ * Ollama Rate Limiter
+ * Prevents overwhelming local Ollama instance
+ * - Local instances have limited concurrency
+ * - Too many requests cause OOM or timeout
+ * - Rate limiting provides graceful degradation
+ */
+class OllamaRateLimiter {
+  private queue: Array<{
+    resolve: () => void;
+    reject: (reason: Error) => void;
+    timestamp: number;
+  }> = [];
+  private processing = false;
+  private lastRequestTime = 0;
+  private readonly minIntervalMs: number; // Minimum time between requests
+  private readonly maxConcurrent: number;
+  private currentConcurrent = 0;
+
+  constructor(options: { requestsPerSecond?: number; maxConcurrent?: number } = {}) {
+    // Default: 4 requests per second, max 2 concurrent
+    this.minIntervalMs = 1000 / (options.requestsPerSecond || 4);
+    this.maxConcurrent = options.maxConcurrent || 2;
+  }
+
+  async acquire(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({
+        resolve,
+        reject,
+        timestamp: Date.now()
+      });
+      this.processQueue();
+    });
+  }
+
+  release(): void {
+    // Prevent negative concurrent count
+    if (this.currentConcurrent > 0) {
+      this.currentConcurrent--;
+    }
+    this.processQueue();
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.processing) return;
+    this.processing = true;
+
+    while (this.queue.length > 0) {
+      // Check if we can process more concurrent requests
+      if (this.currentConcurrent >= this.maxConcurrent) {
+        this.processing = false;
+        return;
+      }
+
+      // Check rate limiting
+      const now = Date.now();
+      const timeSinceLastRequest = now - this.lastRequestTime;
+      
+      if (timeSinceLastRequest < this.minIntervalMs) {
+        // Wait before processing next request
+        const waitTime = this.minIntervalMs - timeSinceLastRequest;
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+
+      // Process the next request
+      const request = this.queue.shift();
+      if (request) {
+        // Check for timeout (30s max wait)
+        if (Date.now() - request.timestamp > 30000) {
+          request.reject(new Error('Rate limit queue timeout'));
+          continue;
+        }
+
+        this.currentConcurrent++;
+        this.lastRequestTime = Date.now();
+        request.resolve();
+      }
+    }
+
+    this.processing = false;
+  }
+
+  getStats() {
+    return {
+      queueLength: this.queue.length,
+      currentConcurrent: this.currentConcurrent,
+      maxConcurrent: this.maxConcurrent,
+      minIntervalMs: this.minIntervalMs
+    };
+  }
+}
+
+// Global Ollama rate limiter instance
+const ollamaRateLimiter = new OllamaRateLimiter({ 
+  requestsPerSecond: 4,  // 4 req/sec prevents local overload
+  maxConcurrent: 2       // Max 2 concurrent to prevent OOM
+});
 
 const DEFAULT_AI_CONFIG: AIConfig = {
   model: 'gemini-2.0-flash',
@@ -19,12 +130,19 @@ const DEFAULT_OLLAMA_CONFIG: OllamaConfig = {
 // Request timeout configuration (in milliseconds)
 const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 
-// Helper function to create a timeout promise
+// Helper function to create a timeout promise with typed errors
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> => {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => 
-      setTimeout(() => reject(new Error(`${operation} timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+      setTimeout(() => reject(
+        new TimeoutError(
+          `${operation} timed out after ${timeoutMs / 1000}s`,
+          timeoutMs,
+          ErrorCode.CONNECTION_TIMEOUT,
+          { operation }
+        )
+      ), timeoutMs)
     )
   ]);
 };
@@ -36,12 +154,17 @@ export class GeminiProvider implements IAIProvider {
   private client: GoogleGenAI | null = null;
   private sourceId = 'provider.gemini';
   private circuitBreaker: EnhancedCircuitBreaker;
+  private deduplicator: RequestDeduplicator<AIResponse>;
 
   constructor() {
     this.circuitBreaker = new EnhancedCircuitBreaker({
       failureThreshold: 3,
       resetTimeout: 30000, // 30 seconds
       timeout: 30000 // 30 seconds
+    });
+    this.deduplicator = new RequestDeduplicator<AIResponse>({
+      maxInFlightAgeMs: 60000, // 60s timeout for generation
+      debug: false
     });
 
     const apiKey = this.getApiKey();
@@ -51,42 +174,55 @@ export class GeminiProvider implements IAIProvider {
   }
 
   public getApiKey(): string | null {
-    // Priority: encrypted storage > legacy storage > env vars
-    // This ensures security while maintaining backward compatibility
-    let apiKey: string | null = null;
+    // SECURITY FIX: Use secure apiKeyManager instead of localStorage + base64
+    // This ensures proper AES-GCM encryption for API keys
+    
+    // Try to get from secure storage (async, so we need a sync fallback)
+    // For now, check environment variables first (safe, not stored)
+    if (typeof import.meta.env !== 'undefined') {
+      const envKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
+      if (envKey && typeof envKey === 'string') {
+        console.log('[PROVIDERS] Using API key from environment');
+        return envKey;
+      }
+    }
+    
+    // Fallback to process.env for Node.js environments
+    if (typeof process !== 'undefined' && process.env) {
+      const envKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
+      if (envKey && typeof envKey === 'string') {
+        console.log('[PROVIDERS] Using API key from environment');
+        return envKey;
+      }
+    }
 
-    // Check encrypted storage first
+    // LEGACY FALLBACK: Check for old format keys (will be migrated on init)
+    // This is temporary and will be removed in a future version
     if (typeof localStorage !== 'undefined') {
-      const encryptedStoredKey = localStorage.getItem('jarvis_gemini_api_key_encrypted');
-      if (encryptedStoredKey) {
+      const legacyKey = localStorage.getItem('GEMINI_API_KEY');
+      if (legacyKey) {
         try {
-          apiKey = decodeURIComponent(atob(encryptedStoredKey));
-          console.log('[PROVIDERS] Using API key from encrypted localStorage');
-        } catch (e) {
-          console.warn('[PROVIDERS] Failed to decode encrypted API key, trying legacy format:', e);
-          // Try legacy format as fallback
-          const legacyStoredKey = localStorage.getItem('GEMINI_API_KEY');
-          if (legacyStoredKey) {
-            try {
-              apiKey = atob(legacyStoredKey);
-              console.log('[PROVIDERS] Using API key from legacy localStorage');
-            } catch (legacyError) {
-              console.error('[PROVIDERS] Failed to decode legacy API key:', legacyError);
-            }
-          }
+          const decoded = atob(legacyKey);
+          console.warn('[PROVIDERS] WARNING: Using legacy unencrypted API key. Please re-save your API key in Settings.');
+          return decoded;
+        } catch {
+          // Invalid base64, ignore
         }
       }
     }
 
-    // Fallback to environment variables
-    if (!apiKey && typeof process !== 'undefined') {
-      apiKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || null;
-      if (apiKey) {
-        console.log('[PROVIDERS] Using API key from environment');
-      }
-    }
+    return null;
+  }
 
-    return apiKey;
+  /**
+   * Set API key securely
+   * This should be called from Settings instead of direct localStorage manipulation
+   */
+  public async setApiKey(apiKey: string): Promise<void> {
+    // Import and use secure storage
+    const { apiKeyManager } = await import('./apiKeyManager');
+    await apiKeyManager.setKey('gemini', apiKey);
+    console.log('[PROVIDERS] API key stored securely');
   }
 
   async isAvailable(): Promise<boolean> {
@@ -105,14 +241,38 @@ export class GeminiProvider implements IAIProvider {
       throw new Error("CRITICAL: Gemini API Key not detected. Please add it in Settings > API & Security.");
     }
 
+    // Deduplicate identical requests
+    const dedupKey = createDedupKey([
+      'gemini',
+      request.prompt.slice(0, 100), // First 100 chars of prompt
+      request.model ?? 'default',
+      request.images?.length ?? 0
+    ]);
+    
+    return this.deduplicator.dedup(dedupKey, () => this.generateInternal(request));
+  }
+
+  private async generateInternal(request: AIRequest): Promise<AIResponse> {
+    const apiKey = this.getApiKey();
+    
     // === RATE LIMIT CHECK ===
     const check = geminiRateLimiter.canMakeRequest(request.images ? 2000 : 500);
     if (!check.allowed) {
       console.warn(`[GEMINI] Rate limit check failed: ${check.reason}. Retry after: ${check.retryAfter}s`);
-      throw new Error(`RATE_LIMITED: ${check.reason}. Please retry in ${check.retryAfter}s or switch to Ollama mode.`);
+      throw new QuotaError(
+        `Rate limit exceeded: ${check.reason}. Please retry in ${check.retryAfter}s or switch to Ollama mode.`,
+        ErrorCode.API_QUOTA_EXCEEDED,
+        check.retryAfter ? check.retryAfter * 1000 : undefined
+      );
     }
 
     if (!this.client) {
+      if (!apiKey) {
+        throw new AuthError(
+          'Gemini API key is required but not available',
+          ErrorCode.API_KEY_INVALID
+        );
+      }
       this.client = new GoogleGenAI({ apiKey });
     }
 
@@ -125,7 +285,7 @@ export class GeminiProvider implements IAIProvider {
       // Wrap the actual API call with the circuit breaker (with per-request timeout)
       response = await this.circuitBreaker.call(async () => {
         if (request.images && request.images.length > 0) {
-          const parts: any[] = [];
+          const parts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [];
 
           request.images.forEach(imgBase64 => {
             // Validate that the image is a proper base64 string
@@ -187,11 +347,19 @@ export class GeminiProvider implements IAIProvider {
       // Validate response before returning
       console.log('[GEMINI] Raw response:', response);
       if (!response) {
-        throw new Error('Gemini API returned null/undefined response');
+        throw new ValidationError(
+        'Gemini API returned null/undefined response',
+        undefined,
+        ErrorCode.API_INVALID_REQUEST
+      );
       }
       if (!response.text) {
         console.warn('[GEMINI] Response missing text field:', response);
-        throw new Error('Gemini API returned empty response (no text field)');
+        throw new ValidationError(
+        'Gemini API returned empty response (no text field)',
+        undefined,
+        ErrorCode.API_INVALID_REQUEST
+      );
       }
 
       return {
@@ -201,7 +369,7 @@ export class GeminiProvider implements IAIProvider {
         latencyMs: latency
       };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         const latency = Date.now() - start;
 
         // Track error for rate limiting
@@ -212,7 +380,7 @@ export class GeminiProvider implements IAIProvider {
             type: HealthEventType.API_ERROR,
             impact: ImpactLevel.MEDIUM,
             latencyMs: latency,
-            context: { errorMessage: error?.message || 'Unknown error' }
+            context: { errorMessage: error instanceof Error ? error.message : 'Unknown error' }
         });
 
         // Circuit breaker already handles the failure tracking, so we just rethrow
@@ -226,12 +394,17 @@ export class OllamaProvider implements IAIProvider {
   public id = AIProvider.OLLAMA;
   public name = "Ollama Local Interface";
   private circuitBreaker: EnhancedCircuitBreaker;
+  private deduplicator: RequestDeduplicator<AIResponse>;
 
   constructor() {
     this.circuitBreaker = new EnhancedCircuitBreaker({
       failureThreshold: 2,
       resetTimeout: 60000, // 1 minute
       timeout: 20000 // 20 seconds
+    });
+    this.deduplicator = new RequestDeduplicator<AIResponse>({
+      maxInFlightAgeMs: 120000, // 120s timeout for local LLM (can be slower)
+      debug: false
     });
   }
 
@@ -260,6 +433,18 @@ export class OllamaProvider implements IAIProvider {
       };
     }
 
+    // Deduplicate identical requests
+    const dedupKey = createDedupKey([
+      'ollama',
+      request.prompt.slice(0, 100),
+      request.model ?? 'default',
+      request.images?.length ?? 0
+    ]);
+    
+    return this.deduplicator.dedup(dedupKey, () => this.generateInternal(request));
+  }
+
+  private async generateInternal(request: AIRequest): Promise<AIResponse> {
     const start = Date.now();
     const config = providerManager.getOllamaConfig();
     
@@ -321,6 +506,9 @@ export class OllamaProvider implements IAIProvider {
           firstImageLength: validImages[0]?.length
         });
         
+        // Acquire rate limiter slot before making request
+        await ollamaRateLimiter.acquire();
+        
         // Wrap the API call with circuit breaker (with per-request timeout)
         const result = await this.circuitBreaker.call(async () => {
           const controller = new AbortController();
@@ -349,7 +537,17 @@ export class OllamaProvider implements IAIProvider {
             clearTimeout(timeoutId);
 
             if (!res.ok) {
-              throw new Error(`Ollama API error: ${res.status} ${res.statusText}`);
+              const code = httpStatusToErrorCode(res.status);
+              if (res.status === 401 || res.status === 403) {
+                throw new AuthError(`Ollama API authentication failed: ${res.statusText}`, code);
+              }
+              if (res.status === 429) {
+                throw new QuotaError(`Ollama API rate limited: ${res.statusText}`, code);
+              }
+              throw new JARVISError(
+                `Ollama API error: ${res.status} ${res.statusText}`,
+                code
+              );
             }
 
             const data = await res.json();
@@ -375,14 +573,18 @@ export class OllamaProvider implements IAIProvider {
           latencyMs: Date.now() - start
         };
 
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('[OLLAMA VISION] Error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to analyze image';
         return {
-          text: `[VISION ERROR] ${error?.message || 'Failed to analyze image'}.\n\nMake sure you have a vision model installed:\nollama pull llava`,
+          text: `[VISION ERROR] ${errorMessage}.\n\nMake sure you have a vision model installed:\nollama pull llava`,
           provider: AIProvider.OLLAMA,
           model: model,
           latencyMs: Date.now() - start
         };
+      } finally {
+        // Always release rate limiter slot (even on success or error)
+        ollamaRateLimiter.release();
       }
     }
 
@@ -406,6 +608,9 @@ export class OllamaProvider implements IAIProvider {
     }
 
     try {
+      // Acquire rate limiter slot before making request
+      await ollamaRateLimiter.acquire();
+      
       // Wrap the API call with circuit breaker (pass timeout to circuit breaker)
       const result = await this.circuitBreaker.call(async () => {
         const controller = new AbortController();
@@ -469,6 +674,9 @@ export class OllamaProvider implements IAIProvider {
         model: 'simulated-7b-quantized',
         latencyMs: Date.now() - start
       };
+    } finally {
+      // Always release rate limiter slot
+      ollamaRateLimiter.release();
     }
   }
 
@@ -616,7 +824,7 @@ class ProviderManager {
       }
       const data = await res.json();
       if (data && Array.isArray(data.models)) {
-        return data.models.map((model: any) => model.name || model.model);
+        return data.models.map((model: { name?: string; model?: string }) => model.name || model.model);
       }
       return [];
     } catch (e) {

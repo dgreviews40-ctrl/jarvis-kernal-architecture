@@ -73,7 +73,8 @@ export type PluginPermission =
   | 'ui:panel'
   | 'ui:statusbar'
   | 'display:render'
-  | 'model:selection';
+  | 'model:selection'
+  | 'plugin:capability';
 
 export interface Capability {
   name: string;

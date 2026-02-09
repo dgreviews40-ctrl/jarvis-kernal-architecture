@@ -33,7 +33,7 @@ export const MemoryConsolidationDashboard: React.FC = () => {
       setLastResult(result);
       logger.log('MEMORY', 'Manual consolidation completed', 'success');
     } catch (error) {
-      logger.log('MEMORY', `Consolidation failed: ${error.message}`, 'error');
+      logger.log('MEMORY', `Consolidation failed: ${(error as Error).message}`, 'error');
     } finally {
       setIsConsolidating(false);
     }

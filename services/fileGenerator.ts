@@ -86,7 +86,9 @@ export class FileGeneratorService {
     // Limit cache size
     if (this.generationCache.size > 20) {
       const firstKey = this.generationCache.keys().next().value;
-      this.generationCache.delete(firstKey);
+      if (firstKey) {
+        this.generationCache.delete(firstKey);
+      }
     }
 
     return result;

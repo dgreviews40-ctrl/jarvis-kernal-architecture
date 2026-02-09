@@ -1,21 +1,29 @@
 /**
- * Enhanced Security Service for JARVIS Kernel v1.3
+ * Enhanced Security Service for JARVIS Kernel v1.5
  * 
- * Implements advanced security features:
- * - JWT-based authentication
+ * Implements proper security features:
+ * - JWT-based authentication using Web Crypto API
  * - Role-based access control
- * - Request signing for critical operations
+ * - Request signing using HMAC-SHA256
  * - API rate limiting
+ * - Secure token generation
+ * 
+ * SECURITY FIXES (v1.5):
+ * - Replaced Math.random() token generation with crypto.getRandomValues
+ * - Replaced fake btoa-based HMAC with real HMAC-SHA256
+ * - Replaced predictable JWT signing with proper Web Crypto implementation
+ * - Added constant-time comparison for signatures
  */
 
 import { logger } from './logger';
 import { eventBus } from './eventBus';
+import { constantTimeCompare, generateSecureId } from './secureStorage';
 
 interface SecurityRule {
   id: string;
-  resource: string; // e.g., 'api:execute', 'plugin:install', 'memory:write'
-  roles: string[]; // e.g., ['admin', 'user', 'guest']
-  permissions: string[]; // e.g., ['read', 'write', 'execute']
+  resource: string;
+  roles: string[];
+  permissions: string[];
   conditions?: (context: SecurityContext) => boolean;
 }
 
@@ -33,30 +41,81 @@ interface SecurityContext {
 interface JWTClaims {
   userId: string;
   roles: string[];
-  exp: number; // Expiration timestamp
-  iat: number; // Issued at timestamp
+  exp: number;
+  iat: number;
   permissions: string[];
+  jti: string; // JWT ID for token revocation
+}
+
+interface JWTHeader {
+  alg: 'HS256';
+  typ: 'JWT';
 }
 
 export class SecurityService {
   private static instance: SecurityService;
-  private secretKey: string;
+  private signingKey: CryptoKey | null = null;
   private securityRules: SecurityRule[] = [];
-  private requestSignatures: Map<string, { timestamp: number, userId: string }> = new Map();
-  private rateLimits: Map<string, { count: number, windowStart: number }> = new Map();
+  private requestSignatures: Map<string, { timestamp: number; userId: string }> = new Map();
+  private rateLimits: Map<string, { count: number; windowStart: number }> = new Map();
+  private revokedTokens: Set<string> = new Set(); // Token revocation list
   private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
   private readonly MAX_REQUESTS_PER_WINDOW = 100;
 
-  private constructor(secretKey?: string) {
-    this.secretKey = secretKey || this.generateSecretKey();
+  private constructor() {
     this.initializeDefaultRules();
+    this.initializeSigningKey();
   }
 
-  public static getInstance(secretKey?: string): SecurityService {
+  public static getInstance(): SecurityService {
     if (!SecurityService.instance) {
-      SecurityService.instance = new SecurityService(secretKey);
+      SecurityService.instance = new SecurityService();
     }
     return SecurityService.instance;
+  }
+
+  /**
+   * Check if Web Crypto API is available
+   */
+  private isCryptoAvailable(): boolean {
+    return typeof crypto !== 'undefined' && 
+           typeof crypto.subtle !== 'undefined';
+  }
+
+  /**
+   * Initialize the signing key for JWT
+   */
+  private async initializeSigningKey(): Promise<void> {
+    try {
+      if (!this.isCryptoAvailable()) {
+        console.warn('[SecurityService] Web Crypto API not available. JWT features disabled.');
+        return;
+      }
+      
+      // Generate a secure random key for HMAC-SHA256
+      this.signingKey = await crypto.subtle.generateKey(
+        { name: 'HMAC', hash: 'SHA-256' },
+        false, // Not extractable
+        ['sign', 'verify']
+      );
+      logger.log('SYSTEM', 'Security service signing key initialized', 'info');
+    } catch (error) {
+      logger.log('SYSTEM', `Failed to initialize signing key: ${error}`, 'error');
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure signing key is ready
+   */
+  private async ensureSigningKey(): Promise<CryptoKey> {
+    if (!this.signingKey) {
+      await this.initializeSigningKey();
+    }
+    if (!this.signingKey) {
+      throw new Error('Signing key not available');
+    }
+    return this.signingKey;
   }
 
   /**
@@ -137,10 +196,10 @@ export class SecurityService {
       }
 
       // Find applicable rules
-      const applicableRules = this.securityRules.filter(rule => 
+      const applicableRules = this.securityRules.filter(rule =>
         this.matchesResource(rule.resource, context.resource) &&
         rule.roles.some(role => context.roles.includes(role)) &&
-        rule.permissions.some(permission => 
+        rule.permissions.some(permission =>
           context.permissions.includes(permission) || context.permissions.includes('*')
         )
       );
@@ -154,45 +213,68 @@ export class SecurityService {
       // Check conditions for each rule
       for (const rule of applicableRules) {
         if (rule.conditions && !rule.conditions(context)) {
-          continue; // Condition not met, try next rule
+          continue;
         }
-        // If we reach here, permission is granted
         return true;
       }
 
       logger.log('SYSTEM', `Permission denied for user ${context.userId} accessing ${context.resource}`, 'warning');
       return false;
     } catch (error) {
-      logger.log('SYSTEM', `Error checking permission: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Error checking permission: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       return false;
     }
   }
 
   /**
-   * Generate a JWT token
+   * Generate a JWT token using proper HMAC-SHA256
    */
-  public generateToken(userId: string, roles: string[], permissions: string[], expiresInMinutes: number = 60): string {
+  public async generateToken(
+    userId: string, 
+    roles: string[], 
+    permissions: string[], 
+    expiresInMinutes: number = 60
+  ): Promise<string> {
     try {
+      // Check crypto availability first
+      if (!this.isCryptoAvailable()) {
+        throw new Error('Web Crypto API not available');
+      }
+
+      const key = await this.ensureSigningKey();
       const now = Math.floor(Date.now() / 1000);
       const exp = now + (expiresInMinutes * 60);
 
+      const header: JWTHeader = { alg: 'HS256', typ: 'JWT' };
       const claims: JWTClaims = {
         userId,
         roles,
         permissions,
         exp,
-        iat: now
+        iat: now,
+        jti: generateSecureId(16) // Unique token ID for revocation
       };
 
-      // In a real implementation, we would use a proper JWT library
-      // For now, we'll create a simple signed token
-      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-      const payload = btoa(JSON.stringify(claims));
-      const signature = this.sign(`${header}.${payload}`);
+      // Encode header and payload
+      const headerB64 = this.base64UrlEncode(JSON.stringify(header));
+      const payloadB64 = this.base64UrlEncode(JSON.stringify(claims));
+      const signingInput = `${headerB64}.${payloadB64}`;
 
-      return `${header}.${payload}.${signature}`;
+      // Sign with HMAC-SHA256
+      const encoder = new TextEncoder();
+      const signature = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        encoder.encode(signingInput)
+      );
+
+      const signatureB64 = this.base64UrlEncode(
+        String.fromCharCode(...new Uint8Array(signature))
+      );
+
+      return `${signingInput}.${signatureB64}`;
     } catch (error) {
-      logger.log('SYSTEM', `Error generating token: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Error generating token: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       throw error;
     }
   }
@@ -200,7 +282,7 @@ export class SecurityService {
   /**
    * Verify a JWT token
    */
-  public verifyToken(token: string): JWTClaims | null {
+  public async verifyToken(token: string): Promise<JWTClaims | null> {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) {
@@ -208,17 +290,36 @@ export class SecurityService {
         return null;
       }
 
-      const [header, payload, signature] = parts;
+      const [headerB64, payloadB64, signatureB64] = parts;
+      const key = await this.ensureSigningKey();
 
       // Verify signature
-      const expectedSignature = this.sign(`${header}.${payload}`);
-      if (signature !== expectedSignature) {
+      const signingInput = `${headerB64}.${payloadB64}`;
+      const encoder = new TextEncoder();
+      const signature = new Uint8Array(
+        [...this.base64UrlDecode(signatureB64)].map(c => c.charCodeAt(0))
+      );
+
+      const isValid = await crypto.subtle.verify(
+        'HMAC',
+        key,
+        signature,
+        encoder.encode(signingInput)
+      );
+
+      if (!isValid) {
         logger.log('SYSTEM', 'Invalid token signature', 'error');
         return null;
       }
 
       // Decode payload
-      const claims: JWTClaims = JSON.parse(atob(payload));
+      const claims: JWTClaims = JSON.parse(this.base64UrlDecode(payloadB64));
+
+      // Check if token is revoked
+      if (this.revokedTokens.has(claims.jti)) {
+        logger.log('SYSTEM', 'Token has been revoked', 'warning');
+        return null;
+      }
 
       // Check expiration
       const now = Math.floor(Date.now() / 1000);
@@ -229,60 +330,103 @@ export class SecurityService {
 
       return claims;
     } catch (error) {
-      logger.log('SYSTEM', `Error verifying token: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Error verifying token: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       return null;
     }
   }
 
   /**
-   * Sign a request for critical operations
+   * Revoke a token
    */
-  public signRequest(userId: string, resourceId: string, timestamp: number, nonce: string): string {
+  public revokeToken(jti: string): void {
+    this.revokedTokens.add(jti);
+    logger.log('SYSTEM', `Token revoked: ${jti}`, 'info');
+  }
+
+  /**
+   * Sign a request for critical operations using HMAC-SHA256
+   */
+  public async signRequest(
+    userId: string, 
+    resourceId: string, 
+    timestamp: number, 
+    nonce: string
+  ): Promise<string> {
+    const key = await this.ensureSigningKey();
     const data = `${userId}|${resourceId}|${timestamp}|${nonce}`;
-    const signature = this.sign(data);
     
+    const encoder = new TextEncoder();
+    const signature = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      encoder.encode(data)
+    );
+
+    const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)));
+
     // Store the signature temporarily to prevent replay attacks
     const signatureKey = `${userId}|${resourceId}|${timestamp}|${nonce}`;
     this.requestSignatures.set(signatureKey, { timestamp, userId });
-    
+
     // Clean up old signatures
     this.cleanupOldSignatures();
-    
-    return signature;
+
+    return signatureB64;
   }
 
   /**
    * Verify a signed request
    */
-  public verifySignedRequest(userId: string, resourceId: string, timestamp: number, nonce: string, signature: string): boolean {
-    const data = `${userId}|${resourceId}|${timestamp}|${nonce}`;
-    const expectedSignature = this.sign(data);
-    
-    if (signature !== expectedSignature) {
-      logger.log('SYSTEM', 'Invalid request signature', 'error');
+  public async verifySignedRequest(
+    userId: string, 
+    resourceId: string, 
+    timestamp: number, 
+    nonce: string, 
+    signature: string
+  ): Promise<boolean> {
+    try {
+      const key = await this.ensureSigningKey();
+      const data = `${userId}|${resourceId}|${timestamp}|${nonce}`;
+
+      const encoder = new TextEncoder();
+      const expectedSignature = await crypto.subtle.sign(
+        'HMAC',
+        key,
+        encoder.encode(data)
+      );
+
+      const expectedB64 = btoa(String.fromCharCode(...new Uint8Array(expectedSignature)));
+
+      // Constant-time comparison to prevent timing attacks
+      if (!constantTimeCompare(signature, expectedB64)) {
+        logger.log('SYSTEM', 'Invalid request signature', 'error');
+        return false;
+      }
+
+      // Check if this signature was already used (replay attack prevention)
+      const signatureKey = `${userId}|${resourceId}|${timestamp}|${nonce}`;
+      const storedSignature = this.requestSignatures.get(signatureKey);
+
+      if (!storedSignature) {
+        logger.log('SYSTEM', 'Request signature not found (possible replay attack)', 'warning');
+        return false;
+      }
+
+      // Remove the signature after verification
+      this.requestSignatures.delete(signatureKey);
+
+      // Check if the request is too old
+      const now = Date.now();
+      if (now - storedSignature.timestamp > 300000) { // 5 minutes
+        logger.log('SYSTEM', 'Request signature is too old', 'warning');
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.log('SYSTEM', `Error verifying request: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       return false;
     }
-    
-    // Check if this signature was already used (replay attack prevention)
-    const signatureKey = `${userId}|${resourceId}|${timestamp}|${nonce}`;
-    const storedSignature = this.requestSignatures.get(signatureKey);
-    
-    if (!storedSignature) {
-      logger.log('SYSTEM', 'Request signature not found (possible replay attack)', 'warning');
-      return false;
-    }
-    
-    // Remove the signature after verification
-    this.requestSignatures.delete(signatureKey);
-    
-    // Check if the request is too old (prevent old requests from being reused)
-    const now = Date.now();
-    if (now - storedSignature.timestamp > 300000) { // 5 minutes
-      logger.log('SYSTEM', 'Request signature is too old', 'warning');
-      return false;
-    }
-    
-    return true;
   }
 
   /**
@@ -356,23 +500,6 @@ export class SecurityService {
   }
 
   /**
-   * Generate a random secret key
-   */
-  private generateSecretKey(): string {
-    // In a real implementation, use crypto.randomUUID() or similar secure method
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
-  }
-
-  /**
-   * Sign data with the secret key
-   */
-  private sign(data: string): string {
-    // Simple HMAC-like signature (in real implementation, use proper crypto)
-    return btoa(data + this.secretKey).substring(0, 20);
-  }
-
-  /**
    * Clean up old request signatures
    */
   private cleanupOldSignatures(): void {
@@ -399,20 +526,44 @@ export class SecurityService {
   }
 
   /**
+   * Base64Url encode a string
+   */
+  private base64UrlEncode(input: string): string {
+    return btoa(input)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  /**
+   * Base64Url decode a string
+   */
+  private base64UrlDecode(input: string): string {
+    // Restore padding
+    const padding = 4 - (input.length % 4);
+    if (padding !== 4) {
+      input += '='.repeat(padding);
+    }
+    return atob(input.replace(/-/g, '+').replace(/_/g, '/'));
+  }
+
+  /**
    * Get security statistics
    */
-  public getStats(): { 
-    totalRules: number; 
-    activeSignatures: number; 
-    trackedUsers: number; 
-    rateLimitedUsers: number 
+  public getStats(): {
+    totalRules: number;
+    activeSignatures: number;
+    trackedUsers: number;
+    rateLimitedUsers: number;
+    revokedTokens: number;
   } {
     return {
       totalRules: this.securityRules.length,
       activeSignatures: this.requestSignatures.size,
       trackedUsers: this.rateLimits.size,
       rateLimitedUsers: Array.from(this.rateLimits.values())
-        .filter(limit => limit.count > this.MAX_REQUESTS_PER_WINDOW).length
+        .filter(limit => limit.count > this.MAX_REQUESTS_PER_WINDOW).length,
+      revokedTokens: this.revokedTokens.size
     };
   }
 }

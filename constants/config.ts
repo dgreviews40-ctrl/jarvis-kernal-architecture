@@ -346,7 +346,7 @@ export const FEATURES = {
   ENABLE_ANALYTICS: false,
   
   /** Enable debug mode */
-  ENABLE_DEBUG: import.meta.env.DEV || false,
+  ENABLE_DEBUG: import.meta.env?.DEV || false,
 } as const;
 
 // ==================== AUDIO ====================

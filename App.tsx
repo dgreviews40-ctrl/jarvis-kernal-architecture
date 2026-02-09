@@ -10,10 +10,14 @@ import { BootSequence } from './components/BootSequence';
 import { BootSequenceFast } from './components/BootSequenceFast';
 import { MainDashboard } from './components/MainDashboard';
 import { NotificationSystem } from './components/NotificationSystem';
-import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell, Database, Power } from 'lucide-react';
+import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell, Database, Power, Image, Cpu } from 'lucide-react';
 import { textStyle, textColor, fontFamily, tracking } from './constants/typography';
 import { logger } from './services/logger';
 import { TIMING, LIMITS } from './constants/config';
+
+// Non-lazy components (avoid dynamic import issues)
+import VisionMemoryPanel from './components/VisionMemoryPanel';
+import ModelManagerPanel from './components/ModelManagerPanel';
 
 // Lazy loaded components - these will be split into separate chunks
 const ArchitectureDiagram = lazy(() => import('./components/ArchitectureDiagram'));
@@ -241,7 +245,7 @@ const App: React.FC = () => {
       // Testing framework is initialized automatically
       logger.log('SYSTEM', 'Testing framework initialized', 'info');
     } catch (error) {
-      logger.log('SYSTEM', `Error initializing v1.3 services: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Error initializing v1.3 services: ${(error as Error).message}`, 'error');
     }
 
     // Initialize v1.5.0 services
@@ -258,9 +262,9 @@ const App: React.FC = () => {
     providerManager.setForcedMode(forcedMode);
     graphService.rebuild();
     
-    // Expose engine on window for kernelProcessor and other services
-    (window as any).engine = engine;
-    console.log('[App] Execution engine exposed on window');
+    // SECURITY: Internal services are no longer exposed globally.
+    // Plugins should use the secure plugin API instead.
+    console.log('[App] Internal services secured - using secure plugin API');
 
     // Initial state refresh
     const initState = async () => {
@@ -365,30 +369,28 @@ const App: React.FC = () => {
 
     addLog('SYSTEM', 'Kernel Boot Sequence Complete.', 'success');
 
-    // Expose test runner globally
-    (window as any).runJarvisTests = () => systemTests.runAll();
-
-    // Expose engine globally for plugin execution (with warning)
-    console.warn('JARVIS: Exposing engine globally for plugin system');
-    (window as any).engine = engine;
-
-    // Expose pluginLoader globally for plugin execution (with warning)
-    import('./services/pluginLoader').then(({ pluginLoader }) => {
-      console.warn('JARVIS: Exposing pluginLoader globally for plugin system');
-      (window as any).pluginLoader = pluginLoader;
+    // SECURITY FIX: Removed global window pollution
+    // Previously exposed: engine, pluginLoader, registry, imageGenerator
+    // 
+    // Plugins now access functionality through the secure plugin API which:
+    // - Enforces permission checks via securityService
+    // - Logs all actions for audit
+    // - Enforces resource quotas
+    // - Does not expose internal service internals
+    //
+    // For debugging in development, use: window.__JARVIS_DEV__.runTests()
+    
+    // Register internal services for the secure plugin API
+    import('./services/securePluginApi').then(({ registerInternalServices, createDevAPI }) => {
+      registerInternalServices({ engine, registry });
+      
+      // Minimal dev API for debugging (not for production use)
+      if (import.meta.env?.DEV) {
+        (window as any).__JARVIS_DEV__ = createDevAPI();
+      }
     });
-
-    // Expose registry globally for plugin execution (with warning)
-    import('./services/registry').then(({ registry }) => {
-      console.warn('JARVIS: Exposing registry globally for plugin system');
-      (window as any).registry = registry;
-    });
-
-    // Expose imageGenerator globally for image generation (with warning)
-    import('./services/imageGenerator').then(({ imageGeneratorService }) => {
-      console.warn('JARVIS: Exposing imageGenerator globally for plugin system');
-      (window as any).imageGenerator = imageGeneratorService;
-    });
+    
+    console.log('[App] Secure plugin API registered');
 
     // Run quick health check after boot
     setTimeout(() => {
@@ -435,11 +437,10 @@ const App: React.FC = () => {
         }
 
         // Clean up global window object references to prevent memory leaks
-        delete (window as any).runJarvisTests;
-        delete (window as any).engine;
-        delete (window as any).pluginLoader;
-        delete (window as any).registry;
-        delete (window as any).imageGenerator;
+        // SECURITY: Only __JARVIS_DEV__ is exposed (and only in DEV mode)
+        if (import.meta.env?.DEV) {
+          delete (window as any).__JARVIS_DEV__;
+        }
     };
   }, [isSystemReady, forcedMode]); // Added forcedMode to dependency array
 
@@ -466,7 +467,7 @@ const App: React.FC = () => {
 
             addLog('HOME_ASSISTANT', 'Proxy server health check passed', 'success');
           } catch (healthError) {
-            addLog('HOME_ASSISTANT', `Proxy server health check failed: ${healthError.message}`, 'error');
+            addLog('HOME_ASSISTANT', `Proxy server health check failed: ${(healthError as Error).message}`, 'error');
             return; // Don't proceed if proxy isn't healthy
           }
 
@@ -491,7 +492,7 @@ const App: React.FC = () => {
 
               addLog('HOME_ASSISTANT', 'Proxy server configured successfully', 'success');
             } catch (configError) {
-              addLog('HOME_ASSISTANT', `Failed to configure proxy server: ${configError.message}`, 'error');
+              addLog('HOME_ASSISTANT', `Failed to configure proxy server: ${(configError as Error).message}`, 'error');
               return; // Don't proceed if proxy isn't configured
             }
 
@@ -500,7 +501,7 @@ const App: React.FC = () => {
             addLog('HOME_ASSISTANT', 'Connected to Home Assistant successfully!', 'success');
           }, 2000); // Reduced delay since we already verified proxy health
         } catch (error) {
-          addLog('HOME_ASSISTANT', `Failed to configure Home Assistant: ${error.message}`, 'error');
+          addLog('HOME_ASSISTANT', `Failed to configure Home Assistant: ${(error as Error).message}`, 'error');
         }
       } else if (haUrl && haToken && haService.initialized) {
         // Already initialized, just log the status
@@ -583,6 +584,8 @@ const App: React.FC = () => {
   if (view === 'MARKETPLACE') return <div className="h-screen w-screen"><LazyViewWrapper><PluginMarketplace onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
   if (view === 'VECTOR_DB') return <div className="h-screen w-screen"><LazyViewWrapper><VectorDBDashboard isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
   if (view === 'REALTIME') return <div className="h-screen w-screen"><LazyViewWrapper><RealtimeDashboard onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
+if (view === 'VISION_MEMORY') return <div className="h-screen w-screen"><LazyViewWrapper><VisionMemoryPanel isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
+if (view === 'MODEL_MANAGER') return <div className="h-screen w-screen"><LazyViewWrapper><ModelManagerPanel isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
 
   const isMainDashboard = activeTab === 'DASHBOARD';
 
@@ -629,6 +632,8 @@ const App: React.FC = () => {
              <button onClick={() => setView('INTEGRATIONS')} className="jarvis-btn-icon text-cyan-500" title="Integrations"><Zap size={18} /></button>
              <button onClick={() => setView('VECTOR_DB')} className="jarvis-btn-icon text-purple-500" title="Vector DB"><Database size={18} /></button>
              <button onClick={() => setView('REALTIME')} className="jarvis-btn-icon text-red-500" title="Real-Time Dashboard"><Activity size={18} /></button>
+             <button onClick={() => setView('VISION_MEMORY')} className="jarvis-btn-icon text-pink-500" title="Vision Memory"><Image size={18} /></button>
+             <button onClick={() => setView('MODEL_MANAGER')} className="jarvis-btn-icon text-cyan-500" title="Model Manager"><Cpu size={18} /></button>
              <button onClick={() => setView('DEV')} className="jarvis-btn-icon text-yellow-500" title="Dev Tools"><Bug size={18} /></button>
              <button onClick={() => setView('SETTINGS')} className="jarvis-btn-icon text-gray-500" title="Settings"><SettingsIcon size={18} /></button>
              <button onClick={handleExit} className="jarvis-btn-icon text-red-600 hover:text-red-400" title="Exit JARVIS"><Power size={18} /></button>

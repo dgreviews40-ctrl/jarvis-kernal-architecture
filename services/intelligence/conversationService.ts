@@ -89,7 +89,7 @@ class ConversationService {
     // Store topics
     topics.forEach(t => this.topics.set(t.name, t));
     
-    return topics.sort((a, b) => b.relevance - a.relevance);
+    return topics.sort((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0));
   }
 
   async manageThread(turn: ConversationTurn, topics: Topic[]): Promise<void> {
@@ -411,7 +411,7 @@ class ConversationService {
     threads: number;
     topics: number;
     emotionalState: string;
-    style: typeof this.personality.style;
+    style: { verbosity: 'concise' | 'moderate' | 'verbose'; formality: 'casual' | 'neutral' | 'formal'; humor: number; engagement: number; empathy: number; };
   } {
     return {
       threads: this.threads.size,

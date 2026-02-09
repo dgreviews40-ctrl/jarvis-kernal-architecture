@@ -287,10 +287,23 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[HARDWARE MONITOR] Server running at http://localhost:${PORT}`);
-  initialize();
-});
+// Export functions for testing
+module.exports = {
+  getCPUUsage,
+  getMemoryUsage,
+  getGPUUsage,
+  getCPUTemperature,
+  getCPUName,
+  updateStats
+};
+
+// Only start server if this file is run directly (not required as a module)
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`[HARDWARE MONITOR] Server running at http://localhost:${PORT}`);
+    initialize();
+  });
+}
 
 process.on('SIGINT', () => {
   console.log('\n[HARDWARE MONITOR] Shutting down...');

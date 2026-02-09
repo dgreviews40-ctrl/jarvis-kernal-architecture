@@ -41,7 +41,8 @@ export default defineConfig(({ mode }) => {
             entryFileNames: 'assets/[name]-[hash]-v2.js',
             chunkFileNames: 'assets/[name]-[hash]-v2.js',
             assetFileNames: (assetInfo) => {
-              const info = assetInfo.name.split('.');
+              const name = assetInfo.name || '';
+              const info = name.split('.');
               const ext = info[info.length - 1];
               return `assets/[name]-[hash]-v2[extname]`;
             },

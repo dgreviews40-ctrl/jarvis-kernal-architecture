@@ -348,7 +348,7 @@ class SettingsManager {
     return {
       settings,
       totalSize,
-      hasEncryption: apiKeyManager.isEncryptionEnabled(),
+      hasEncryption: apiKeyManager.isInitialized() && apiKeyManager.isSecure(),
     };
   }
 

@@ -536,7 +536,7 @@ export class ContextWindowService {
         lastAccessed: Date.now(),
       });
     } catch (error) {
-      logger.log('CONTEXT_WINDOW', `Failed to store summary: ${error.message}`, 'warning');
+      logger.log('CONTEXT_WINDOW', `Failed to store summary: ${(error as Error).message}`, 'warning');
     }
   }
 }

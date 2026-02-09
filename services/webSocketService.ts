@@ -71,7 +71,7 @@ export class WebSocketService {
           const message = JSON.parse(event.data as string);
           this.handleServerMessage(socket, message);
         } catch (error) {
-          logger.log('SYSTEM', `Invalid message from server: ${error.message}`, 'error');
+          logger.log('SYSTEM', `Invalid message from server: ${(error as Error).message}`, 'error');
         }
       };
 
@@ -81,12 +81,12 @@ export class WebSocketService {
       };
 
       socket.onerror = (error) => {
-        logger.log('SYSTEM', `WebSocket error: ${error}`, 'error');
+        logger.log('SYSTEM', `WebSocket error: ${String(error)}`, 'error');
       };
 
       logger.log('SYSTEM', `Connecting to WebSocket server: ${serverUrl}`, 'info');
     } catch (error) {
-      logger.log('SYSTEM', `Failed to connect to WebSocket server: ${error.message}`, 'error');
+      logger.log('SYSTEM', `Failed to connect to WebSocket server: ${(error as Error).message}`, 'error');
     }
   }
 

@@ -251,7 +251,7 @@ export function usePrevious<T>(value: T): T | undefined {
 
 // ==================== USE MEMOIZED CALLBACK ====================
 
-export function useMemoizedCallback<T extends (...args: any[]) => any>(
+export function useMemoizedCallback<T extends (...args: unknown[]) => unknown>(
   callback: T,
   deps: React.DependencyList
 ): T {

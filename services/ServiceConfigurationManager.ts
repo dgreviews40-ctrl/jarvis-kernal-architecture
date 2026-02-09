@@ -42,13 +42,13 @@ export class ServiceConfigurationManager {
       port: 11434
     },
     whisper: {
-      url: 'http://localhost:5001',
-      port: 5001,
+      url: 'http://localhost:5000',
+      port: 5000,
       model: 'base'
     },
     piper: {
-      url: 'http://localhost:5000',
-      port: 5000,
+      url: 'http://localhost:5001',
+      port: 5001,
       voice: 'jarvis'
     }
   };

@@ -313,7 +313,7 @@ class WhisperSTTService {
       console.error('[WHISPER] Transcription error:', err);
 
       // If the server is down, try to restart it or notify the user
-      if (err.message.includes('500') || err.message.includes('failed')) {
+      if ((err as Error).message?.includes('500') || (err as Error).message?.includes('failed')) {
         console.warn('[WHISPER] Server may be down, checking health...');
         setTimeout(async () => {
           const available = await this.isAvailable();

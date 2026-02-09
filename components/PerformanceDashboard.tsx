@@ -39,7 +39,7 @@ const MetricCard: React.FC<MetricCardProps> = ({ title, value, subtitle, icon, t
   };
 
   return (
-    <div className={`bg-gray-900 border ${alertColors[alert]} rounded-lg p-4`}>
+    <div className={`bg-gray-900 border ${alertColors[alert || 'none']} rounded-lg p-4`}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-gray-400 text-xs uppercase tracking-wider">{title}</p>

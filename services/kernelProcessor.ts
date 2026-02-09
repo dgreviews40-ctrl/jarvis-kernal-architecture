@@ -22,6 +22,9 @@ import {
   KernelRequest,
   KernelResponse 
 } from '../types';
+import type { ParsedIntent } from './gemini';
+import type { IntelligenceResult } from './intelligence';
+import type { AgentGoal, AgentTask } from './agentOrchestrator';
 import { inputValidator } from './inputValidator';
 import { LIMITS, TIMING } from '../constants/config';
 import { analyzeIntent } from './gemini';
@@ -38,10 +41,11 @@ import { logger } from './logger';
 import { conversation } from './conversation';
 import { intelligence } from './intelligence';
 import { learningService } from './learning';
+import { engine } from './execution';
 import { isHomeAssistantQuery, searchEntities, generateEntityResponse } from './haEntitySearch';
 import { weatherService } from './weather';
 import { taskAutomation } from './integrations/taskAutomation';
-import { haService } from './home_assistant';
+import { haService, HAEntity } from './home_assistant';
 import { getKernelStoreState, setKernelDisplay } from '../stores';
 
 interface ProcessorContext {
@@ -70,7 +74,7 @@ export class KernelProcessor {
       return;
     }
     
-    const { sanitizedInput, now, trimmedInput } = validationResult;
+    const { sanitizedInput, now, trimmedInput } = validationResult as { sanitizedInput: string; now: number; trimmedInput: string };
 
     // Module 2: Duplicate Prevention
     const duplicateCheck = await this.checkForDuplicates(trimmedInput, now, context);
@@ -262,7 +266,7 @@ export class KernelProcessor {
 
       logger.log('INTELLIGENCE', `Context enriched: ${intelligenceResult.responseModifiers.tone} tone, ${intelligenceResult.proactiveSuggestions.length} proactive suggestions`, 'info');
     } catch (e) {
-      logger.log('INTELLIGENCE', `Context processing failed: ${e.message}, falling back to basic mode`, 'warning');
+      logger.log('INTELLIGENCE', `Context processing failed: ${(e as Error).message}, falling back to basic mode`, 'warning');
       intelligenceResult = null;
     }
 
@@ -343,11 +347,11 @@ export class KernelProcessor {
    * Module 7: Execution Routing
    */
   private async routeExecution(
-    analysisResult: any, 
+    analysisResult: { analysis: ParsedIntent; selectedProvider: AIProvider; relevantCorrection: { correctionText: string } | null }, 
     input: string, 
     sanitizedInput: string, 
     context: ProcessorContext, 
-    intelligenceResult: any
+    intelligenceResult: IntelligenceResult
   ): Promise<void> {
     const { analysis, selectedProvider, relevantCorrection } = analysisResult;
     let outputText = "";
@@ -454,7 +458,7 @@ export class KernelProcessor {
     }
   }
 
-  private async handleMemoryRead(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, analysis: any): Promise<string> {
+  private async handleMemoryRead(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, analysis: ParsedIntent): Promise<string> {
     context.setActiveModule('MEMORY');
 
     // v1.4.0: Try local vector DB first for semantic search
@@ -473,7 +477,7 @@ export class KernelProcessor {
         return synthesis.text;
       }
     } catch (error) {
-      logger.log('VECTOR_DB', `Local search failed, falling back: ${error.message}`, 'warning');
+      logger.log('VECTOR_DB', `Local search failed, falling back: ${(error as Error).message}`, 'warning');
     }
 
     // Check if this is actually a Home Assistant sensor query misclassified as memory
@@ -484,8 +488,8 @@ export class KernelProcessor {
       // Redirect to Home Assistant sensor query with smart filtering
       try {
         await haService.fetchEntities();
-        const sensors = Array.from((haService as any).entities.values())
-          .map((e: any) => {
+        const sensors = Array.from((haService as unknown as { entities: Map<string, HAEntity> }).entities.values())
+          .map((e: HAEntity & { score?: number }) => {
             const name = (e.attributes?.friendly_name || e.entity_id).toLowerCase();
             const entityId = e.entity_id.toLowerCase();
             let score = 0;
@@ -519,11 +523,11 @@ export class KernelProcessor {
             return score > 0 ? { ...e, score } : null;
           })
           .filter(Boolean)
-          .sort((a: any, b: any) => b.score - a.score)
+          .sort((a, b) => (b?.score ?? 0) - (a?.score ?? 0))
           .slice(0, 5);
 
         if (sensors.length > 0) {
-          const sensorInfo = sensors.map((s: any) => {
+          const sensorInfo = sensors.filter((s): s is HAEntity & { score: number } => s !== null).map((s) => {
             const name = s.attributes?.friendly_name || s.entity_id;
             const value = s.state;
             const unit = s.attributes?.unit_of_measurement || '';
@@ -535,8 +539,8 @@ export class KernelProcessor {
         } else {
           return `I couldn't find any matching sensors in Home Assistant for "${input}".`;
         }
-      } catch (error: any) {
-        const result = `Error fetching sensor data: ${error.message}`;
+      } catch (error: unknown) {
+        const result = `Error fetching sensor data: ${error instanceof Error ? error.message : 'Unknown error'}`;
         logger.log('HOME_ASSISTANT', result, 'error');
         return result;
       }
@@ -577,12 +581,12 @@ export class KernelProcessor {
     }
   }
 
-  private async handleMemoryWrite(input: string, analysis: any, context: ProcessorContext): Promise<string> {
+  private async handleMemoryWrite(input: string, analysis: ParsedIntent, context: ProcessorContext): Promise<string> {
     context.setActiveModule('MEMORY');
     // Normalize entities to ensure they are strings before joining
     const normalizedEntities = analysis.entities.map(entity =>
       typeof entity === 'string' ? entity
-      : typeof entity === 'object' && entity.text ? entity.text
+      : typeof entity === 'object' && (entity as {text?: string}).text ? (entity as {text?: string}).text
       : String(entity)
     );
     const contentToSave = normalizedEntities.join(' ') || input;
@@ -639,7 +643,7 @@ export class KernelProcessor {
         }
       }
     } catch (error) {
-      logger.log('MEMORY', `Failed to store with consolidation: ${error.message}`, 'warning');
+      logger.log('MEMORY', `Failed to store with consolidation: ${(error as Error).message}`, 'warning');
       // Fallback to legacy storage
       await vectorMemoryService.store({
         id: `memory_${Date.now()}`,
@@ -739,7 +743,7 @@ export class KernelProcessor {
     }
   }
 
-  private async handleCommand(input: string, analysis: any, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, intelligenceResult: any): Promise<string> {
+  private async handleCommand(input: string, analysis: ParsedIntent, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, intelligenceResult: IntelligenceResult): Promise<string> {
     context.setActiveModule('EXECUTION');
     context.setActiveModule('COMMAND');
 
@@ -763,8 +767,8 @@ export class KernelProcessor {
         } else {
           return "I couldn't find any relevant sensors for that query.";
         }
-      } catch (error: any) {
-        const errorMessage = `Home Assistant query failed: ${error?.message || 'Unknown error'}`;
+      } catch (error: unknown) {
+        const errorMessage = `Home Assistant query failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
         logger.log('HOME_ASSISTANT', errorMessage, 'error');
         return errorMessage;
       }
@@ -791,11 +795,12 @@ export class KernelProcessor {
         try {
           // Normalize entities to ensure they are strings
           const paramsEntities = analysis.entities.length > 0
-            ? analysis.entities.map(entity =>
-                typeof entity === 'string' ? entity
-                : typeof entity === 'object' && entity.text ? entity.text
-                : String(entity)
-              )
+            ? analysis.entities.map(entity => {
+                if (typeof entity === 'string') return entity;
+                const entityObj = entity as {text?: string};
+                if (typeof entity === 'object' && entityObj.text) return entityObj.text;
+                return String(entity);
+              })
             : input.split(' ');
 
           const result = await haService.executeSmartCommand(paramsEntities);
@@ -822,13 +827,14 @@ export class KernelProcessor {
         } else {
           // Normalize entities to ensure they are strings
           const paramsEntities = analysis.entities.length > 0
-            ? analysis.entities.map(entity =>
-                typeof entity === 'string' ? entity
-                : typeof entity === 'object' && entity.text ? entity.text
-                : String(entity)
-              )
+            ? analysis.entities.map(entity => {
+                if (typeof entity === 'string') return entity;
+                const entityObj = entity as {text?: string};
+                if (typeof entity === 'object' && entityObj.text) return entityObj.text;
+                return String(entity);
+              })
             : input.split(' ');
-          const result = await (window as any).engine.executeAction({
+          const result = await engine.executeAction({
             pluginId,
             method: 'EXECUTE_INTENT',
             params: { entities: paramsEntities }
@@ -840,7 +846,7 @@ export class KernelProcessor {
     }
   }
 
-  private async handleQuery(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, intelligenceResult: any, analysis: any): Promise<string> {
+  private async handleQuery(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, intelligenceResult: IntelligenceResult, analysis: ParsedIntent): Promise<string> {
     // Check if this is a diagram/schematic creation request (but NOT if it explicitly asks for SVG)
     const lowerInput = input.toLowerCase();
     const isDiagramRequest = (lowerInput.includes('show') && (lowerInput.includes('diagram') || lowerInput.includes('schematic') || lowerInput.includes('architecture') || lowerInput.includes('flowchart'))) ||
@@ -892,12 +898,12 @@ export class KernelProcessor {
           
           return `I've created a ${diagramType.toLowerCase()} for you. You can see it in the center display area and download it using the download button.`;
           
-        } catch (error: any) {
-          logger.log('DISPLAY', `Failed to generate diagram: ${error.message}`, 'error');
+        } catch (error: unknown) {
+          logger.log('DISPLAY', `Failed to generate diagram: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
           return "I encountered an error while generating the diagram. Please try again.";
         }
-      } catch (error: any) {
-        logger.log('DISPLAY', `Failed to generate diagram: ${error.message}`, 'error');
+      } catch (error: unknown) {
+        logger.log('DISPLAY', `Failed to generate diagram: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         return "I encountered an error while generating the diagram. Please try again.";
       }
     } else if (lowerInput.includes('location') || lowerInput.includes('where am i') || lowerInput.includes('my location') ||
@@ -974,12 +980,12 @@ export class KernelProcessor {
             : `I've created a ${style} ${format.toUpperCase()} image based on your request. You can view it in the center display and download it if you'd like.`;
           return responseMessage;
           
-        } catch (error: any) {
-          logger.log('DISPLAY', `Failed to generate image: ${error.message}`, 'error');
+        } catch (error: unknown) {
+          logger.log('DISPLAY', `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
           return "I encountered an error while generating the image. Please try again.";
         }
-      } catch (error: any) {
-        logger.log('DISPLAY', `Failed to display image: ${error.message}`, 'error');
+      } catch (error: unknown) {
+        logger.log('DISPLAY', `Failed to display image: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         return "I encountered an error while retrieving the image. Please try again.";
       }
     } else if ((lowerInput.includes('create') || lowerInput.includes('generate')) && 
@@ -996,8 +1002,8 @@ export class KernelProcessor {
         fileGeneratorService.downloadFile(generatedFile);
         
         return `I've generated a document based on your request. The download should start automatically. Filename: ${generatedFile.filename}`;
-      } catch (error: any) {
-        logger.log('DISPLAY', `Failed to generate PDF: ${error.message}`, 'error');
+      } catch (error: unknown) {
+        logger.log('DISPLAY', `Failed to generate PDF: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         return "I encountered an error while generating the document. Please try again.";
       }
     } else if ((lowerInput.includes('create') || lowerInput.includes('generate')) && 
@@ -1016,8 +1022,8 @@ export class KernelProcessor {
         fileGeneratorService.downloadFile(generatedFile);
         
         return `I've generated a ${format.toUpperCase()} file based on your request. The download should start automatically. Filename: ${generatedFile.filename}`;
-      } catch (error: any) {
-        logger.log('DISPLAY', `Failed to generate text file: ${error.message}`, 'error');
+      } catch (error: unknown) {
+        logger.log('DISPLAY', `Failed to generate text file: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
         return "I encountered an error while generating the text file. Please try again.";
       }
     } else if (lowerInput.includes('research') || lowerInput.includes('documentation') || lowerInput.includes('show documentation')) {
@@ -1040,7 +1046,7 @@ export class KernelProcessor {
 
         return "Displaying relevant documentation in the center display area.";
       } catch (error) {
-        logger.log('DISPLAY', `Failed to show documentation: ${error.message}`, 'error');
+        logger.log('DISPLAY', `Failed to show documentation: ${(error as Error).message}`, 'error');
         return "I encountered an error while retrieving the documentation. Please try again.";
       }
     } else if (lowerInput.includes('weather') || lowerInput.includes('temperature') || lowerInput.includes('forecast') || lowerInput.includes('rain') || lowerInput.includes('sunny') || lowerInput.includes('cloudy')) {
@@ -1098,8 +1104,8 @@ export class KernelProcessor {
 
           return "I couldn't retrieve weather data. The weather service may be temporarily unavailable or location access was denied.";
         }
-      } catch (error: any) {
-        const result = `Error retrieving weather information: ${error?.message || 'Unknown error'}`;
+      } catch (error: unknown) {
+        const result = `Error retrieving weather information: ${error instanceof Error ? error.message : 'Unknown error'}`;
         logger.log('WEATHER', result, 'error');
         return result;
       }
@@ -1149,8 +1155,8 @@ export class KernelProcessor {
 
           logger.log('HOME_ASSISTANT', `Found ${searchResult.matches.length} matches in ${searchResult.searchTimeMs.toFixed(0)}ms`, 'success');
           return result;
-        } catch (error: any) {
-          const result = `Error searching Home Assistant: ${error?.message || 'Unknown error'}`;
+        } catch (error: unknown) {
+          const result = `Error searching Home Assistant: ${error instanceof Error ? error.message : 'Unknown error'}`;
           logger.log('HOME_ASSISTANT', result, 'error');
           return result;
         }
@@ -1193,7 +1199,7 @@ export class KernelProcessor {
     }
   }
 
-  private async finalizeResponse(outputText: string, input: string, context: ProcessorContext, intelligenceResult: any): Promise<void> {
+  private async finalizeResponse(outputText: string, input: string, context: ProcessorContext, intelligenceResult: IntelligenceResult): Promise<void> {
     try {
       // Track conversation turns for context
       conversation.addTurn('USER', input);
@@ -1226,21 +1232,21 @@ export class KernelProcessor {
           try {
             await voice.speak(outputText);
           } catch (speakError) {
-            logger.log('VOICE', `Error during speech: ${speakError.message}`, 'error');
+            logger.log('VOICE', `Error during speech: ${(speakError as Error).message}`, 'error');
           }
         } else {
           logger.log('VOICE', 'Duplicate speech prevented', 'warning');
         }
       }
     } catch (error) {
-      logger.log('KERNEL', `Error in finalizeResponse: ${error.message}`, 'error');
+      logger.log('KERNEL', `Error in finalizeResponse: ${(error as Error).message}`, 'error');
       // Ensure state is reset even if there's an error
       try {
         context.setState(ProcessorState.IDLE);
         context.setActiveModule(null);
         context.setProvider(null);
       } catch (resetError) {
-        logger.log('KERNEL', `Error resetting state: ${resetError.message}`, 'error');
+        logger.log('KERNEL', `Error resetting state: ${(resetError as Error).message}`, 'error');
       }
     } finally {
       // Always ensure processing flag is reset
@@ -1253,7 +1259,7 @@ export class KernelProcessor {
   /**
    * Determine if a request should use the Agent System
    */
-  private shouldUseAgent(input: string, analysis: any): boolean {
+  private shouldUseAgent(input: string, analysis: ParsedIntent): boolean {
     const lowerInput = input.toLowerCase();
     
     // Keywords that suggest complex multi-step tasks
@@ -1337,7 +1343,7 @@ export class KernelProcessor {
         return "Task cancelled.";
       }
     } catch (error) {
-      logger.log('AGENT', `Agent execution error: ${error.message}`, 'error');
+      logger.log('AGENT', `Agent execution error: ${(error as Error).message}`, 'error');
       return "I encountered an error while processing this request. Please try again.";
     }
   }
@@ -1345,9 +1351,9 @@ export class KernelProcessor {
   /**
    * Generate a natural language summary of agent results
    */
-  private async generateAgentSummary(goal: any, results: any[]): Promise<string> {
+  private async generateAgentSummary(goal: AgentGoal, results: unknown[]): Promise<string> {
     const taskCount = goal.tasks.length;
-    const completedCount = goal.tasks.filter((t: any) => t.status === 'completed').length;
+    const completedCount = goal.tasks.filter((t: AgentTask) => t.status === 'completed').length;
     
     // Simple summary for now - could use AI for more natural responses
     if (taskCount === 1) {

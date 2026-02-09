@@ -235,7 +235,9 @@ class OptimizedStateMachine<TState extends string, TEvent extends string> {
     // Limit cache size
     if (this.transitionCache.size > 100) {
       const oldest = this.transitionCache.keys().next().value;
-      this.transitionCache.delete(oldest);
+      if (oldest) {
+        this.transitionCache.delete(oldest);
+      }
     }
 
     this.transitionCache.set(key, {

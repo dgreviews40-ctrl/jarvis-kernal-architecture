@@ -355,7 +355,7 @@ class PluginLoader {
       throw new Error(`Capability ${name} not found`);
     }
 
-    const plugin = this.loadedPlugins.get(capability.provider);
+    const plugin = this.loadedPlugins.get(capability.provider!);
     if (!plugin) {
       throw new Error(`Provider plugin ${capability.provider} not loaded`);
     }

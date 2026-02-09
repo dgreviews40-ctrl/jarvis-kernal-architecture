@@ -45,7 +45,7 @@ class IncrementalComputeEngine {
       id,
       compute: compute as Computation<unknown, unknown>,
       version: 0,
-      equalityCheck: options.equalityCheck || this.defaultEqualityCheck,
+      equalityCheck: (options.equalityCheck || this.defaultEqualityCheck) as EqualityCheck<unknown>,
       subscribers: new Set()
     });
 
@@ -164,7 +164,9 @@ class IncrementalComputeEngine {
       // Limit cache size
       if (cache.size >= maxSize) {
         const firstKey = cache.keys().next().value;
-        cache.delete(firstKey);
+        if (firstKey) {
+          cache.delete(firstKey);
+        }
       }
 
       cache.set(cacheKey, { result, args });

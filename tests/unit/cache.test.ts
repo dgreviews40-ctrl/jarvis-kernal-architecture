@@ -97,11 +97,8 @@ describe('CacheService', () => {
     it('should handle zero TTL as immediate expiration on next get', async () => {
       cache.set('key1', 'value1', 0);
       
-      // Should still be there immediately
-      expect(cache.has('key1')).toBe(true);
-      
-      // But get should expire it
-      await new Promise(r => setTimeout(r, 1));
+      // With TTL=0, entry expires immediately on any subsequent access
+      expect(cache.has('key1')).toBe(false);
       expect(cache.get('key1')).toBeNull();
     });
   });

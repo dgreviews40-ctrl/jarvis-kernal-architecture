@@ -26,7 +26,7 @@ export class ImageGeneratorService {
       logger.log('IMAGE_GENERATOR', 'Using SVG generation', 'info');
       return this.generateFallbackSVG(prompt);
     } catch (error) {
-      logger.log('IMAGE_GENERATOR', `Failed to generate image: ${error.message}`, 'error');
+      logger.log('IMAGE_GENERATOR', `Failed to generate image: ${(error as Error).message}`, 'error');
       return this.generateFallbackSVG(prompt);
     }
   }

@@ -54,8 +54,8 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
       status.errors.push('Vector DB initialization failed');
     }
   } catch (error) {
-    status.errors.push(`Vector DB error: ${error.message}`);
-    logger.log('KERNEL', `Vector DB initialization error: ${error.message}`, 'error');
+    status.errors.push(`Vector DB error: ${(error as Error).message}`);
+    logger.log('KERNEL', `Vector DB initialization error: ${(error as Error).message}`, 'error');
   }
 
   // Initialize Context Window Service (synchronous)
@@ -65,8 +65,8 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
     status.contextWindow = true;
     logger.log('KERNEL', 'Context Window Service ready', 'success');
   } catch (error) {
-    status.errors.push(`Context Window error: ${error.message}`);
-    logger.log('KERNEL', `Context Window initialization error: ${error.message}`, 'error');
+    status.errors.push(`Context Window error: ${(error as Error).message}`);
+    logger.log('KERNEL', `Context Window initialization error: ${(error as Error).message}`, 'error');
   }
 
   // Initialize Memory Consolidation Service (v1.4.1)
@@ -76,8 +76,8 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
     status.memoryConsolidation = true;
     logger.log('KERNEL', 'Memory Consolidation Service ready', 'success');
   } catch (error) {
-    status.errors.push(`Memory Consolidation error: ${error.message}`);
-    logger.log('KERNEL', `Memory Consolidation initialization error: ${error.message}`, 'error');
+    status.errors.push(`Memory Consolidation error: ${(error as Error).message}`);
+    logger.log('KERNEL', `Memory Consolidation initialization error: ${(error as Error).message}`, 'error');
   }
 
   // Initialize Agent System (v1.4.2)
@@ -87,8 +87,8 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
     status.agentSystem = true;
     logger.log('KERNEL', `Agent System ready with ${agentOrchestrator.getAllTools().length} tools`, 'success');
   } catch (error) {
-    status.errors.push(`Agent System error: ${error.message}`);
-    logger.log('KERNEL', `Agent System initialization error: ${error.message}`, 'error');
+    status.errors.push(`Agent System error: ${(error as Error).message}`);
+    logger.log('KERNEL', `Agent System initialization error: ${(error as Error).message}`, 'error');
   }
 
   const allSuccess = status.vectorDB && status.contextWindow && status.memoryConsolidation && status.agentSystem;
@@ -126,7 +126,7 @@ export async function reinitializeService(service: 'vectorDB' | 'contextWindow')
       try {
         return await localVectorDB.initialize();
       } catch (error) {
-        logger.log('KERNEL', `Failed to reinitialize Vector DB: ${error.message}`, 'error');
+        logger.log('KERNEL', `Failed to reinitialize Vector DB: ${(error as Error).message}`, 'error');
         return false;
       }
     case 'contextWindow':
@@ -144,7 +144,7 @@ export async function exportVectorDB(): Promise<string> {
   try {
     return await localVectorDB.export();
   } catch (error) {
-    logger.log('KERNEL', `Export failed: ${error.message}`, 'error');
+    logger.log('KERNEL', `Export failed: ${(error as Error).message}`, 'error');
     throw error;
   }
 }
@@ -166,7 +166,7 @@ export async function importVectorDB(jsonData: string): Promise<{ imported: numb
     
     return result;
   } catch (error) {
-    logger.log('KERNEL', `Import failed: ${error.message}`, 'error');
+    logger.log('KERNEL', `Import failed: ${(error as Error).message}`, 'error');
     throw error;
   }
 }
@@ -190,7 +190,7 @@ export async function clearVectorDB(): Promise<void> {
     
     logger.log('KERNEL', 'Vector DB cleared', 'info');
   } catch (error) {
-    logger.log('KERNEL', `Clear failed: ${error.message}`, 'error');
+    logger.log('KERNEL', `Clear failed: ${(error as Error).message}`, 'error');
     throw error;
   }
 }

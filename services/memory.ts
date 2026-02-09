@@ -6,7 +6,10 @@
 import { MemoryNode, MemoryType, MemorySearchResult } from "../types";
 import { optimizer } from "./performance";
 import { vectorDB } from "./vectorDB";
+import { vectorDBSync } from "./vectorDBSyncService";
 import { logger } from "./logger";
+import { eventSourcing, EventSourcingStats, ReplayResult, MemoryEvent } from "./eventSourcing";
+import { memoryCompression, CompressionStats } from "./memoryCompression";
 
 // Simulated "Pre-existing" Long Term Memory
 const INITIAL_MEMORY: MemoryNode[] = [
@@ -48,8 +51,8 @@ interface SearchIndex {
   typeToNodes: Map<MemoryType, Set<string>>;
 }
 
-class MemoryCoreOptimized {
-  private nodes: Map<string, MemoryNode> = new Map();
+export class MemoryCoreOptimized {
+  public nodes: Map<string, MemoryNode> = new Map();
   private storageKey = 'jarvis_memory_banks_v2';
   private backupKey = 'jarvis_memory_backups';
   private backupConfigKey = 'jarvis_memory_backup_config';
@@ -117,37 +120,33 @@ class MemoryCoreOptimized {
 
   /**
    * Sync all existing memories to Vector DB (one-time migration)
-   * Returns number of memories synced
+   * Uses batched processing for efficiency
+   * Returns number of memories queued for sync
    */
   public async syncToVectorDB(): Promise<number> {
     try {
-      if (!vectorDB.initialized) {
-        await vectorDB.initialize();
-      }
-      
       const allNodes = Array.from(this.nodes.values());
-      let synced = 0;
       
-      for (const node of allNodes) {
-        try {
-          await vectorDB.store({
-            id: node.id,
-            content: node.content,
-            type: node.type,
-            tags: node.tags,
-            created: node.created,
-            lastAccessed: node.lastAccessed || node.created
-          });
-          synced++;
-        } catch (e) {
-          // Already exists or other error, skip
-        }
-      }
+      // Queue all nodes for batch sync
+      vectorDBSync.queueBatchStore(
+        allNodes.map(node => ({
+          id: node.id,
+          content: node.content,
+          type: node.type,
+          tags: node.tags,
+          created: node.created,
+          lastAccessed: node.lastAccessed || node.created
+        })),
+        'low'
+      );
       
-      if (synced > 0) {
-        logger.log('MEMORY', `Migrated ${synced} memories to Vector DB`, 'info');
+      // Trigger immediate sync with larger batch size
+      const result = await vectorDBSync.syncNow();
+      
+      if (result.success > 0) {
+        logger.log('MEMORY', `Migrated ${result.success} memories to Vector DB`, 'info');
       }
-      return synced;
+      return result.success;
     } catch (error) {
       logger.log('MEMORY', `Vector DB migration failed: ${error}`, 'warning');
       return 0;
@@ -267,8 +266,9 @@ class MemoryCoreOptimized {
 
   public async getAll(): Promise<MemoryNode[]> {
     await this.ensureLoaded();
-    return Array.from(this.nodes.values())
-      .sort((a, b) => b.created - a.created);
+    return memoryCompression.decompressBatch(
+      Array.from(this.nodes.values()).sort((a, b) => b.created - a.created)
+    );
   }
 
   public async getByType(type: MemoryType): Promise<MemoryNode[]> {
@@ -276,10 +276,12 @@ class MemoryCoreOptimized {
     const nodeIds = this.searchIndex.typeToNodes.get(type);
     if (!nodeIds) return [];
     
-    return Array.from(nodeIds)
+    const nodes = Array.from(nodeIds)
       .map(id => this.nodes.get(id)!)
       .filter(Boolean)
       .sort((a, b) => b.created - a.created);
+    
+    return memoryCompression.decompressBatch(nodes);
   }
 
   private readonly MAX_NODES = 10000; // Prevent unbounded memory growth
@@ -296,6 +298,8 @@ class MemoryCoreOptimized {
         const node = sortedNodes[i];
         this.nodes.delete(node.id);
         this.removeFromIndex(node.id);
+        // Record deletion event for removed nodes
+        await eventSourcing.recordDeleted(node, 'SYSTEM');
       }
       console.warn(`[MEMORY] Reached max capacity (${this.MAX_NODES}), removed ${nodesToRemove} oldest nodes`);
     }
@@ -305,21 +309,30 @@ class MemoryCoreOptimized {
       content,
       type,
       tags,
-      created: Date.now()
+      created: Date.now(),
+      lastAccessed: Date.now()
     };
     
-    this.nodes.set(newNode.id, newNode);
+    // Index BEFORE compression (search index needs original content)
     this.indexNode(newNode);
+    
+    // Compress for storage (if exceeds threshold)
+    const compressedNode = memoryCompression.compress(newNode);
+    
+    // Store compressed version
+    this.nodes.set(compressedNode.id, compressedNode);
     this.persistDebounced();
     this.triggerAutoBackup();
     
-    // Also store to Vector DB for semantic search
-    this.storeToVectorDB(newNode).catch(err => {
-      logger.log('MEMORY', `Vector DB store failed: ${err}`, 'warning');
-    });
+    // Record event for audit trail
+    await eventSourcing.recordCreated(newNode, 'USER');
+    
+    // Queue for Vector DB sync (use original content for embeddings)
+    vectorDBSync.queueStore(newNode, 'normal');
     
     this.notify();
 
+    // Return original (uncompressed) node to caller
     return newNode;
   }
 
@@ -412,10 +425,16 @@ class MemoryCoreOptimized {
       node.lastAccessed = Date.now();
     });
 
-    // Cache result
-    optimizer.set('memory', cacheKey, sorted, 100);
+    // Decompress nodes before returning
+    const decompressed = sorted.map(result => ({
+      ...result,
+      node: memoryCompression.decompress(result.node)
+    }));
 
-    return sorted;
+    // Cache result (store decompressed)
+    optimizer.set('memory', cacheKey, decompressed, 100);
+
+    return decompressed;
   }
 
   /**
@@ -460,16 +479,18 @@ class MemoryCoreOptimized {
   public async forget(id: string): Promise<boolean> {
     await this.ensureLoaded();
 
-    if (this.nodes.has(id)) {
+    const node = this.nodes.get(id);
+    if (node) {
       this.removeFromIndex(id);
       this.nodes.delete(id);
       this.persistDebounced();
       this.triggerAutoBackup();
       
-      // Also delete from Vector DB
-      vectorDB.delete(id).catch(err => {
-        logger.log('MEMORY', `Vector DB delete failed: ${err}`, 'warning');
-      });
+      // Record deletion event for audit trail
+      await eventSourcing.recordDeleted(node, 'USER');
+      
+      // Queue delete for Vector DB (batched)
+      vectorDBSync.queueDelete(id);
       
       this.notify();
       return true;
@@ -481,20 +502,39 @@ class MemoryCoreOptimized {
     await this.ensureLoaded();
 
     this.nodes.clear();
-    nodes.forEach(node => {
-      this.nodes.set(node.id, node);
-    });
+    
+    // Process each node: decompress if needed, then re-compress for storage
+    for (const node of nodes) {
+      // Decompress if restoring a compressed node
+      const decompressedNode = node.compressed 
+        ? memoryCompression.decompress(node) 
+        : node;
+      
+      // Compress for storage (if needed)
+      const storageNode = memoryCompression.compress(decompressedNode);
+      this.nodes.set(storageNode.id, storageNode);
+    }
 
+    // Build index from decompressed nodes
     this.rebuildIndex();
     this.persist();
     this.triggerAutoBackup();
     
-    // Also restore to Vector DB
-    for (const node of nodes) {
-      await this.storeToVectorDB(node);
+    // Record restore events for audit trail (use decompressed)
+    const decompressedNodes = nodes.map(n => n.compressed ? memoryCompression.decompress(n) : n);
+    for (const node of decompressedNodes) {
+      await eventSourcing.recordRestored(node, false, 'USER');
     }
     
+    // Batch restore to Vector DB (use decompressed)
+    vectorDBSync.queueBatchStore(decompressedNodes, 'low');
+    
     this.notify();
+    
+    // Force immediate sync for restore (async, don't block)
+    vectorDBSync.syncNow().catch(err => {
+      logger.log('MEMORY', `Vector DB batch restore failed: ${err}`, 'warning');
+    });
   }
 
   // ==================== EXPORT/IMPORT ====================
@@ -502,13 +542,19 @@ class MemoryCoreOptimized {
   public async exportToFile(): Promise<void> {
     await this.ensureLoaded();
     
-    const nodesArray = Array.from(this.nodes.values());
+    // Export decompressed nodes for portability
+    const nodesArray = memoryCompression.decompressBatch(
+      Array.from(this.nodes.values())
+    );
+    // Remove compression metadata from export
+    const cleanNodes = nodesArray.map(({ compressed, originalSize, compressedSize, ...node }) => node);
+    
     const exportData: MemoryExportData = {
       version: '2.0',
       exportedAt: Date.now(),
-      nodeCount: nodesArray.length,
-      nodes: nodesArray,
-      checksum: this.generateChecksum(JSON.stringify(nodesArray))
+      nodeCount: cleanNodes.length,
+      nodes: cleanNodes,
+      checksum: this.generateChecksum(JSON.stringify(cleanNodes))
     };
 
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -556,12 +602,27 @@ class MemoryCoreOptimized {
           }
 
           if (validNodes.length > 0) {
-            validNodes.forEach(node => {
-              this.nodes.set(node.id, node);
-              this.indexNode(node);
-            });
+            for (const node of validNodes) {
+              // Decompress if importing a compressed node (for backward compatibility)
+              const decompressedNode = node.compressed 
+                ? memoryCompression.decompress(node) 
+                : node;
+              
+              // Re-compress for storage if needed
+              const storageNode = memoryCompression.compress(decompressedNode);
+              
+              // Index using decompressed content
+              this.indexNode(decompressedNode);
+              this.nodes.set(storageNode.id, storageNode);
+            }
             this.persist();
             this.triggerAutoBackup();
+            
+            // Record batch import event for audit trail (use decompressed)
+            const auditNodes = validNodes.map(n => n.compressed ? memoryCompression.decompress(n) : n);
+            eventSourcing.recordBatchImported(auditNodes, file.name, 'USER').catch(err => {
+              logger.log('MEMORY', `Failed to record import event: ${err}`, 'warning');
+            });
           }
 
           resolve({ success: imported > 0, imported, errors });
@@ -641,7 +702,10 @@ class MemoryCoreOptimized {
     const config = this.getBackupConfig();
     const timestamp = Date.now();
     
-    const nodesArray = Array.from(this.nodes.values());
+    // Backup decompressed nodes for data safety
+    const nodesArray = memoryCompression.decompressBatch(
+      Array.from(this.nodes.values())
+    );
     const backupData: MemoryExportData = {
       version: '2.0',
       exportedAt: timestamp,
@@ -705,6 +769,8 @@ class MemoryCoreOptimized {
     newestMemory: number;
     totalBackups: number;
     indexSize: number;
+    eventSourcing: EventSourcingStats;
+    compression: CompressionStats;
   }> {
     await this.ensureLoaded();
     
@@ -718,13 +784,21 @@ class MemoryCoreOptimized {
       if (node.created > newest) newest = node.created;
     });
 
+    // Get event sourcing stats
+    const eventStats = await eventSourcing.getStats();
+    
+    // Get compression stats
+    const compressionStats = memoryCompression.getStats(Array.from(this.nodes.values()));
+
     return {
       totalNodes: this.nodes.size,
       byType,
       oldestMemory: oldest === Date.now() ? 0 : oldest,
       newestMemory: newest,
       totalBackups: this.getBackups().length,
-      indexSize: this.searchIndex.wordToNodes.size
+      indexSize: this.searchIndex.wordToNodes.size,
+      eventSourcing: eventStats,
+      compression: compressionStats
     };
   }
 
@@ -765,29 +839,17 @@ class MemoryCoreOptimized {
   // ==================== VECTOR DB BRIDGE ====================
 
   /**
-   * Store memory node to Vector DB for semantic search
+   * Get Vector DB sync statistics
    */
-  private async storeToVectorDB(node: MemoryNode): Promise<void> {
-    try {
-      // Ensure vector DB is initialized
-      if (!vectorDB.initialized) {
-        await vectorDB.initialize();
-      }
-      
-      await vectorDB.store({
-        id: node.id,
-        content: node.content,
-        type: node.type,
-        tags: node.tags,
-        created: node.created,
-        lastAccessed: node.lastAccessed || node.created
-      });
-      
-      logger.log('MEMORY', `Stored to Vector DB: ${node.id}`, 'info');
-    } catch (error) {
-      // Don't throw - vector DB is optional enhancement
-      logger.log('MEMORY', `Vector DB store error: ${error}`, 'warning');
-    }
+  public getVectorDBSyncStats() {
+    return vectorDBSync.getStats();
+  }
+
+  /**
+   * Force immediate Vector DB sync
+   */
+  public async forceVectorDBSync(): Promise<{ success: number; failed: number }> {
+    return vectorDBSync.syncNow();
   }
 
   /**
@@ -800,12 +862,181 @@ class MemoryCoreOptimized {
       }
       
       const results = await vectorDB.search(query, { maxResults: limit, minScore: 0.6 });
-      return results;
+      
+      // Decompress nodes before returning
+      return results.map(result => ({
+        ...result,
+        node: memoryCompression.decompress(result.node)
+      }));
     } catch (error) {
       logger.log('MEMORY', `Semantic recall failed, falling back to keyword search: ${error}`, 'warning');
       return this.recall(query, limit);
     }
   }
+
+  // ==================== EVENT SOURCING ====================
+
+  /**
+   * Replay events to rebuild memory state
+   * Useful for debugging and time-travel scenarios
+   */
+  public async replayEvents(
+    options: {
+      fromTimestamp?: number;
+      toTimestamp?: number;
+      nodeIds?: string[];
+    } = {}
+  ): Promise<ReplayResult> {
+    return eventSourcing.replay(options);
+  }
+
+  /**
+   * Undo the last memory operation
+   * @returns The undone event, or null if nothing to undo
+   */
+  public async undo(): Promise<MemoryEvent | null> {
+    const event = await eventSourcing.undo();
+    if (event) {
+      // Rebuild current state from events
+      const result = await eventSourcing.replay();
+      this.nodes = result.nodes;
+      this.rebuildIndex();
+      this.persist();
+      this.notify();
+    }
+    return event;
+  }
+
+  /**
+   * Redo a previously undone operation
+   * @returns The redone event, or null if nothing to redo
+   */
+  public async redo(): Promise<MemoryEvent | null> {
+    const event = await eventSourcing.redo();
+    if (event) {
+      // Rebuild current state from events
+      const result = await eventSourcing.replay();
+      this.nodes = result.nodes;
+      this.rebuildIndex();
+      this.persist();
+      this.notify();
+    }
+    return event;
+  }
+
+  /**
+   * Check if undo is available
+   */
+  public canUndo(): boolean {
+    return eventSourcing.canUndo();
+  }
+
+  /**
+   * Check if redo is available
+   */
+  public canRedo(): boolean {
+    return eventSourcing.canRedo();
+  }
+
+  /**
+   * Get event sourcing statistics
+   */
+  public async getEventSourcingStats(): Promise<EventSourcingStats> {
+    return eventSourcing.getStats();
+  }
+
+  /**
+   * Get event history for a specific memory node
+   */
+  public async getNodeHistory(nodeId: string): Promise<MemoryEvent[]> {
+    return eventSourcing.getNodeHistory(nodeId);
+  }
+
+  /**
+   * Get recent events across all memories
+   */
+  public async getRecentEvents(limit: number = 50): Promise<MemoryEvent[]> {
+    return eventSourcing.getRecentEvents(limit);
+  }
+
+  /**
+   * Export event log for debugging
+   */
+  public async exportEvents(): Promise<string> {
+    return eventSourcing.exportEvents();
+  }
+
+  /**
+   * Prune old events to free storage
+   * @param maxAgeDays Maximum age of events to keep
+   * @returns Number of events removed
+   */
+  public async pruneEvents(maxAgeDays?: number): Promise<number> {
+    return eventSourcing.pruneOldEvents(maxAgeDays);
+  }
+
+  // ==================== COMPRESSION CONFIGURATION ====================
+
+  /**
+   * Get memory compression configuration
+   */
+  public getCompressionConfig() {
+    return memoryCompression.getConfig();
+  }
+
+  /**
+   * Update memory compression configuration
+   */
+  public setCompressionConfig(config: { enabled?: boolean; threshold?: number }): void {
+    memoryCompression.setConfig(config);
+  }
+
+  /**
+   * Enable memory compression
+   */
+  public enableCompression(): void {
+    memoryCompression.enable();
+  }
+
+  /**
+   * Disable memory compression
+   */
+  public disableCompression(): void {
+    memoryCompression.disable();
+  }
+
+  /**
+   * Check if memory compression is enabled
+   */
+  public isCompressionEnabled(): boolean {
+    return memoryCompression.isEnabled();
+  }
+
+  /**
+   * Get compression statistics
+   */
+  public getCompressionStats(): CompressionStats {
+    return memoryCompression.getStats(Array.from(this.nodes.values()));
+  }
 }
 
+// Re-export event sourcing types for convenience
+export type {
+  MemoryEvent,
+  MemoryEventType,
+  MemoryCreatedEvent,
+  MemoryUpdatedEvent,
+  MemoryDeletedEvent,
+  MemoryRestoredEvent,
+  MemoryBatchImportedEvent,
+  MemoryCompactedEvent,
+  EventSourcingStats,
+  ReplayResult
+} from './eventSourcing';
+
+// Re-export compression types
+export type { CompressionStats, MemoryCompressionConfig } from './memoryCompression';
+
+// Export both the class (for testing) and the singleton instance (for app use)
 export const memory = new MemoryCoreOptimized();
+export { MemoryCoreOptimized as MemoryService };

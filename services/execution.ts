@@ -1,5 +1,6 @@
 import { BreakerStatus, KernelAction, CircuitState, CircuitConfig, HealthEventType, ImpactLevel } from "../types";
 import { registry } from "./registry";
+import { pluginLoader } from "./pluginLoader";
 import { cortex } from "./cortex";
 import { 
   runDiagnostics, 
@@ -88,7 +89,7 @@ export class CircuitBreaker {
       const start = Date.now();
 
       // Race between action and timeout with proper cleanup
-      let timeoutId: NodeJS.Timeout;
+      let timeoutId: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error("Execution Timed Out")), this.config.executionTimeoutMs);
       });
@@ -444,37 +445,39 @@ Available: diagnostic, metrics, network, battery, storage, performance,
         // Check if this is a plugin method execution
         if (action.method && action.params) {
           // Try to execute the plugin method if the plugin loader has the plugin
-          const pluginLoader = (window as any).pluginLoader;
           if (pluginLoader) {
             const loadedPlugin = pluginLoader.getPlugin(action.pluginId);
-            if (loadedPlugin && loadedPlugin.instance && typeof loadedPlugin.instance[action.method] === 'function') {
-              try {
-                const result = await loadedPlugin.instance[action.method](action.params);
-                return result;
-              } catch (error) {
-                console.error(`Error executing plugin method ${action.method} on ${action.pluginId}:`, error);
-                throw error;
+            if (loadedPlugin && loadedPlugin.instance) {
+              const instance = loadedPlugin.instance as Record<string, (p: unknown) => Promise<unknown>>;
+              if (typeof instance[action.method] === 'function') {
+                try {
+                  const result = await instance[action.method](action.params);
+                  return result as string;
+                } catch (error) {
+                  console.error(`Error executing plugin method ${action.method} on ${action.pluginId}:`, error);
+                  throw error;
+                }
+              } else {
+                throw new Error(`Method ${action.method} not found or not callable on plugin ${action.pluginId}`);
               }
             } else {
-              throw new Error(`Method ${action.method} not found or not callable on plugin ${action.pluginId}`);
+              // Plugin loader not available yet, log a warning
+              console.warn(`Plugin loader not available when trying to execute ${action.method} on ${action.pluginId}`);
             }
-          } else {
-            // Plugin loader not available yet, log a warning
-            console.warn(`Plugin loader not available when trying to execute ${action.method} on ${action.pluginId}`);
           }
         }
 
         // Generic Default
         await new Promise(r => setTimeout(r, Math.random() * 800 + 200));
-          return `Executed [${action.method}] on [${plugin.manifest.name}] successfully.`;
-        } catch (error) {
-          console.error(`Error in executeAction for plugin ${action.pluginId}:`, error);
-          throw error;
-        } finally {
-          // Update process metrics before cleanup
-          const duration = Date.now() - startTime;
-          updateVirtualProcessMetrics(pid, 0, duration);
-        }
+        return `Executed [${action.method}] on [${plugin.manifest.name}] successfully.`;
+      } catch (error) {
+        console.error(`Error in executeAction for plugin ${action.pluginId}:`, error);
+        throw error;
+      } finally {
+        // Update process metrics before cleanup
+        const duration = Date.now() - startTime;
+        updateVirtualProcessMetrics(pid, 0, duration);
+      }
       });
       return result;
     } finally {

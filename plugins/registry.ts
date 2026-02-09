@@ -2,6 +2,7 @@
  * Plugin Registry v2
  * 
  * Manages plugin lifecycle, dependencies, and capability registry.
+ * INTEGRATES with Plugin Loader for secure sandboxed execution.
  */
 
 import {
@@ -14,11 +15,107 @@ import {
   PluginEventMap
 } from './types';
 import { logger } from '../services/logger';
+import * as pluginLoader from './loader';
+import { createSecurePluginAPI } from '../services/securePluginApi';
+import { notificationService } from '../services/notificationService';
+
+// Plugin Network Rate Limiter - Token bucket per plugin
+// Prevents abuse and protects external APIs from excessive calls
+interface RateLimitBucket {
+  tokens: number;
+  lastRefill: number;
+  requestsThisMinute: number;
+  minuteStart: number;
+}
+
+const PLUGIN_RATE_LIMIT = {
+  // Per-plugin burst limit (requests per second)
+  burstLimit: 10,
+  // Sustained rate (requests per minute)
+  sustainedLimit: 60,
+  // Token refill rate (tokens per second)
+  refillRate: 2,
+  // Cooldown after hitting limit (ms)
+  cooldownMs: 5000,
+};
+
+const pluginRateLimits = new Map<string, RateLimitBucket>();
+
+function getRateLimitBucket(pluginId: string): RateLimitBucket {
+  if (!pluginRateLimits.has(pluginId)) {
+    const now = Date.now();
+    pluginRateLimits.set(pluginId, {
+      tokens: PLUGIN_RATE_LIMIT.burstLimit,
+      lastRefill: now,
+      requestsThisMinute: 0,
+      minuteStart: now,
+    });
+  }
+  return pluginRateLimits.get(pluginId)!;
+}
+
+function refillTokens(bucket: RateLimitBucket): void {
+  const now = Date.now();
+  const secondsPassed = (now - bucket.lastRefill) / 1000;
+  bucket.tokens = Math.min(
+    PLUGIN_RATE_LIMIT.burstLimit,
+    bucket.tokens + secondsPassed * PLUGIN_RATE_LIMIT.refillRate
+  );
+  bucket.lastRefill = now;
+  
+  // Reset minute counter if needed
+  if (now - bucket.minuteStart > 60000) {
+    bucket.requestsThisMinute = 0;
+    bucket.minuteStart = now;
+  }
+}
+
+function checkPluginRateLimit(pluginId: string): { allowed: boolean; retryAfterMs?: number } {
+  const bucket = getRateLimitBucket(pluginId);
+  refillTokens(bucket);
+  
+  // Check sustained limit (per minute)
+  if (bucket.requestsThisMinute >= PLUGIN_RATE_LIMIT.sustainedLimit) {
+    const retryAfter = PLUGIN_RATE_LIMIT.cooldownMs + Math.random() * 1000; // Add jitter
+    logger.warning('PLUGIN', `Plugin ${pluginId} hit sustained rate limit (${PLUGIN_RATE_LIMIT.sustainedLimit}/min)`);
+    return { allowed: false, retryAfterMs: retryAfter };
+  }
+  
+  // Check burst limit
+  if (bucket.tokens < 1) {
+    const retryAfter = (1 - bucket.tokens) / PLUGIN_RATE_LIMIT.refillRate * 1000;
+    logger.warning('PLUGIN', `Plugin ${pluginId} hit burst rate limit`);
+    return { allowed: false, retryAfterMs: retryAfter };
+  }
+  
+  // Consume token and track
+  bucket.tokens--;
+  bucket.requestsThisMinute++;
+  return { allowed: true };
+}
+
+function cleanupPluginRateLimit(pluginId: string): void {
+  pluginRateLimits.delete(pluginId);
+}
+
+// Initialize plugin loader with API creator (breaks circular dependency)
+pluginLoader.setPluginAPICreator(createPluginAPI);
 
 // In-memory storage for plugins
 const plugins = new Map<string, RuntimePluginV2>();
 const capabilities = new Map<string, Map<string, Capability>>(); // capability -> pluginId -> Capability
 const eventHandlers = new Map<string, Set<(data: unknown) => void>>();
+
+// Loaded plugin instances with their sandboxes and lifecycle hooks
+interface LoadedPluginInstance {
+  plugin: RuntimePluginV2;
+  sandbox?: pluginLoader.PluginSandbox;
+  lifecycle?: PluginLifecycle;
+  lifecycleHooks: string[];
+  api: PluginAPI;
+  cleanup?: () => void;
+}
+const loadedPlugins = new Map<string, LoadedPluginInstance>();
 
 // Event emitter
 function emit<K extends keyof PluginEventMap>(event: K, data: PluginEventMap[K]): void {
@@ -140,8 +237,8 @@ export async function registerPlugin(manifest: PluginManifestV2): Promise<boolea
   return true;
 }
 
-// Load a plugin
-export async function loadPlugin(pluginId: string): Promise<boolean> {
+// Load a plugin - INTEGRATED with Plugin Loader for secure sandboxed execution
+export async function loadPlugin(pluginId: string, baseUrl?: string): Promise<boolean> {
   const plugin = plugins.get(pluginId);
   if (!plugin) {
     logger.error('PLUGIN', `Plugin ${pluginId} not found`);
@@ -156,12 +253,168 @@ export async function loadPlugin(pluginId: string): Promise<boolean> {
   plugin.state = 'loading';
   
   try {
-    // TODO: Load plugin code from entry point
-    // For now, just mark as loaded
+    // Use plugin loader to fetch and sandbox the plugin code
+    const pluginBaseUrl = baseUrl || `/plugins/${pluginId}`;
+    const { success, error, sandbox } = await pluginLoader.loadPlugin(
+      pluginId,
+      plugin.manifest,
+      pluginBaseUrl
+    );
+    
+    if (!success || !sandbox) {
+      throw new Error(error || 'Failed to load plugin code');
+    }
+    
+    // Create secure API for the plugin
+    const api = createPluginAPI(pluginId);
+    
+    // Wait for initialization and get lifecycle hooks
+    const lifecycleHooks = await new Promise<string[]>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Plugin initialization timeout'));
+      }, 10000);
+      
+      const handler = (e: MessageEvent) => {
+        if (e.data.type === 'INIT_SUCCESS' && e.data.pluginId === pluginId) {
+          clearTimeout(timeout);
+          sandbox.messagePort.removeEventListener('message', handler);
+          resolve(e.data.lifecycleHooks || []);
+        } else if (e.data.type === 'INIT_ERROR' && e.data.pluginId === pluginId) {
+          clearTimeout(timeout);
+          sandbox.messagePort.removeEventListener('message', handler);
+          reject(new Error(e.data.error));
+        }
+      };
+      
+      sandbox.messagePort.addEventListener('message', handler);
+      sandbox.messagePort.start();
+    });
+    
+    // Build lifecycle object from hooks - FIXED: Actually wait for hook completion
+    const lifecycle: PluginLifecycle = {};
+    for (const hook of lifecycleHooks) {
+      lifecycle[hook as keyof PluginLifecycle] = async () => {
+        return new Promise<void>((resolve, reject) => {
+          const callId = Math.random().toString(36).slice(2);
+          const timeout = setTimeout(() => {
+            reject(new Error(`Lifecycle hook ${hook} timed out`));
+          }, 10000);
+          
+          const handler = (e: MessageEvent) => {
+            if (e.data.type === 'CALL_RESULT' && e.data.callId === callId) {
+              clearTimeout(timeout);
+              sandbox.messagePort.removeEventListener('message', handler);
+              resolve();
+            } else if (e.data.type === 'CALL_ERROR' && e.data.callId === callId) {
+              clearTimeout(timeout);
+              sandbox.messagePort.removeEventListener('message', handler);
+              reject(new Error(e.data.error));
+            }
+          };
+          
+          sandbox.messagePort.addEventListener('message', handler);
+          sandbox.worker?.postMessage({
+            type: 'CALL_LIFECYCLE',
+            callId,
+            data: { hook, pluginId }
+          });
+        });
+      };
+    }
+    
+    // FIXED: Set up ongoing message handler for API calls from Worker
+    // Store event handlers so we can clean them up on unload
+    const pluginEventHandlers = new Map<string, (data: unknown) => void>();
+    
+    const messageHandler = async (e: MessageEvent) => {
+      const { type, callId, call } = e.data;
+      
+      if (type === 'API_CALL' && call) {
+        try {
+          let result: unknown;
+          
+          // Route API call to the appropriate method
+          switch (call.method) {
+            case 'log':
+              api.log(call.args[0], call.args[1], call.args[2]);
+              result = undefined;
+              break;
+            case 'memory.recall':
+              result = await api.memory.recall(call.args[0], call.args[1]);
+              break;
+            case 'memory.store':
+              result = await api.memory.store(call.args[0], call.args[1]);
+              break;
+            case 'network.fetch':
+              result = await api.network.fetch(call.args[0], call.args[1]);
+              break;
+            case 'events.on':
+              // Register event handler from plugin
+              const eventName = call.args[0];
+              const handler = (data: unknown) => {
+                sandbox.worker?.postMessage({
+                  type: 'EVENT_EMIT',
+                  event: eventName,
+                  data
+                });
+              };
+              pluginEventHandlers.set(eventName, handler);
+              api.on(eventName, handler);
+              result = undefined;
+              break;
+            case 'events.off':
+              // Unregister event handler
+              const offEventName = call.args[0];
+              const offHandler = pluginEventHandlers.get(offEventName);
+              if (offHandler) {
+                // Note: We can't easily unsubscribe due to handler wrapping
+                // This is a limitation - handlers persist until unload
+                pluginEventHandlers.delete(offEventName);
+              }
+              result = undefined;
+              break;
+            case 'events.emit':
+              api.emit(call.args[0], call.args[1]);
+              result = undefined;
+              break;
+            case 'callCapability':
+              result = await api.callCapability(call.args[0], call.args[1], call.args[2]);
+              break;
+            default:
+              throw new Error(`Unknown API method: ${call.method}`);
+          }
+          
+          // Send result back to worker
+          sandbox.worker?.postMessage({ type: 'API_RESULT', callId, result });
+        } catch (err) {
+          sandbox.worker?.postMessage({ 
+            type: 'API_RESULT', 
+            callId, 
+            error: err instanceof Error ? err.message : 'Unknown error' 
+          });
+        }
+      }
+    };
+    
+    sandbox.messagePort.addEventListener('message', messageHandler);
+    
+    // Store cleanup function for unload
+    loadedPlugins.set(pluginId, {
+      plugin,
+      sandbox,
+      lifecycle,
+      lifecycleHooks,
+      api,
+      cleanup: () => {
+        sandbox.messagePort.removeEventListener('message', messageHandler);
+        pluginEventHandlers.clear();
+      }
+    });
+    
     plugin.state = 'loaded';
     plugin.loadedAt = Date.now();
     
-    logger.success('PLUGIN', `Loaded ${pluginId}`);
+    logger.success('PLUGIN', `Loaded ${pluginId} with hooks: [${lifecycleHooks.join(', ')}]`);
     emit('plugin:loaded', { pluginId });
     return true;
   } catch (err) {
@@ -175,7 +428,7 @@ export async function loadPlugin(pluginId: string): Promise<boolean> {
   }
 }
 
-// Start a plugin
+// Start a plugin - calls onStart lifecycle hook
 export async function startPlugin(pluginId: string): Promise<boolean> {
   const plugin = plugins.get(pluginId);
   if (!plugin) return false;
@@ -188,7 +441,13 @@ export async function startPlugin(pluginId: string): Promise<boolean> {
   plugin.state = 'starting';
   
   try {
-    // TODO: Call plugin's onStart lifecycle hook
+    // Call onStart lifecycle hook if available
+    const loaded = loadedPlugins.get(pluginId);
+    if (loaded?.lifecycle?.onStart) {
+      await loaded.lifecycle.onStart();
+      logger.info('PLUGIN', `onStart hook executed for ${pluginId}`);
+    }
+    
     plugin.state = 'active';
     plugin.startedAt = Date.now();
     
@@ -206,7 +465,7 @@ export async function startPlugin(pluginId: string): Promise<boolean> {
   }
 }
 
-// Stop a plugin
+// Stop a plugin - calls onStop lifecycle hook
 export async function stopPlugin(pluginId: string): Promise<boolean> {
   const plugin = plugins.get(pluginId);
   if (!plugin) return false;
@@ -218,7 +477,13 @@ export async function stopPlugin(pluginId: string): Promise<boolean> {
   plugin.state = 'stopping';
   
   try {
-    // TODO: Call plugin's onStop lifecycle hook
+    // Call onStop lifecycle hook if available
+    const loaded = loadedPlugins.get(pluginId);
+    if (loaded?.lifecycle?.onStop) {
+      await loaded.lifecycle.onStop();
+      logger.info('PLUGIN', `onStop hook executed for ${pluginId}`);
+    }
+    
     plugin.state = 'loaded';
     
     logger.info('PLUGIN', `Stopped ${pluginId}`);
@@ -234,7 +499,7 @@ export async function stopPlugin(pluginId: string): Promise<boolean> {
   }
 }
 
-// Unload a plugin
+// Unload a plugin - calls onUnload and cleans up sandbox
 export async function unloadPlugin(pluginId: string): Promise<boolean> {
   const plugin = plugins.get(pluginId);
   if (!plugin) return false;
@@ -245,12 +510,35 @@ export async function unloadPlugin(pluginId: string): Promise<boolean> {
   }
 
   try {
-    // TODO: Call plugin's onUnload lifecycle hook
+    // Call onUnload lifecycle hook if available
+    const loaded = loadedPlugins.get(pluginId);
+    if (loaded?.lifecycle?.onUnload) {
+      await loaded.lifecycle.onUnload();
+      logger.info('PLUGIN', `onUnload hook executed for ${pluginId}`);
+    }
+    
+    // Clean up message handlers
+    if (loaded?.cleanup) {
+      loaded.cleanup();
+      logger.info('PLUGIN', `Message handlers cleaned up for ${pluginId}`);
+    }
+    
+    // Clean up rate limiter
+    cleanupPluginRateLimit(pluginId);
+    
+    // Destroy sandbox and clean up resources
+    if (loaded?.sandbox) {
+      loaded.sandbox.destroy();
+      logger.info('PLUGIN', `Sandbox destroyed for ${pluginId}`);
+    }
     
     // Unregister capabilities
     plugin.manifest.provides.forEach(cap => {
       unregisterCapability(pluginId, cap.name);
     });
+    
+    // Remove from loaded plugins
+    loadedPlugins.delete(pluginId);
     
     plugin.state = 'installed';
     delete plugin.loadedAt;
@@ -289,8 +577,8 @@ export async function uninstallPlugin(pluginId: string): Promise<boolean> {
   return true;
 }
 
-// Update plugin config
-export function updatePluginConfig(pluginId: string, config: Record<string, unknown>): boolean {
+// Update plugin config - notifies plugin of changes
+export async function updatePluginConfig(pluginId: string, config: Record<string, unknown>): Promise<boolean> {
   const plugin = plugins.get(pluginId);
   if (!plugin) return false;
 
@@ -299,7 +587,17 @@ export function updatePluginConfig(pluginId: string, config: Record<string, unkn
   // Persist config
   localStorage.setItem(`plugin_config_${pluginId}`, JSON.stringify(plugin.config));
   
-  // TODO: Notify plugin of config change
+  // Notify plugin of config change via lifecycle hook
+  const loaded = loadedPlugins.get(pluginId);
+  if (loaded?.lifecycle?.onConfigChange) {
+    try {
+      await loaded.lifecycle.onConfigChange(plugin.config);
+      logger.info('PLUGIN', `onConfigChange hook executed for ${pluginId}`);
+    } catch (err) {
+      logger.error('PLUGIN', `onConfigChange failed for ${pluginId}`, { error: err });
+    }
+  }
+  
   logger.info('PLUGIN', `Updated config for ${pluginId}`);
   return true;
 }
@@ -334,6 +632,65 @@ export function findCapabilityProviders(capabilityName: string): Array<{ pluginI
     pluginId,
     capability
   }));
+}
+
+// Call a capability on a target plugin
+export async function callCapability(
+  callerPluginId: string,
+  targetPluginId: string,
+  capabilityName: string,
+  params: unknown
+): Promise<unknown> {
+  // Verify target plugin exists and is active
+  const target = plugins.get(targetPluginId);
+  if (!target) {
+    throw new Error(`Plugin ${targetPluginId} not found`);
+  }
+  if (target.state !== 'active') {
+    throw new Error(`Plugin ${targetPluginId} is not active (state: ${target.state})`);
+  }
+  
+  // Verify target provides the capability
+  const capMap = capabilities.get(capabilityName);
+  if (!capMap || !capMap.has(targetPluginId)) {
+    throw new Error(`Plugin ${targetPluginId} does not provide capability ${capabilityName}`);
+  }
+  
+  // Get the loaded plugin instance
+  const loaded = loadedPlugins.get(targetPluginId);
+  const sandbox = loaded?.sandbox;
+  if (!sandbox) {
+    throw new Error(`Plugin ${targetPluginId} is not properly loaded`);
+  }
+  
+  logger.info('PLUGIN', `Calling capability ${capabilityName} on ${targetPluginId} from ${callerPluginId}`);
+  
+  // Send capability call to the plugin's sandbox
+  return new Promise((resolve, reject) => {
+    const callId = Math.random().toString(36).slice(2);
+    const timeout = setTimeout(() => {
+      reject(new Error(`Capability call ${capabilityName} timed out`));
+    }, 30000);
+    
+    const handler = (e: MessageEvent) => {
+      if (e.data.type === 'CALL_RESULT' && e.data.callId === callId) {
+        clearTimeout(timeout);
+        sandbox.messagePort.removeEventListener('message', handler);
+        resolve(e.data.result);
+      } else if (e.data.type === 'CALL_ERROR' && e.data.callId === callId) {
+        clearTimeout(timeout);
+        sandbox.messagePort.removeEventListener('message', handler);
+        reject(new Error(e.data.error));
+      }
+    };
+    
+    sandbox.messagePort.addEventListener('message', handler);
+    sandbox.worker?.postMessage({
+      type: 'CALL_CAPABILITY',
+      callId,
+      data: { method: capabilityName, params, caller: callerPluginId }
+    });
+  });
 }
 
 // Validate manifest
@@ -444,15 +801,34 @@ export function createPluginAPI(pluginId: string): PluginAPI {
           throw new Error('Permission denied: memory:read');
         }
         plugin.apiCalls++;
-        // TODO: Implement via memory service
-        return [];
+        // INTEGRATED with memory service
+        try {
+          const { memory } = await import('../services/memory');
+          const results = await memory.recallSemantic(query, limit);
+          return results.map(r => ({
+            id: r.node.id,
+            content: r.node.content,
+            tags: r.node.tags,
+            score: r.score
+          }));
+        } catch (err) {
+          logger.error('PLUGIN', `Memory recall failed for ${pluginId}`, { error: err });
+          return [];
+        }
       },
       store: async (content, tags) => {
         if (!hasPermission('memory:write')) {
           throw new Error('Permission denied: memory:write');
         }
         plugin.apiCalls++;
-        // TODO: Implement via memory service
+        // INTEGRATED with memory service
+        try {
+          const { memory } = await import('../services/memory');
+          await memory.store(content, 'FACT', [...tags, `plugin:${pluginId}`]);
+        } catch (err) {
+          logger.error('PLUGIN', `Memory store failed for ${pluginId}`, { error: err });
+          throw err;
+        }
       }
     },
     
@@ -461,6 +837,14 @@ export function createPluginAPI(pluginId: string): PluginAPI {
         if (!hasPermission('network:fetch')) {
           throw new Error('Permission denied: network:fetch');
         }
+        
+        // Check rate limits before making request
+        const rateCheck = checkPluginRateLimit(pluginId);
+        if (!rateCheck.allowed) {
+          const retrySec = Math.ceil((rateCheck.retryAfterMs || 1000) / 1000);
+          throw new Error(`Rate limit exceeded. Retry after ${retrySec}s`);
+        }
+        
         plugin.apiCalls++;
         return fetch(url, options);
       },
@@ -479,7 +863,8 @@ export function createPluginAPI(pluginId: string): PluginAPI {
           throw new Error('Permission denied: system:notification');
         }
         plugin.apiCalls++;
-        // TODO: Implement notification service
+        // INTEGRATED with notification service
+        notificationService.info(`${title}: ${message}`);
       },
       clipboard: {
         read: async () => {
@@ -517,22 +902,14 @@ export function createPluginAPI(pluginId: string): PluginAPI {
     
     callCapability: async (targetPluginId, capability, params) => {
       plugin.apiCalls++;
-      const target = plugins.get(targetPluginId);
-      if (!target) {
-        throw new Error(`Plugin ${targetPluginId} not found`);
-      }
-      if (target.state !== 'active') {
-        throw new Error(`Plugin ${targetPluginId} is not active`);
+      
+      // Check if caller has permission to call capabilities
+      if (!hasPermission('plugin:capability')) {
+        throw new Error('Permission denied: plugin:capability');
       }
       
-      // Check if target provides the capability
-      const providesCapability = target.manifest.provides.some(c => c.name === capability);
-      if (!providesCapability) {
-        throw new Error(`Plugin ${targetPluginId} does not provide capability ${capability}`);
-      }
-      
-      // TODO: Implement capability call
-      return null;
+      // Route the capability call
+      return callCapability(pluginId, targetPluginId, capability, params);
     }
   };
 }

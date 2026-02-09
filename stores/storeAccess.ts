@@ -79,7 +79,7 @@ export function setKernelStreaming(streaming: boolean, text?: string): void {
  * Safely update kernel processor state
  * No-op if store is not available
  */
-export function setKernelProcessorState(state: any): void {
+export function setKernelProcessorState(state: import('../types').ProcessorState): void {
   const store = getKernelStoreState();
   if (store?.setProcessorState) {
     store.setProcessorState(state);
@@ -90,7 +90,7 @@ export function setKernelProcessorState(state: any): void {
  * Safely update kernel display
  * No-op if store is not available
  */
-export function setKernelDisplay(mode: any, content?: any): void {
+export function setKernelDisplay(mode: import('../types').DisplayMode, content?: import('../types').DisplayContent): void {
   const store = getKernelStoreState();
   if (store) {
     if (store.setDisplayMode) {
@@ -117,7 +117,7 @@ export function setKernelActiveModule(module: string | null): void {
  * Safely set AI provider
  * No-op if store is not available
  */
-export function setKernelProvider(provider: any): void {
+export function setKernelProvider(provider: import('../types').AIProvider | null): void {
   const store = getKernelStoreState();
   if (store?.setProvider) {
     store.setProvider(provider);

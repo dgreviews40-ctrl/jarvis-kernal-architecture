@@ -446,7 +446,7 @@ class PiperTTSService {
       } catch (startError) {
         console.error('[PIPER] Failed to start audio source:', startError);
         // This might be due to autoplay policy, try to handle gracefully
-        if (startError.name === 'InvalidStateError' || startError.message.includes('autoplay')) {
+        if ((startError as Error).name === 'InvalidStateError' || (startError as Error).message?.includes('autoplay')) {
           console.warn('[PIPER] Autoplay policy preventing audio playback. User interaction required.');
           // Release the audio context back to the pool
           const pooled = this.audioContextPool.find(p => p.context === audioCtx);

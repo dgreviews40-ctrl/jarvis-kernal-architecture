@@ -1,415 +1,511 @@
 #!/usr/bin/env node
-// @ts-check
 /**
- * JARVIS Launcher v2.0 - Auto-Restart Service Manager
- * Manages all services with automatic restart on crash/hang
+ * JARVIS Master Service Launcher
+ * Manages all services and ensures clean shutdown
  */
 
-const { spawn } = require('child_process');
-const http = require('http');
+const { spawn, exec } = require('child_process');
 const net = require('net');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 
-const PORTS = [3000, 3100, 3101, 5000];
-const SERVICES = {
-  hardware: { port: 3100, name: 'Hardware Monitor', maxRestarts: 5, healthUrl: 'http://localhost:3100/health' },
-  proxy: { port: 3101, name: 'HA Proxy', maxRestarts: 5, healthUrl: 'http://localhost:3101/health' },
-  piper: { port: 5000, name: 'Piper TTS', maxRestarts: 3, healthUrl: null }, // No HTTP endpoint
-  vite: { port: 3000, name: 'Vite', maxRestarts: 3, healthUrl: 'http://localhost:3000' }
+// ============================================
+// CONFIGURATION
+// ============================================
+// Find best way to run Vite
+function getViteCommand() {
+  const viteCmd = path.join(__dirname, 'node_modules', '.bin', 'vite.cmd');
+  const viteBin = path.join(__dirname, 'node_modules', '.bin', 'vite');
+  const viteJs = path.join(__dirname, 'node_modules', 'vite', 'bin', 'vite.js');
+  
+  if (fs.existsSync(viteCmd)) {
+    return { cmd: viteCmd, args: ['--config', 'vite.config.fast.ts'] };
+  }
+  if (fs.existsSync(viteBin)) {
+    return { cmd: viteBin, args: ['--config', 'vite.config.fast.ts'] };
+  }
+  if (fs.existsSync(viteJs)) {
+    return { cmd: 'node', args: [viteJs, '--config', 'vite.config.fast.ts'] };
+  }
+  // Last resort - try npx
+  return { cmd: 'npx.cmd', args: ['vite', '--config', 'vite.config.fast.ts'] };
+}
+
+const VITE_CFG = getViteCommand();
+
+const CONFIG = {
+  vite: {
+    port: 3000,
+    name: 'Vite Dev Server',
+    command: VITE_CFG.cmd,
+    args: VITE_CFG.args,
+    required: true,
+    isMain: true
+  },
+  hardware: {
+    port: 3100,
+    name: 'Hardware Monitor',
+    command: 'node',
+    args: ['server/hardware-monitor.cjs'],
+    required: true
+  },
+  proxy: {
+    port: 3101,
+    name: 'HA Proxy',
+    command: 'node',
+    args: ['server/proxy.js'],
+    required: true
+  },
+  piper: {
+    port: 5000,
+    name: 'Piper TTS',
+    command: 'python',
+    args: ['Piper/piper_server.py'],
+    required: false  // Optional
+  },
+  whisper: {
+    port: 5001,
+    name: 'Whisper STT',
+    command: 'python',
+    args: ['whisper_server.py'],
+    required: false  // Optional
+  },
+  embedding: {
+    port: 5002,
+    name: 'Embedding Server',
+    command: 'python',
+    args: ['embedding_server.py'],
+    required: false  // Optional
+  },
+  gpu: {
+    port: 5003,
+    name: 'GPU Monitor',
+    command: 'python',
+    args: ['gpu_monitor.py'],
+    required: false  // Optional
+  },
+  vision: {
+    port: 5004,
+    name: 'Vision Server',
+    command: 'python',
+    args: ['vision_server.py'],
+    required: false  // Optional
+  }
 };
 
-// Service state tracking
-const serviceState = {
-  hardware: { process: null, restarts: 0, lastRestart: 0, healthy: false, starting: false, failCount: 0 },
-  proxy: { process: null, restarts: 0, lastRestart: 0, healthy: false, starting: false, failCount: 0 },
-  piper: { process: null, restarts: 0, lastRestart: 0, healthy: false, starting: false, failCount: 0 },
-  vite: { process: null, restarts: 0, lastRestart: 0, healthy: false, starting: false, failCount: 0 }
-};
-
-let browserProcess = null;
-let healthCheckInterval = null;
+// ============================================
+// STATE
+// ============================================
+const processes = new Map();
+const portsInUse = new Set();
 let shuttingDown = false;
+let chromeProcess = null;
 
-// Check if port is in use (service is listening)
-function isPortListening(port) {
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
+function log(msg, type = 'info') {
+  const timestamp = new Date().toLocaleTimeString();
+  const prefix = {
+    info: `[${timestamp}] [INFO]`,
+    error: `[${timestamp}] [ERROR]`,
+    warn: `[${timestamp}] [WARN]`,
+    success: `[${timestamp}] [OK]`,
+    service: `[${timestamp}] [SERVICE]`
+  }[type] || `[${timestamp}] [INFO]`;
+  console.log(`${prefix} ${msg}`);
+}
+
+function checkPort(port) {
   return new Promise((resolve) => {
-    const client = new net.Socket();
-    client.setTimeout(1000);
-    client.once('connect', () => {
-      client.destroy();
+    const socket = new net.Socket();
+    socket.setTimeout(1000);
+    socket.once('connect', () => {
+      socket.destroy();
       resolve(true);
     });
-    client.once('error', () => resolve(false));
-    client.once('timeout', () => {
-      client.destroy();
+    socket.once('error', () => resolve(false));
+    socket.once('timeout', () => {
+      socket.destroy();
       resolve(false);
     });
-    client.connect(port, '127.0.0.1');
+    socket.connect(port, '127.0.0.1');
   });
 }
 
-// Kill process by port
+async function waitForPort(port, timeout = 30000, interval = 500) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (await checkPort(port)) return true;
+    await new Promise(r => setTimeout(r, interval));
+  }
+  return false;
+}
+
+function killProcess(pid) {
+  return new Promise((resolve) => {
+    if (!pid) {
+      resolve();
+      return;
+    }
+    
+    // Windows: taskkill /F /T kills process tree
+    const killer = spawn('taskkill', ['/F', '/T', '/PID', pid.toString()], {
+      windowsHide: true,
+      stdio: 'ignore'
+    });
+    killer.on('close', () => resolve());
+    killer.on('error', () => resolve());
+    
+    // Fallback timeout
+    setTimeout(resolve, 2000);
+  });
+}
+
 async function killPort(port) {
   return new Promise((resolve) => {
-    const cmd = `for /f "tokens=5" %a in ('netstat -ano ^| findstr :${port}') do taskkill /F /PID %a`;
-    const check = spawn('cmd', ['/c', cmd], { windowsHide: true });
-    check.on('close', () => resolve());
-    check.on('error', () => resolve());
+    const findCmd = `netstat -ano | findstr ":${port} " | findstr LISTENING`;
+    exec(findCmd, { windowsHide: true }, (err, stdout) => {
+      if (err || !stdout) {
+        resolve();
+        return;
+      }
+      
+      const pids = [...stdout.matchAll(/\s+(\d+)\s*$/gm)].map(m => m[1]);
+      const uniquePids = [...new Set(pids)];
+      
+      Promise.all(uniquePids.map(pid => killProcess(pid))).then(() => resolve());
+    });
   });
 }
 
-// Health check - test if service is responding
-async function healthCheck(serviceName) {
-  const config = SERVICES[serviceName];
+// ============================================
+// SERVICE MANAGEMENT
+// ============================================
 
-  // For services without HTTP endpoints, just check if port is listening
-  if (!config.healthUrl) {
-    return await isPortListening(config.port);
+async function cleanupExisting() {
+  log('Cleaning up existing processes...', 'warn');
+  
+  // Kill by window title
+  await new Promise(r => {
+    const p = spawn('taskkill', ['/F', '/FI', 'WINDOWTITLE eq JARVIS-*', '/T'], {
+      windowsHide: true, stdio: 'ignore'
+    });
+    p.on('close', r);
+    setTimeout(r, 1000);
+  });
+  
+  // Kill by port
+  for (const key in CONFIG) {
+    await killPort(CONFIG[key].port);
   }
+  
+  // Small delay for cleanup
+  await new Promise(r => setTimeout(r, 1500));
+  log('Cleanup complete', 'success');
+}
 
-  // For HTTP services, do a proper HTTP check
+function startService(key) {
+  const config = CONFIG[key];
+  
   return new Promise((resolve) => {
-    const req = http.get(config.healthUrl, { timeout: 3000 }, (res) => {
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => {
-      req.destroy();
-      resolve(false);
-    });
-  });
-}
-
-// Check all services health
-async function checkAllServicesHealth() {
-  for (const serviceName of Object.keys(SERVICES)) {
-    const state = serviceState[serviceName];
-
-    // Skip if currently starting up (give 15 seconds grace period)
-    if (state.starting && (Date.now() - state.lastRestart < 15000)) {
-      continue;
-    }
-
-    const isHealthy = await healthCheck(serviceName);
-    const wasHealthy = state.healthy;
-
-    // Require 3 consecutive failures before marking unhealthy (except for startup)
-    if (!isHealthy) {
-      state.failCount++;
-      if (state.failCount >= 3 && wasHealthy) {
-        state.healthy = false;
-        console.log(`[HEALTH] ${SERVICES[serviceName].name} became unhealthy (${state.failCount} consecutive failures)`);
+    // Check if already running
+    checkPort(config.port).then(running => {
+      if (running) {
+        log(`${config.name} already running on port ${config.port}`, 'warn');
+        portsInUse.add(key);
+        resolve(true);
+        return;
       }
-    } else {
-      state.failCount = 0;
-      if (!wasHealthy) {
-        state.healthy = true;
-        state.starting = false;
-        console.log(`[HEALTH] ${SERVICES[serviceName].name} is now healthy`);
-      }
-    }
-  }
-}
-
-// Restart a service
-async function restartService(serviceName) {
-  const state = serviceState[serviceName];
-  const config = SERVICES[serviceName];
-
-  if (shuttingDown) return;
-
-  // Check restart limit
-  if (state.restarts >= config.maxRestarts) {
-    if (state.restarts === config.maxRestarts) {
-      console.error(`[RESTART] ${config.name} exceeded max restarts (${config.maxRestarts}). Giving up.`);
-      state.restarts++; // Increment so we only log this once
-    }
-    return;
-  }
-
-  // Prevent restart spam (min 5 seconds between restarts)
-  const now = Date.now();
-  if (now - state.lastRestart < 5000) {
-    await new Promise(r => setTimeout(r, 5000));
-  }
-
-  state.restarts++;
-  state.lastRestart = now;
-  state.starting = true;
-  console.log(`[RESTART] Starting ${config.name} (attempt ${state.restarts}/${config.maxRestarts})...`);
-
-  // Kill existing process on port
-  await killPort(config.port);
-  await new Promise(r => setTimeout(r, 1000));
-
-  // Start new process
-  startService(serviceName);
-}
-
-// Start individual service
-function startService(serviceName) {
-  const config = SERVICES[serviceName];
-  let proc;
-
-  switch (serviceName) {
-    case 'hardware':
-      proc = spawn('cmd', ['/c', 'node server/hardware-monitor.cjs'], {
+      
+      // Start the process
+      const isWin = process.platform === 'win32';
+      const proc = spawn(config.command, config.args, {
         cwd: __dirname,
-        windowsHide: false
+        windowsHide: false,  // Show windows so user can see activity
+        detached: false,
+        shell: isWin && config.command.includes('.cmd')  // Use shell for .cmd files on Windows
       });
-      break;
-    case 'proxy':
-      proc = spawn('cmd', ['/c', 'node server/proxy.js'], {
-        cwd: __dirname,
-        windowsHide: false
-      });
-      break;
-    case 'piper':
-      proc = spawn('cmd', ['/c', 'python piper_server.py'], {
-        cwd: path.join(__dirname, 'Piper'),
-        windowsHide: false
-      });
-      break;
-    case 'vite':
-      proc = spawn('cmd', ['/c', 'npx vite --config vite.config.fast.ts'], {
-        cwd: __dirname,
-        windowsHide: false,
-        env: { ...process.env, FORCE_COLOR: '1' }
-      });
-      // Log Vite output
-      proc.stdout.on('data', (data) => {
-        const str = data.toString();
-        if (str.includes('error') || str.includes('Error')) {
-          console.error('[Vite]', str.trim());
+      
+      processes.set(key, proc);
+      
+      proc.on('error', (err) => {
+        log(`${config.name} failed to start: ${err.message}`, 'error');
+        if (!config.required) {
+          log(`${config.name} is optional - continuing without it`, 'warn');
         }
       });
-      proc.stderr.on('data', (data) => {
-        console.error('[Vite]', data.toString().trim());
+      
+      proc.on('exit', (code, signal) => {
+        if (shuttingDown) return;
+        
+        if (code !== 0 && code !== null) {
+          if (config.required) {
+            log(`${config.name} crashed with code ${code}!`, 'error');
+          } else {
+            log(`${config.name} exited (code ${code}) - optional service`, 'warn');
+          }
+        }
+        processes.delete(key);
       });
-      break;
-  }
-
-  if (proc) {
-    serviceState[serviceName].process = proc;
-
-    proc.on('error', (err) => {
-      console.error(`[${config.name} Error]`, err.message);
-      if (!shuttingDown) {
-        restartService(serviceName);
-      }
+      
+      // Wait for port to be available
+      waitForPort(config.port, config.required ? 30000 : 10000).then(ready => {
+        if (ready) {
+          log(`${config.name} ready on port ${config.port}`, 'success');
+          resolve(true);
+        } else {
+          if (config.required) {
+            log(`${config.name} failed to start on port ${config.port}`, 'error');
+            resolve(false);
+          } else {
+            log(`${config.name} not available (optional)`, 'warn');
+            resolve(true);  // Continue without optional service
+          }
+        }
+      });
     });
-
-    proc.on('exit', (code, signal) => {
-      if (shuttingDown) return;
-
-      // Only restart if process actually exited abnormally
-      if (code !== 0 && code !== null) {
-        console.error(`[${config.name} Exit] Code ${code}, Signal ${signal}`);
-        restartService(serviceName);
-      }
-    });
-
-    console.log(`[START] ${config.name} started on port ${config.port}`);
-  }
-
-  return proc;
+  });
 }
 
-// Kill all JARVIS processes
+async function startChrome() {
+  return new Promise((resolve) => {
+    // Check if Chrome is available
+    const chromePaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`
+    ];
+    
+    let chromePath = null;
+    for (const cp of chromePaths) {
+      if (fs.existsSync(cp)) {
+        chromePath = cp;
+        break;
+      }
+    }
+    
+    if (!chromePath) {
+      log('Chrome not found, opening default browser...', 'warn');
+      const opener = spawn('start', ['http://localhost:3000'], { shell: true, windowsHide: false });
+      opener.on('error', () => {});
+      resolve();
+      return;
+    }
+    
+    log('Starting Chrome...', 'info');
+    chromeProcess = spawn(chromePath, [
+      '--app=http://localhost:3000',
+      '--window-size=1920,1080',
+      '--window-position=0,0',
+      '--no-first-run',
+      '--no-default-browser-check'
+    ], {
+      windowsHide: false,
+      detached: false
+    });
+    
+    chromeProcess.on('exit', () => {
+      chromeProcess = null;
+      if (!shuttingDown) {
+        log('Chrome closed - shutting down JARVIS...', 'warn');
+        shutdown();
+      }
+    });
+    
+    resolve();
+  });
+}
+
+// ============================================
+// SHUTDOWN
+// ============================================
+
 async function shutdown() {
+  if (shuttingDown) return;
   shuttingDown = true;
-  console.log('\n[SHUTDOWN] Stopping JARVIS services...');
-
-  // Stop health checks
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-    healthCheckInterval = null;
+  
+  log('========================================', 'warn');
+  log('SHUTTING DOWN JARVIS', 'warn');
+  log('========================================', 'warn');
+  
+  // Kill Chrome first
+  if (chromeProcess) {
+    log('Closing Chrome...', 'info');
+    chromeProcess.kill();
+    await new Promise(r => setTimeout(r, 1000));
   }
-
-  // Kill by port
-  for (const port of PORTS) {
-    await killPort(port);
-  }
-
-  // Kill browser
-  if (browserProcess) {
-    try { browserProcess.kill(); } catch(e) {}
-  }
-
-  // Kill tracked processes
-  for (const [name, state] of Object.entries(serviceState)) {
-    if (state.process) {
-      try { state.process.kill(); } catch(e) {}
+  
+  // Kill all services in reverse order
+  const order = ['vite', 'vision', 'gpu', 'embedding', 'piper', 'proxy', 'hardware'];
+  
+  for (const key of order) {
+    const proc = processes.get(key);
+    if (proc) {
+      const config = CONFIG[key];
+      log(`Stopping ${config.name}...`, 'info');
+      proc.kill();
+      await new Promise(r => setTimeout(r, 500));
     }
   }
-
-  // Kill window titles
-  spawn('cmd', ['/c', 'taskkill /F /FI "WINDOWTITLE eq JARVIS-*" >nul 2>&1'], { windowsHide: true });
-
-  console.log('[SHUTDOWN] Complete');
+  
+  // Force kill any remaining processes by port
+  log('Final cleanup...', 'info');
+  for (const key in CONFIG) {
+    await killPort(CONFIG[key].port);
+  }
+  
+  // Kill any remaining JARVIS windows
+  await new Promise(r => {
+    const p = spawn('taskkill', ['/F', '/FI', 'WINDOWTITLE eq JARVIS-*', '/T'], {
+      windowsHide: true, stdio: 'ignore'
+    });
+    p.on('close', r);
+    setTimeout(r, 1000);
+  });
+  
+  log('Goodbye!', 'success');
   process.exit(0);
 }
 
-// Cleanup on exit
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
-process.on('exit', () => {
-  console.log('[EXIT] Cleaning up...');
-});
+// ============================================
+// MAIN
+// ============================================
 
-// Start all services
-async function startServices() {
-  console.log('[START] Starting JARVIS services...\n');
-
-  // Cleanup first
-  console.log('[INIT] Cleaning up existing processes...');
-  for (const port of PORTS) {
-    await killPort(port);
+async function main() {
+  console.log('');
+  log('╔══════════════════════════════════════╗', 'info');
+  log('║      JARVIS MASTER LAUNCHER          ║', 'info');
+  log('╚══════════════════════════════════════╝', 'info');
+  console.log('');
+  
+  // Check node_modules exists
+  if (!fs.existsSync(path.join(__dirname, 'node_modules'))) {
+    log('ERROR: node_modules not found!', 'error');
+    log('Please run: npm install', 'error');
+    log('', 'info');
+    log('Press any key to exit...', 'info');
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', () => process.exit(1));
+    await new Promise(() => {});
+    return;
   }
-  await new Promise(r => setTimeout(r, 3000));
-
-  // Start all services
-  for (const serviceName of Object.keys(SERVICES)) {
-    serviceState[serviceName].starting = true;
-    serviceState[serviceName].lastRestart = Date.now();
-    startService(serviceName);
-    await new Promise(r => setTimeout(r, 500)); // Stagger starts
+  
+  // Handle Ctrl+C and other signals
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  process.on('exit', () => {
+    if (!shuttingDown) shutdown();
+  });
+  
+  // Cleanup existing
+  await cleanupExisting();
+  
+  // Check Python availability
+  const pythonCheck = spawn('python', ['--version'], { windowsHide: true });
+  let pythonAvailable = false;
+  await new Promise(r => {
+    pythonCheck.on('error', () => r());
+    pythonCheck.on('close', (code) => {
+      pythonAvailable = code === 0;
+      r();
+    });
+    setTimeout(r, 2000);
+  });
+  
+  if (!pythonAvailable) {
+    log('Python not available - will run in NODE-ONLY mode', 'warn');
   }
-
-  // Wait for Vite
-  console.log('\n[WAIT] Waiting for Vite to be ready...');
-  let ready = false;
-  let attempts = 0;
-
-  while (!ready && attempts < 90) {
-    await new Promise(r => setTimeout(r, 1000));
-    attempts++;
-
-    // Check if Vite crashed
-    const viteProc = serviceState.vite.process;
-    if (viteProc && viteProc.exitCode !== null) {
-      console.error(`\n[ERROR] Vite crashed with code ${viteProc.exitCode}`);
-      console.log('[INFO] Check the Vite window for error details');
-      console.log('[INFO] Press Ctrl+C to exit\n');
-      break;
+  
+  // Start required services first
+  log('Starting required Node services...', 'info');
+  
+  const requiredServices = ['hardware', 'proxy'];
+  for (const key of requiredServices) {
+    const success = await startService(key);
+    if (!success) {
+      log('Failed to start required service!', 'error');
+      await shutdown();
+      return;
     }
-
-    // Check if Vite is responding
-    if (await isPortListening(3000)) {
-      ready = true;
-      serviceState.vite.healthy = true;
-      serviceState.vite.starting = false;
+  }
+  
+  // Start optional Python services (don't fail if they don't start)
+  if (pythonAvailable) {
+    log('Starting optional Python services...', 'info');
+    const pythonServices = ['piper', 'whisper', 'embedding', 'gpu', 'vision'];
+    for (const key of pythonServices) {
+      await startService(key);
+      await new Promise(r => setTimeout(r, 1000));  // Stagger starts
     }
   }
-
-  if (ready) {
-    console.log(`[OK] Vite ready in ${attempts} seconds\n`);
-  } else {
-    console.log('[WARN] Vite timeout, continuing anyway...\n');
+  
+  // Start Vite (main process) - this blocks until it exits
+  log('========================================', 'info');
+  log('STARTING VITE (MAIN PROCESS)', 'info');
+  log('========================================', 'info');
+  
+  const viteReady = await startService('vite');
+  if (!viteReady) {
+    log('Vite failed to start!', 'error');
+    await shutdown();
+    return;
   }
-
-  // Start health check polling (every 15 seconds - less aggressive)
-  healthCheckInterval = setInterval(async () => {
-    await checkAllServicesHealth();
-
-    // Restart unhealthy services that have exited
-    for (const [name, state] of Object.entries(serviceState)) {
-      const proc = state.process;
-      const hasExited = proc && proc.exitCode !== null;
-      const isNotResponding = !state.healthy && !state.starting;
-
-      // Only restart if process has actually exited OR has been unhealthy for a while
-      // Vite gets extra grace period (120s) since it can be busy during HMR
-      const gracePeriod = (name === 'vite') ? 120000 : 30000;
-      if ((hasExited || (isNotResponding && (Date.now() - state.lastRestart > gracePeriod)))) {
-        console.log(`[HEALTH] ${SERVICES[name].name} needs restart`);
-        if (proc && !proc.killed) {
-          try { proc.kill(); } catch(e) {}
+  
+  // Small delay then open Chrome
+  await new Promise(r => setTimeout(r, 2000));
+  await startChrome();
+  
+  log('========================================', 'success');
+  log('JARVIS IS RUNNING!', 'success');
+  log('Press Ctrl+C here or close Chrome to exit', 'success');
+  log('========================================', 'success');
+  console.log('');
+  
+  // Monitor Vite process - when it exits, shutdown everything
+  const viteProc = processes.get('vite');
+  if (viteProc) {
+    viteProc.on('exit', () => {
+      log('Vite exited - shutting down...', 'warn');
+      shutdown();
+    });
+  }
+  
+  // Keep process alive and monitor for issues
+  setInterval(async () => {
+    if (shuttingDown) return;
+    
+    // Check if required services are still running
+    for (const key of requiredServices) {
+      const proc = processes.get(key);
+      const config = CONFIG[key];
+      
+      if (!proc || proc.exitCode !== null) {
+        const running = await checkPort(config.port);
+        if (!running) {
+          log(`${config.name} stopped unexpectedly!`, 'error');
+          log('Restarting...', 'warn');
+          await startService(key);
         }
-        await restartService(name);
       }
     }
-  }, 15000);
-
-  // Launch browser with loading page first
-  console.log('[LAUNCH] Opening browser with boot sequence...');
-  const loadingPage = path.join(__dirname, 'loading.html');
-  const chromePaths = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe')
-  ];
-
-  let chromePath = chromePaths.find(p => fs.existsSync(p));
-
-  if (chromePath) {
-    browserProcess = spawn(chromePath, [`--app=file:///${loadingPage.replace(/\\/g, '/')}`, '--window-size=1920,1080'], {
-      windowsHide: false,
-      detached: false
-    });
-  } else {
-    browserProcess = spawn('msedge', [`--app=file:///${loadingPage.replace(/\\/g, '/')}`, '--window-size=1920,1080'], {
-      windowsHide: false,
-      detached: false
-    });
-  }
-
-  browserProcess.on('exit', () => {
-    console.log('[BROWSER] Browser closed');
-  });
-
-  console.log('\n========================================');
-  console.log(' JARVIS is Running!');
-  console.log('========================================');
-  console.log('\nServices (auto-restart enabled):');
-  for (const [name, config] of Object.entries(SERVICES)) {
-    console.log(`  • ${config.name} :${config.port} (max ${config.maxRestarts} restarts)`);
-  }
-  console.log('\nUse the Exit button in the UI or press Ctrl+C to stop\n');
+    
+    // Check Chrome
+    if (chromeProcess && chromeProcess.exitCode !== null) {
+      log('Chrome was closed', 'warn');
+      shutdown();
+    }
+  }, 5000);
+  
+  // Keep running
+  await new Promise(() => {});
 }
 
-// Create shutdown HTTP server
-const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
-  }
-
-  if (req.url === '/api/shutdown' && req.method === 'POST') {
-    console.log('[API] Shutdown requested from UI');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'shutting_down' }));
-    setTimeout(shutdown, 500);
-    return;
-  }
-
-  if (req.url === '/api/status' && req.method === 'GET') {
-    const status = {};
-    for (const [name, state] of Object.entries(serviceState)) {
-      const proc = state.process;
-      status[name] = {
-        healthy: state.healthy,
-        restarts: state.restarts,
-        running: proc ? proc.exitCode === null : false,
-        starting: state.starting
-      };
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(status));
-    return;
-  }
-
-  res.writeHead(404);
-  res.end('Not found');
-});
-
-server.listen(9999, () => {
-  console.log('[LAUNCHER v2.0] Shutdown API listening on port 9999\n');
-  startServices();
+// Run
+main().catch(err => {
+  log(`Fatal error: ${err.message}`, 'error');
+  shutdown();
 });

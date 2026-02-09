@@ -55,6 +55,7 @@ class NotificationService {
   private notifications: Notification[] = [];
   private listeners: Set<(notifications: Notification[]) => void> = new Set();
   private history: Notification[] = [];
+  private timeouts = new Map<string, NodeJS.Timeout>();
 
   /**
    * Show a notification
@@ -93,11 +94,13 @@ class NotificationService {
 
     this.notifyListeners();
 
-    // Auto-dismiss
+    // Auto-dismiss with cleanup tracking
     if (duration > 0) {
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
+        this.timeouts.delete(id);
         this.dismiss(id);
       }, duration);
+      this.timeouts.set(id, timeout);
     }
 
     logger.debug('NOTIFICATION', `Showed ${type} notification: ${options.message}`);
@@ -127,6 +130,13 @@ class NotificationService {
    * Dismiss a notification
    */
   dismiss(id: string): void {
+    // Clear auto-dismiss timeout if exists
+    const timeout = this.timeouts.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.timeouts.delete(id);
+    }
+
     const index = this.notifications.findIndex(n => n.id === id);
     if (index !== -1) {
       this.notifications.splice(index, 1);
@@ -139,6 +149,12 @@ class NotificationService {
    * Dismiss all notifications
    */
   dismissAll(): void {
+    // Clear all pending timeouts
+    for (const [id, timeout] of this.timeouts) {
+      clearTimeout(timeout);
+    }
+    this.timeouts.clear();
+
     this.notifications = [];
     this.notifyListeners();
     logger.debug('NOTIFICATION', 'Dismissed all notifications');

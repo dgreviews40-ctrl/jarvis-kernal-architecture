@@ -420,7 +420,7 @@ export class PerformanceMonitoringService {
       return result;
     } catch (error) {
       // Log error to trace
-      this.logToTrace(spanId, `Error during execution: ${error.message}`, { error: error.stack });
+      this.logToTrace(spanId, `Error during execution: ${(error as Error).message}`, { error: (error as Error).stack });
       throw error;
     } finally {
       this.endTrace(spanId);

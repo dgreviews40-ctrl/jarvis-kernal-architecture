@@ -60,7 +60,8 @@ async function decodeRawPCM(
 }
 
 class VoiceCoreOptimized {
-  private recognition: InstanceType<typeof window.SpeechRecognition> | InstanceType<typeof window.webkitSpeechRecognition> | null = null;
+  // FIXED: Use any to avoid TypeScript narrowing issues with Web Speech API
+  private recognition: any = null;
   private synthesis: SpeechSynthesis = window.speechSynthesis;
   private state: VoiceState = VoiceState.MUTED;
   private config: VoiceConfig = { ...DEFAULT_CONFIG };
@@ -102,9 +103,15 @@ class VoiceCoreOptimized {
   private preloadedResponse: string | null = null;
   private isPlayingAudio: boolean = false;
 
-  // Pre-initialized audio context pool
+  // Pre-initialized audio context pool - FIXED: dynamic pool with recovery
   private audioContextPool: AudioContext[] = [];
-  private maxAudioContexts = 2;
+  private maxAudioContexts = 3; // Increased from 2 to handle concurrent operations
+  private activeAudioContexts: Set<AudioContext> = new Set(); // Track contexts in use
+  private poolExhaustionCount = 0; // Track how often pool exhausts for telemetry
+  private lastPoolRecoveryAttempt = 0;
+  private readonly POOL_RECOVERY_COOLDOWN = 1000; // ms between recovery attempts
+  private readonly CONTEXT_IDLE_TIMEOUT = 30000; // Auto-close idle contexts after 30s
+  private contextIdleTimers: Map<AudioContext, number> = new Map();
 
   // Whisper fallback
   private useWhisperFallback: boolean = false;
@@ -252,44 +259,147 @@ class VoiceCoreOptimized {
   }
 
   private initAudioContextPool(): void {
-    for (let i = 0; i < this.maxAudioContexts; i++) {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-        this.audioContextPool.push(ctx);
-      } catch (e) {
-        console.warn('[VOICE] Failed to create audio context:', e);
+    // Create initial contexts but don't exceed browser limits
+    const initialCount = Math.min(2, this.maxAudioContexts);
+    for (let i = 0; i < initialCount; i++) {
+      this.createAudioContextForPool();
+    }
+  }
+
+  private createAudioContextForPool(): AudioContext | null {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      
+      // Mark as available by default
+      ctx.addEventListener('statechange', () => {
+        if (ctx.state === 'closed') {
+          // Remove from pool and active sets when closed
+          const poolIndex = this.audioContextPool.indexOf(ctx);
+          if (poolIndex > -1) {
+            this.audioContextPool.splice(poolIndex, 1);
+          }
+          this.activeAudioContexts.delete(ctx);
+          this.clearIdleTimer(ctx);
+        }
+      });
+      
+      this.audioContextPool.push(ctx);
+      return ctx;
+    } catch (e) {
+      console.warn('[VOICE] Failed to create audio context:', e);
+      return null;
+    }
+  }
+
+  private clearIdleTimer(ctx: AudioContext): void {
+    const timer = this.contextIdleTimers.get(ctx);
+    if (timer) {
+      clearTimeout(timer);
+      this.contextIdleTimers.delete(ctx);
+    }
+  }
+
+  private startIdleTimer(ctx: AudioContext): void {
+    this.clearIdleTimer(ctx);
+    const timer = window.setTimeout(() => {
+      // Close idle context to free resources
+      if (ctx.state !== 'closed' && !this.activeAudioContexts.has(ctx)) {
+        ctx.close().catch(() => {});
+      }
+      this.contextIdleTimers.delete(ctx);
+    }, this.CONTEXT_IDLE_TIMEOUT);
+    this.contextIdleTimers.set(ctx, timer);
+  }
+
+  private async recoverClosedContexts(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastPoolRecoveryAttempt < this.POOL_RECOVERY_COOLDOWN) {
+      return; // Prevent rapid recovery attempts
+    }
+    this.lastPoolRecoveryAttempt = now;
+
+    // Remove closed contexts from pool
+    this.audioContextPool = this.audioContextPool.filter(ctx => ctx.state !== 'closed');
+    
+    // Create new contexts to maintain minimum pool size
+    while (this.audioContextPool.length < 2) {
+      if (!this.createAudioContextForPool()) {
+        break; // Browser limit reached
       }
     }
   }
 
   private getAudioContext(): AudioContext | null {
-    // Find a ready context or create new one
+    // First, try to find an available context (suspended = available, running = in use)
     for (const ctx of this.audioContextPool) {
-      if (ctx.state === 'running' || ctx.state === 'suspended') {
+      if (ctx.state === 'suspended' && !this.activeAudioContexts.has(ctx)) {
+        this.activeAudioContexts.add(ctx);
+        this.clearIdleTimer(ctx);
         return ctx;
       }
     }
 
-    // Create new if pool not at max capacity (prevents memory leak from unlimited contexts)
-    if (this.audioContextPool.length < this.maxAudioContexts) {
-      try {
-        const newCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
-        this.audioContextPool.push(newCtx);
-        return newCtx;
-      } catch (e) {
-        console.warn('[VOICE] Failed to create additional audio context:', e);
-        return null;
-      }
-    }
-
-    // Pool exhausted and at max capacity - try to resume a closed context
+    // Try to resume a suspended context that's marked as active (stale state)
     for (const ctx of this.audioContextPool) {
-      if (ctx.state === 'closed') {
-        console.warn('[VOICE] All audio contexts exhausted, attempting to reuse closed context');
+      if (ctx.state === 'suspended' && this.activeAudioContexts.has(ctx)) {
+        // Context was marked active but may be stale - reuse it
+        this.activeAudioContexts.delete(ctx); // Clear stale marker
+        this.activeAudioContexts.add(ctx); // Mark as fresh
+        this.clearIdleTimer(ctx);
+        return ctx;
       }
     }
 
+    // Create new if pool not at max capacity
+    if (this.audioContextPool.length < this.maxAudioContexts) {
+      const newCtx = this.createAudioContextForPool();
+      if (newCtx) {
+        this.activeAudioContexts.add(newCtx);
+        return newCtx;
+      }
+    }
+
+    // Pool exhausted - try recovery
+    this.poolExhaustionCount++;
+    console.warn(`[VOICE] Audio context pool exhausted (count: ${this.poolExhaustionCount})`);
+    
+    // Attempt to recover by cleaning up closed contexts
+    this.recoverClosedContexts();
+
+    // After recovery, try again
+    for (const ctx of this.audioContextPool) {
+      if (ctx.state === 'suspended' && !this.activeAudioContexts.has(ctx)) {
+        this.activeAudioContexts.add(ctx);
+        this.clearIdleTimer(ctx);
+        return ctx;
+      }
+    }
+
+    // Last resort: try to use a running context if available (shared usage)
+    for (const ctx of this.audioContextPool) {
+      if (ctx.state === 'running') {
+        // Return running context - it's shared but better than nothing
+        console.warn('[VOICE] Using shared running audio context');
+        return ctx;
+      }
+    }
+
+    console.error('[VOICE] No audio contexts available - browser limit reached');
     return null;
+  }
+
+  private releaseAudioContext(ctx: AudioContext): void {
+    if (!ctx) return;
+    
+    this.activeAudioContexts.delete(ctx);
+    
+    // Suspend to allow reuse but free resources
+    if (ctx.state === 'running') {
+      ctx.suspend().catch(() => {});
+    }
+    
+    // Start idle timer to auto-close after timeout
+    this.startIdleTimer(ctx);
   }
 
   private initRecognition() {
@@ -421,6 +531,12 @@ class VoiceCoreOptimized {
     this.isSpeaking = false;
     this.silenceStartTime = 0;
     this.speechStartTime = 0;
+    
+    // FIXED: Release VAD audio context back to pool
+    if (this.audioContext) {
+      this.releaseAudioContext(this.audioContext);
+      this.audioContext = null;
+    }
   }
 
   private processFinalTranscript(): void {
@@ -570,12 +686,18 @@ class VoiceCoreOptimized {
       this.restartTimer = null;
     }
 
-    // Properly clean up speech recognition
+    // Properly clean up speech recognition - FIXED: clear listeners before nulling
     if (this.recognition) {
+      // Remove all event listeners first to prevent callbacks during cleanup
+      this.recognition.onstart = null;
+      this.recognition.onresult = null;
+      this.recognition.onerror = null;
+      this.recognition.onend = null;
+      this.recognition.onaudiostart = null;
+      this.recognition.onsoundstart = null;
+      this.recognition.onspeechstart = null;
+      
       try {
-        this.recognition.onend = () => {};
-        this.recognition.onerror = () => {};
-        this.recognition.onresult = () => {};
         this.recognition.abort();
       } catch (e) {
         console.warn('[VOICE] Error aborting recognition:', e);
@@ -587,31 +709,28 @@ class VoiceCoreOptimized {
     if (this.useWhisperFallback) {
       await this.stopWhisperSTT();
     }
-    
-    // Remove all event listeners from recognition to prevent memory leaks
-    if (this.recognition) {
-      this.recognition.onstart = null;
-      this.recognition.onresult = null;
-      this.recognition.onerror = null;
-      this.recognition.onend = null;
-      this.recognition.onaudiostart = null;
-      this.recognition.onsoundstart = null;
-      this.recognition.onspeechstart = null;
-    }
 
     this.stopVAD();
 
-    // Properly close audio contexts to prevent memory leaks
-    if (this.audioContext && this.audioContext.state !== 'closed') {
-      try {
-        await this.audioContext.close();
-      } catch (e) {
-        console.warn('[VOICE] Error closing main audio context:', e);
-      }
+    // FIXED: Properly release active audio context back to pool instead of closing
+    if (this.audioContext) {
+      this.releaseAudioContext(this.audioContext);
       this.audioContext = null;
     }
 
-    // Close all pooled audio contexts
+    // Release any tracked active contexts
+    for (const ctx of this.activeAudioContexts) {
+      this.releaseAudioContext(ctx);
+    }
+    this.activeAudioContexts.clear();
+
+    // Clear all idle timers
+    for (const timer of this.contextIdleTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.contextIdleTimers.clear();
+
+    // Close all pooled audio contexts gracefully
     for (const ctx of this.audioContextPool) {
       if (ctx && ctx.state !== 'closed') {
         try {
@@ -724,10 +843,15 @@ class VoiceCoreOptimized {
         this.onSpeakComplete();
       }
     } else {
-      // Stop audio playback without closing the context (it may be from the pool)
-      if (this.audioContext && this.audioContext.state === 'running') {
+      // FIXED: Stop audio playback and release context back to pool
+      if (this.audioContext) {
         // Suspend instead of close to allow reuse
-        this.audioContext.suspend().catch(() => {});
+        if (this.audioContext.state === 'running') {
+          this.audioContext.suspend().catch(() => {});
+        }
+        // Release back to pool for reuse
+        this.releaseAudioContext(this.audioContext);
+        this.audioContext = null;
       }
       this.onSpeakComplete();
     }
@@ -1036,16 +1160,24 @@ class VoiceCoreOptimized {
         geminiRateLimiter.trackRequest(1000);
 
         const audioCtx = this.getAudioContext();
-        if (!audioCtx) continue;
+        if (!audioCtx) {
+          console.error('[VOICE] No audio context available for playback');
+          continue;
+        }
 
-        const audioBuffer = await decodeRawPCM(
-          decodeBase64ToUint8Array(base64Audio),
-          audioCtx,
-          24000,
-          1,
-        );
+        try {
+          const audioBuffer = await decodeRawPCM(
+            decodeBase64ToUint8Array(base64Audio),
+            audioCtx,
+            24000,
+            1,
+          );
 
-        await this.playAudioBuffer(audioBuffer, audioCtx);
+          await this.playAudioBuffer(audioBuffer, audioCtx);
+        } finally {
+          // FIXED: Always release context back to pool, even on error
+          this.releaseAudioContext(audioCtx);
+        }
       }
 
       // NOTE: conversation.addTurn('JARVIS', ...) is called in App.tsx processKernelRequest
@@ -1061,17 +1193,43 @@ class VoiceCoreOptimized {
   private playAudioBuffer(buffer: AudioBuffer, ctx: AudioContext): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        // FIXED: Check if context is closed before attempting playback
+        if (ctx.state === 'closed') {
+          console.warn('[VOICE] Cannot play audio - context is closed');
+          reject(new Error('AudioContext is closed'));
+          return;
+        }
+        
+        // Ensure context is running before playing
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+        
         const source = ctx.createBufferSource();
         source.buffer = buffer;
         source.connect(ctx.destination);
-        source.onended = () => resolve();
+        source.onended = () => {
+          // Suspend context after playback to free resources
+          if (ctx.state === 'running') {
+            ctx.suspend().catch(() => {});
+          }
+          resolve();
+        };
         (source as any).onerror = (err: any) => {
           console.error('[VOICE] Audio playback error:', err);
+          // Suspend context on error too
+          if (ctx.state === 'running') {
+            ctx.suspend().catch(() => {});
+          }
           reject(err);
         };
         source.start();
       } catch (err) {
         console.error('[VOICE] Failed to start audio playback:', err);
+        // Suspend context on error
+        if (ctx.state === 'running') {
+          ctx.suspend().catch(() => {});
+        }
         reject(err);
       }
     });

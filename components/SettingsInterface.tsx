@@ -88,28 +88,42 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'AI' | 'DEVICES' | 'PLUGINS' | 'ARCHIVE' | 'DISTRIBUTION' | 'DOCS' | 'SECURITY' | 'BACKUP'>('GENERAL');
   
   // States
-  // Load API key - try to decode from base64 if it exists in localStorage
-  const loadApiKey = (): string => {
-    const envKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || '';
+  // SECURITY FIX: Load API key using secure apiKeyManager
+  const loadApiKey = async (): Promise<string> => {
+    const envKey = (import.meta.env?.VITE_GEMINI_API_KEY as string | undefined) || (import.meta.env?.VITE_API_KEY as string | undefined) || '';
+    
+    // Try secure storage first
+    if (apiKeyManager.isInitialized()) {
+      const secureKey = await apiKeyManager.getKey('gemini');
+      if (secureKey) {
+        console.log('[SETTINGS] Loaded API key from secure storage');
+        return secureKey;
+      }
+    }
+    
+    // Fallback to legacy storage (temporary)
     const storedKey = localStorage.getItem('GEMINI_API_KEY');
     if (storedKey) {
       try {
-        // Try to decode base64
         const decoded = atob(storedKey);
-        console.log('[SETTINGS] Loaded API key from localStorage (decoded)');
+        console.warn('[SETTINGS] Loaded API key from legacy storage (not encrypted)');
         return decoded;
       } catch {
-        // If decoding fails, return as-is (might be old format)
-        console.log('[SETTINGS] Loaded API key from localStorage (raw, not base64)');
         return storedKey;
       }
     }
+    
     if (envKey) {
       console.log('[SETTINGS] Loaded API key from environment variables');
     }
     return envKey;
   };
-  const [apiKey, setApiKey] = useState<string>(loadApiKey());
+  const [apiKey, setApiKey] = useState<string>('');
+  
+  // Load API key asynchronously on mount
+  useEffect(() => {
+    loadApiKey().then(key => setApiKey(key));
+  }, []);
   const [aiConfig, setAiConfig] = useState<AIConfig>(providerManager.getAIConfig());
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>(providerManager.getOllamaConfig());
   const [voiceConfig, setVoiceConfig] = useState<VoiceConfig>(voice.getConfig());
@@ -157,7 +171,7 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
 
   useEffect(() => {
     // Check encryption status
-    setEncryptionEnabled(apiKeyManager.isEncryptionEnabled());
+    setEncryptionEnabled(apiKeyManager.isInitialized() && apiKeyManager.isSecure());
     
     // Detect environment
     if (typeof window !== 'undefined') {
@@ -225,15 +239,30 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
           console.warn('[SETTINGS] Warning: API key does not start with expected "AIza" prefix');
         }
         
-        // Store API key in localStorage (base64 encoded for basic obfuscation)
-        const encodedKey = btoa(trimmedKey);
-        localStorage.setItem('GEMINI_API_KEY', encodedKey);
-        console.log('[SETTINGS] API key saved to localStorage (base64 encoded, length:', encodedKey.length, ')');
-        
-        // Also update the process.env for immediate use
-        (process.env as any).API_KEY = trimmedKey;
-        
-        setSaveMessage('API key saved successfully');
+        // SECURITY FIX: Store API key using secure apiKeyManager
+        try {
+          // Initialize if not already done
+          if (!apiKeyManager.isInitialized()) {
+            // Use a default password or prompt user
+            // For now, use a device-specific derived password
+            const { generateSecureId } = await import('../services/secureStorage');
+            const deviceId = navigator.userAgent + generateSecureId(16);
+            await apiKeyManager.initialize(deviceId);
+          }
+          
+          await apiKeyManager.setKey('gemini', trimmedKey);
+          console.log('[SETTINGS] API key saved to secure storage (AES-GCM encrypted)');
+          
+          // Also remove legacy key if present
+          localStorage.removeItem('GEMINI_API_KEY');
+          
+          setSaveMessage('API key saved securely');
+        } catch (e) {
+          console.error('[SETTINGS] Failed to save to secure storage:', e);
+          // Fallback to legacy storage with warning
+          localStorage.setItem('GEMINI_API_KEY', btoa(trimmedKey));
+          setSaveMessage('API key saved (fallback mode - less secure)');
+        }
       }
       
       providerManager.setAIConfig(aiConfig);

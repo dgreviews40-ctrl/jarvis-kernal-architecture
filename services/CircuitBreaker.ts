@@ -10,6 +10,10 @@ export interface CircuitBreakerOptions {
   resetTimeout?: number;
   timeout?: number;
   halfOpenSuccessThreshold?: number;
+  /** Enable jitter to prevent thundering herd (default: true) */
+  enableJitter?: boolean;
+  /** Maximum jitter in ms (default: 5000) */
+  maxJitterMs?: number;
 }
 
 export class EnhancedCircuitBreaker {
@@ -17,27 +21,37 @@ export class EnhancedCircuitBreaker {
   private failureCount = 0;
   private lastFailureTime: number | null = null;
   private successCountInHalfOpen = 0;
+  private nextAttemptTime: number | null = null; // Tracks when circuit can transition from OPEN
   
   private readonly failureThreshold: number;
   private readonly resetTimeout: number;
   private readonly timeout: number;
   private readonly halfOpenSuccessThreshold: number;
+  private readonly enableJitter: boolean;
+  private readonly maxJitterMs: number;
 
   constructor(options: CircuitBreakerOptions = {}) {
     this.failureThreshold = options.failureThreshold ?? 5;
     this.resetTimeout = options.resetTimeout ?? 60000; // 1 minute
     this.timeout = options.timeout ?? 10000; // 10 seconds
     this.halfOpenSuccessThreshold = options.halfOpenSuccessThreshold ?? 1;
+    this.enableJitter = options.enableJitter ?? true;
+    this.maxJitterMs = options.maxJitterMs ?? 5000;
   }
 
   async call<T>(fn: () => Promise<T>, timeoutMs?: number): Promise<T> {
     if (this.state === 'OPEN') {
-      if (this.lastFailureTime && Date.now() - this.lastFailureTime > this.resetTimeout) {
+      const now = Date.now();
+      // Use nextAttemptTime for deterministic state transition (avoids Date.now() drift issues)
+      const canAttempt = this.nextAttemptTime && now >= this.nextAttemptTime;
+      
+      if (canAttempt) {
         console.log('Circuit breaker transitioning to HALF_OPEN');
         this.state = 'HALF_OPEN';
         this.successCountInHalfOpen = 0;
       } else {
-        throw new Error('Circuit breaker is OPEN - service temporarily unavailable');
+        const retryAfter = this.nextAttemptTime ? Math.ceil((this.nextAttemptTime - now) / 1000) : 'unknown';
+        throw new Error(`Circuit breaker is OPEN - service temporarily unavailable. Retry after: ${retryAfter}s`);
       }
     }
 
@@ -54,7 +68,7 @@ export class EnhancedCircuitBreaker {
   }
 
   private async withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: NodeJS.Timeout | undefined;
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => {
@@ -92,21 +106,42 @@ export class EnhancedCircuitBreaker {
     this.lastFailureTime = Date.now();
     
     if (this.state === 'HALF_OPEN') {
-      // Failure in HALF_OPEN state sends us back to OPEN
+      // Failure in HALF_OPEN state sends us back to OPEN with jitter
       console.log('Circuit breaker failure in HALF_OPEN state, returning to OPEN');
-      this.state = 'OPEN';
+      this.transitionToOpen();
     } else if (this.failureCount >= this.failureThreshold) {
       console.log('Circuit breaker threshold exceeded, transitioning to OPEN');
-      this.state = 'OPEN';
+      this.transitionToOpen();
+    }
+  }
+
+  /**
+   * Transition to OPEN state with jitter to prevent thundering herd
+   */
+  private transitionToOpen(): void {
+    this.state = 'OPEN';
+    
+    // Calculate next attempt time with optional jitter
+    // Jitter prevents multiple clients from retrying simultaneously
+    const jitter = this.enableJitter ? Math.random() * this.maxJitterMs : 0;
+    this.nextAttemptTime = Date.now() + this.resetTimeout + jitter;
+    
+    if (this.enableJitter && jitter > 0) {
+      console.log(`Circuit breaker OPEN - will retry at ${new Date(this.nextAttemptTime).toLocaleTimeString()} (+${Math.round(jitter)}ms jitter)`);
     }
   }
 
   public getState() {
+    const now = Date.now();
+    const canAttemptFromOpen = this.state === 'OPEN' && this.nextAttemptTime && now >= this.nextAttemptTime;
+    
     return {
       state: this.state,
       failureCount: this.failureCount,
       lastFailureTime: this.lastFailureTime,
-      canAttemptCall: this.state !== 'OPEN' || (this.lastFailureTime && Date.now() - this.lastFailureTime > this.resetTimeout)
+      nextAttemptTime: this.nextAttemptTime,
+      canAttemptCall: this.state !== 'OPEN' || canAttemptFromOpen,
+      retryAfterMs: this.state === 'OPEN' && this.nextAttemptTime ? Math.max(0, this.nextAttemptTime - now) : 0
     };
   }
 
@@ -114,11 +149,11 @@ export class EnhancedCircuitBreaker {
     this.state = 'CLOSED';
     this.failureCount = 0;
     this.lastFailureTime = null;
+    this.nextAttemptTime = null;
     this.successCountInHalfOpen = 0;
   }
 
   public forceOpen(): void {
-    this.state = 'OPEN';
-    this.lastFailureTime = Date.now();
+    this.transitionToOpen();
   }
 }

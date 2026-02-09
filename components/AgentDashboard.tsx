@@ -80,7 +80,7 @@ export const AgentDashboard: React.FC = () => {
       setNewGoalInput('');
       logger.log('AGENT', `Created goal: ${goal.id}`, 'success');
     } catch (error) {
-      logger.log('AGENT', `Failed to create goal: ${error.message}`, 'error');
+      logger.log('AGENT', `Failed to create goal: ${(error as Error).message}`, 'error');
     } finally {
       setIsCreating(false);
     }
@@ -374,7 +374,7 @@ const TaskRow: React.FC<TaskRowProps> = ({
           {task.error && (
             <div className="text-red-400">Error: {task.error}</div>
           )}
-          {task.result && (
+          {task.result !== undefined && task.result !== null && (
             <div className="text-green-400">
               Result: {typeof task.result === 'string' ? task.result : JSON.stringify(task.result).substring(0, 100)}
             </div>

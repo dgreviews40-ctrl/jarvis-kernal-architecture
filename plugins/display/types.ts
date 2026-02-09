@@ -32,7 +32,7 @@ export interface ModelSelection {
 
 export interface InteractiveElement {
   type: 'button' | 'card' | 'slider' | 'form';
-  content: any;
+  content: unknown;
   onClick?: () => void;
-  onInteraction?: (data: any) => void;
+  onInteraction?: (data: unknown) => void;
 }

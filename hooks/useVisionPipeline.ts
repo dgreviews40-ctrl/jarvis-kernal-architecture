@@ -103,9 +103,7 @@ export function useVisionPipeline(): UseVisionPipelineReturn {
     setVisionServerAvailable(status.visionServerAvailable);
     setVisualMemorySize(status.visualMemorySize);
     setIsProcessing(status.isProcessing);
-    setActiveStreams(Array.from(new Set(
-      visionPipeline['activeStreams']?.keys?.() || []
-    )));
+    setActiveStreams(status.activeStreamNames || []);
   }, []);
 
   const initialize = useCallback(async (): Promise<boolean> => {

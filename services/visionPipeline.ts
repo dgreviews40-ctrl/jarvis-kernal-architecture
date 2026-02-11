@@ -99,12 +99,15 @@ class VisionPipelineService extends EventEmitter {
     sampleFps: number;
     lastSampleTime: number;
     frameCount: number;
+    intervalId: NodeJS.Timeout;
+    videoElement?: HTMLVideoElement;
   }> = new Map();
   private batchQueue: VideoFrame[] = [];
   private batchTimer: NodeJS.Timeout | null = null;
   private isProcessing: boolean = false;
   private initialized: boolean = false;
   private visionServerAvailable: boolean = false;
+  private memoryCleanupTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
@@ -160,6 +163,12 @@ class VisionPipelineService extends EventEmitter {
     const sourceName = options.sourceName || `stream-${Date.now()}`;
     const intervalMs = 1000 / fps;
     
+    // Check if stream already exists
+    if (this.activeStreams.has(sourceName)) {
+      logger.log('VISION_PIPELINE', `Stream ${sourceName} already exists, stopping previous`, 'warning');
+      this.stopSampling(sourceName);
+    }
+    
     logger.log('VISION_PIPELINE', `Starting video sampling: ${sourceName} at ${fps} FPS`, 'info');
     
     const frames: VideoFrame[] = [];
@@ -168,15 +177,36 @@ class VisionPipelineService extends EventEmitter {
     // Create video element to capture frames
     const video = document.createElement('video');
     video.srcObject = stream;
-    video.play();
+    video.muted = true;  // Mute to avoid autoplay issues
     
     // Wait for video to be ready
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error('Failed to load video stream'));
+      
+      // Timeout after 5 seconds
+      setTimeout(() => reject(new Error('Video load timeout')), 5000);
+      
+      video.play().catch(err => reject(err));
     });
 
     // Sample frames
     const sampleInterval = setInterval(() => {
+      // Check if stream still exists (might have been stopped)
+      if (!this.activeStreams.has(sourceName)) {
+        clearInterval(sampleInterval);
+        video.pause();
+        video.srcObject = null;
+        return;
+      }
+      
+      // Check duration limit
+      if (options.maxDurationMs && Date.now() - startTime > options.maxDurationMs) {
+        this.stopSampling(sourceName);
+        this.emit('samplingComplete', { source: sourceName, frameCount: frames.length });
+        return;
+      }
+      
       // Check GPU memory
       const gpuStats = gpuMonitor.getCurrentStats();
       if (gpuStats && gpuStats.vram_percent > VISION_CONFIG.maxGpuMemoryPercent) {
@@ -184,40 +214,44 @@ class VisionPipelineService extends EventEmitter {
         return;
       }
 
-      // Capture frame
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg', 0.8);
+      try {
+        // Capture frame
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
         
-        const frame: VideoFrame = {
-          id: `frame-${sourceName}-${Date.now()}-${frames.length}`,
-          timestamp: Date.now(),
-          source: sourceName,
-          imageData: imageData.split(',')[1],  // Remove data URL prefix
-          metadata: {
-            width: canvas.width,
-            height: canvas.height,
-            fps
+        if (ctx && video.readyState >= 2) {
+          ctx.drawImage(video, 0, 0);
+          const imageData = canvas.toDataURL('image/jpeg', 0.8);
+          
+          const frame: VideoFrame = {
+            id: `frame-${sourceName}-${Date.now()}-${frames.length}`,
+            timestamp: Date.now(),
+            source: sourceName,
+            imageData: imageData.split(',')[1],  // Remove data URL prefix
+            metadata: {
+              width: canvas.width,
+              height: canvas.height,
+              fps
+            }
+          };
+          
+          frames.push(frame);
+          this.emit('frameCaptured', frame);
+          
+          // Update stream stats
+          const streamInfo = this.activeStreams.get(sourceName);
+          if (streamInfo) {
+            streamInfo.frameCount++;
+            streamInfo.lastSampleTime = Date.now();
           }
-        };
-        
-        frames.push(frame);
-        this.emit('frameCaptured', frame);
-        
-        // Add to batch queue for processing
-        this.queueFrameForBatchProcessing(frame);
-      }
-      
-      // Check duration limit
-      if (options.maxDurationMs && Date.now() - startTime > options.maxDurationMs) {
-        clearInterval(sampleInterval);
-        video.pause();
-        this.emit('samplingComplete', { source: sourceName, frameCount: frames.length });
+          
+          // Add to batch queue for processing
+          this.queueFrameForBatchProcessing(frame);
+        }
+      } catch (error) {
+        logger.log('VISION_PIPELINE', `Frame capture error: ${error}`, 'error');
       }
     }, intervalMs);
 
@@ -226,7 +260,9 @@ class VisionPipelineService extends EventEmitter {
       source: stream,
       sampleFps: fps,
       lastSampleTime: Date.now(),
-      frameCount: 0
+      frameCount: 0,
+      intervalId: sampleInterval,
+      videoElement: video
     });
 
     return frames;
@@ -238,9 +274,18 @@ class VisionPipelineService extends EventEmitter {
   stopSampling(sourceName: string): boolean {
     const stream = this.activeStreams.get(sourceName);
     if (stream) {
+      // Clear the interval
+      clearInterval(stream.intervalId);
+      
+      // Clean up video element
+      if (stream.videoElement) {
+        stream.videoElement.pause();
+        stream.videoElement.srcObject = null;
+      }
+      
       this.activeStreams.delete(sourceName);
       this.emit('samplingStopped', { source: sourceName });
-      logger.log('VISION_PIPELINE', `Stopped sampling: ${sourceName}`, 'info');
+      logger.log('VISION_PIPELINE', `Stopped sampling: ${sourceName} (captured ${stream.frameCount} frames)`, 'info');
       return true;
     }
     return false;
@@ -450,6 +495,7 @@ class VisionPipelineService extends EventEmitter {
     visualMemorySize: number;
     isProcessing: boolean;
     batchQueueSize: number;
+    activeStreamNames: string[];
   } {
     return {
       initialized: this.initialized,
@@ -457,7 +503,8 @@ class VisionPipelineService extends EventEmitter {
       activeStreams: this.activeStreams.size,
       visualMemorySize: this.visualMemory.length,
       isProcessing: this.isProcessing,
-      batchQueueSize: this.batchQueue.length
+      batchQueueSize: this.batchQueue.length,
+      activeStreamNames: Array.from(this.activeStreams.keys())
     };
   }
 
@@ -479,6 +526,7 @@ class VisionPipelineService extends EventEmitter {
     for (const [sourceName] of this.activeStreams) {
       this.stopSampling(sourceName);
     }
+    this.activeStreams.clear();
     
     // Clear timers
     if (this.batchTimer) {
@@ -486,9 +534,15 @@ class VisionPipelineService extends EventEmitter {
       this.batchTimer = null;
     }
     
+    if (this.memoryCleanupTimer) {
+      clearInterval(this.memoryCleanupTimer);
+      this.memoryCleanupTimer = null;
+    }
+    
     // Clear memory
     this.clearVisualMemory();
     
+    this.initialized = false;
     this.removeAllListeners();
     logger.log('VISION_PIPELINE', 'Vision Pipeline disposed', 'info');
   }
@@ -614,7 +668,7 @@ class VisionPipelineService extends EventEmitter {
 
   private startMemoryCleanup(): void {
     // Cleanup old entries every minute
-    setInterval(() => {
+    this.memoryCleanupTimer = setInterval(() => {
       const cutoff = Date.now() - VISION_CONFIG.visualMemoryDurationMs;
       const before = this.visualMemory.length;
       this.visualMemory = this.visualMemory.filter(e => e.timestamp > cutoff);

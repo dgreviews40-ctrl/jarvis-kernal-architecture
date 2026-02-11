@@ -455,40 +455,6 @@ export class OllamaProvider implements IAIProvider {
     // Use request timeout if provided, otherwise default
     const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
     
-    // KV-Cache: Get or create conversation context
-    let conversationContext: ReturnType<typeof kvCache.buildPromptWithContext> = null;
-    let cacheHit = false;
-    let cacheStartTime = 0;
-    
-    if (request.conversationId && !request.images?.length) {
-      cacheStartTime = Date.now();
-      const context = kvCache.getOrCreateContext(
-        request.conversationId,
-        request.systemInstruction || 'You are JARVIS.',
-        model
-      );
-      
-      // Build prompt with cached context
-      conversationContext = kvCache.buildPromptWithContext(
-        request.conversationId,
-        request.prompt
-      );
-      
-      cacheHit = context.useCount > 1;
-      if (cacheHit) {
-        console.log(`[KV-CACHE] Hit for conversation ${request.conversationId} (use #${context.useCount})`);
-      }
-    }
-    
-    console.log('[OLLAMA DEBUG] Vision request model:', { 
-      requestModel: request.model, 
-      configModel: config.model, 
-      finalModel: model,
-      hasImages: !!request.images?.length,
-      cacheEnabled: !!request.conversationId,
-      cacheHit
-    });
-
     // Validate request parameters
     if (!config.url || !config.model) {
       throw new Error('Ollama configuration is incomplete. Please check your settings.');
@@ -634,6 +600,41 @@ export class OllamaProvider implements IAIProvider {
         // Proceed with original prompt if search fails
       }
     }
+
+    // KV-Cache: Get or create conversation context (AFTER search enhancement)
+    let conversationContext: ReturnType<typeof kvCache.buildPromptWithContext> = null;
+    let cacheHit = false;
+    let cacheStartTime = 0;
+    
+    if (request.conversationId && !request.images?.length) {
+      cacheStartTime = Date.now();
+      const context = kvCache.getOrCreateContext(
+        request.conversationId,
+        request.systemInstruction || 'You are JARVIS.',
+        model
+      );
+      
+      // Build prompt with cached context, using search-enhanced finalPrompt
+      conversationContext = kvCache.buildPromptWithContext(
+        request.conversationId,
+        finalPrompt  // Use search-enhanced prompt, not raw request.prompt
+      );
+      
+      cacheHit = context.useCount > 1;
+      if (cacheHit) {
+        console.log(`[KV-CACHE] Hit for conversation ${request.conversationId} (use #${context.useCount})`);
+      }
+    }
+    
+    console.log('[OLLAMA DEBUG] Generate request:', { 
+      requestModel: request.model, 
+      configModel: config.model, 
+      finalModel: model,
+      hasImages: !!request.images?.length,
+      cacheEnabled: !!request.conversationId,
+      cacheHit,
+      requiresInternet
+    });
 
     try {
       // Acquire rate limiter slot before making request

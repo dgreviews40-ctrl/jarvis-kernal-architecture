@@ -171,50 +171,7 @@ Replace polling-based HA updates with real-time WebSocket connection.
 
 ---
 
-### 7. Docker Support
-
-**Status:** ❌ NOT IMPLEMENTED  
-**Priority:** Low  
-**Effort:** Medium  
-
-**Description:**  
-Containerize JARVIS for easier deployment.
-
-**Required Files:**
-```dockerfile
-# Dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-```
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  jarvis:
-    build: .
-    ports:
-      - "3000:80"
-  proxy:
-    build: ./server
-    ports:
-      - "3101:3101"
-  piper:
-    image: rhasspy/wyoming-piper
-    ports:
-      - "10200:10200"
-```
-
----
-
-### 8. CI/CD Pipeline
+### 7. CI/CD Pipeline
 
 **Status:** ❌ NOT IMPLEMENTED  
 **Priority:** Low  
@@ -268,7 +225,6 @@ From `docs/archive/CAPABILITIES.md` - potential future integrations:
 
 ### Phase 2: Features (Medium Impact)
 3. **Advanced Vision Pipeline** - Better video capabilities
-4. **Docker Support** - Easier deployment
 
 ### Phase 3: Polish (Low Impact)
 5. **SSML Prosody with Piper** (or switch TTS)

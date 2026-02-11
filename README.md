@@ -19,6 +19,13 @@ J.A.R.V.I.S. is an advanced AI kernel architecture that integrates multiple AI p
   - Automated system alerts
   - Plugin health tracking
   - ASCII-formatted diagnostic reports
+- **Humanization & Natural Conversation** (NEW)
+  - Proactive engagement with milestone alerts and follow-ups
+  - Natural speech flow with sentence-level TTS streaming
+  - Emotional intelligence with unified sentiment analysis
+  - Semantic memory context injection for personalized responses
+  - Knowledge graph relationships for informed conversations
+  - Dynamic personality adaptation
 - **Plugin architecture v2** with sandboxing and lifecycle management
 - **Memory storage** and semantic recall system
 - **Vision Memory** - Persistent visual memory with CLIP embeddings for image search and recall
@@ -361,10 +368,13 @@ See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for detailed architecture dec
 
 | Document | Description |
 |----------|-------------|
+| [JARVIS_HUMANIZATION_ROADMAP.md](./JARVIS_HUMANIZATION_ROADMAP.md) | Humanization roadmap and completed work |
+| [JARVIS_HUMANIZATION_TECHNICAL_GUIDE.md](./JARVIS_HUMANIZATION_TECHNICAL_GUIDE.md) | Technical implementation details |
 | [docs/STORES.md](./docs/STORES.md) | State management with Zustand |
 | [docs/ERROR_HANDLING.md](./docs/ERROR_HANDLING.md) | Error handling and retry strategies |
 | [docs/CIRCUIT_BREAKER.md](./docs/CIRCUIT_BREAKER.md) | Circuit breaker pattern |
 | [docs/ENHANCED_TTS.md](./docs/ENHANCED_TTS.md) | Enhanced TTS with natural speech |
+| [docs/NATURAL_SPEECH_FLOW.md](./docs/NATURAL_SPEECH_FLOW.md) | Natural speech flow configuration |
 | [docs/AGENT_ORCHESTRATOR.md](./docs/AGENT_ORCHESTRATOR.md) | Autonomous task execution |
 | [docs/TESTING.md](./docs/TESTING.md) | Testing guide (unit, integration, performance) |
 | [docs/SEARCH_SERVICE.md](./docs/SEARCH_SERVICE.md) | Web search integration |

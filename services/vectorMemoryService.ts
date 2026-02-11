@@ -94,10 +94,131 @@ export class VectorMemoryService {
 
   /**
    * Get user identity
+   * 
+   * Uses multiple strategies to find user identity:
+   * 1. Direct search with expanded tag filters (most reliable)
+   * 2. Semantic search with expanded query
+   * 3. Fallback to legacy memory service
    */
   public async getUserIdentity(): Promise<MemoryNode | null> {
-    const results = await vectorDB.search('identity user-info', { maxResults: 1 });
-    return results.length > 0 ? results[0].node : null;
+    // Strategy 1: Search with expanded tag filters (includes 'auto_learned' from learning.ts)
+    try {
+      const results = await vectorDB.search('my name user identity', { 
+        maxResults: 10,
+        minScore: 0.5, // Lower threshold for identity searches
+        filter: (record) => {
+          const tags = record.metadata.tags || [];
+          return tags.includes('identity') || 
+                 tags.includes('user-info') ||
+                 tags.includes('user_identity') ||
+                 tags.includes('auto_learned');
+        }
+      });
+      
+      if (results.length > 0) {
+        // Sort by relevance and pick the best match
+        const bestMatch = results.sort((a, b) => b.score - a.score)[0];
+        logger.log('VECTOR_MEMORY', `Found identity via tag filter: ${bestMatch.node.content.substring(0, 50)}...`, 'info');
+        return bestMatch.node;
+      }
+    } catch (error) {
+      logger.log('VECTOR_MEMORY', `Tag filter search failed: ${error}`, 'warning');
+    }
+    
+    // Strategy 2: Broader semantic search without tag filter
+    try {
+      const fallbackResults = await vectorDB.search('user identity name personal information', { 
+        maxResults: 5,
+        minScore: 0.4 // Even lower threshold for fallback
+      });
+      
+      // Filter results to find identity-related content
+      const identityResult = fallbackResults.find(r => {
+        const content = r.node.content.toLowerCase();
+        const tags = r.node.tags || [];
+        return tags.some(t => ['identity', 'user-info', 'user_identity', 'auto_learned', 'name'].includes(t)) ||
+               content.includes('my name') ||
+               content.includes('i am') ||
+               content.includes("i'm") ||
+               content.includes('call me');
+      });
+      
+      if (identityResult) {
+        logger.log('VECTOR_MEMORY', `Found identity via semantic search: ${identityResult.node.content.substring(0, 50)}...`, 'info');
+        return identityResult.node;
+      }
+    } catch (error) {
+      logger.log('VECTOR_MEMORY', `Semantic search failed: ${error}`, 'warning');
+    }
+    
+    // Strategy 3: Fallback to legacy memory service
+    try {
+      const { memory } = await import('./memory');
+      const identityNode = await memory.getUserIdentity();
+      if (identityNode) {
+        logger.log('VECTOR_MEMORY', `Found identity via legacy memory: ${identityNode.content.substring(0, 50)}...`, 'info');
+        return identityNode;
+      }
+    } catch (error) {
+      logger.log('VECTOR_MEMORY', `Legacy memory fallback failed: ${error}`, 'warning');
+    }
+    
+    logger.log('VECTOR_MEMORY', 'No user identity found in any storage', 'info');
+    return null;
+  }
+
+  /**
+   * Get user hobbies
+   * 
+   * Searches for memories tagged with hobby-related tags
+   */
+  public async getUserHobbies(): Promise<MemoryNode[]> {
+    const hobbies: MemoryNode[] = [];
+    
+    // Strategy 1: Search with hobby tag filter
+    try {
+      const results = await vectorDB.search('user hobbies interests activities', { 
+        maxResults: 10,
+        minScore: 0.4,
+        filter: (record) => {
+          const tags = record.metadata.tags || [];
+          return tags.includes('hobby') || 
+                 tags.includes('hobbies') ||
+                 tags.includes('interest') ||
+                 tags.includes('auto_learned');
+        }
+      });
+      
+      for (const result of results) {
+        const content = result.node.content.toLowerCase();
+        // Check if it's actually hobby-related content
+        if (content.includes('hobby') || content.includes('like') || content.includes('enjoy')) {
+          hobbies.push(result.node);
+        }
+      }
+    } catch (error) {
+      logger.log('VECTOR_MEMORY', `Hobby search failed: ${error}`, 'warning');
+    }
+    
+    // Strategy 2: Fallback to legacy memory
+    if (hobbies.length === 0) {
+      try {
+        const { memory } = await import('./memory');
+        const allMemories = await memory.getAll();
+        for (const node of allMemories) {
+          const content = node.content.toLowerCase();
+          const tags = node.tags.map(t => t.toLowerCase());
+          if (tags.includes('hobby') || tags.includes('hobbies') ||
+              content.includes('user hobby') || content.includes('hobby:')) {
+            hobbies.push(node);
+          }
+        }
+      } catch (error) {
+        logger.log('VECTOR_MEMORY', `Legacy memory hobby fallback failed: ${error}`, 'warning');
+      }
+    }
+    
+    return hobbies;
   }
 
   /**

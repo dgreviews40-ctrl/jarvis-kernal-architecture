@@ -1,74 +1,121 @@
-JARVIS MASTER LAUNCHER SYSTEM
-=============================
+================================================================================
+                    J.A.R.V.I.S. UNIFIED LAUNCHER v2.0
+================================================================================
 
+Welcome to J.A.R.V.I.S. - Just A Rather Very Intelligent System
+
+================================================================================
 QUICK START
------------
-1. Double-click: JARVIS_RUN.bat
-2. Wait for services to start (~15-30 seconds)
-3. Chrome will open automatically
-4. Use JARVIS!
+================================================================================
 
-TO EXIT
--------
-- Close the Chrome window, OR
-- Press Ctrl+C in the launcher window
+1.  DOUBLE-CLICK:  JARVIS.bat
+    
+    This single file will:
+    - Start ALL required services (Hardware Monitor, HA Proxy)
+    - Start ALL optional AI services if Python is available:
+      * Piper TTS (Text-to-Speech)
+      * Whisper STT (Speech-to-Text) 
+      * Embedding Server (Vector DB)
+      * GPU Monitor
+      * Vision Server
+    - Open the loading animation screen
+    - Launch your browser with the dashboard
+    
+2.  CREATE DESKTOP SHORTCUT:  Create-Desktop-Shortcut.bat
+    
+    Run this to create a professional desktop shortcut with icon.
 
-All services will be automatically cleaned up.
+================================================================================
+WHAT'S NEW IN v2.0
+================================================================================
 
-FILES
------
-JARVIS_RUN.bat          - Main launcher (start here!)
-launcher.cjs            - Node.js service manager (handles everything)
-JARVIS_SHUTDOWN.bat     - Emergency shutdown
-JARVIS_STATUS.bat       - Check what's running
-Install-Python-Deps.bat - Install Python packages
-Create-Desktop-Shortcut.bat - Create desktop icon
-LAUNCHER_README.txt     - This file
+* ONE file to launch everything - no more confusion!
+* Professional loading screen with boot animation
+* Parallel service startup - faster load times
+* Automatic dependency checking
+* Clean shutdown handling
+* Desktop shortcut with custom icon support
+* Archived old batch files to reduce clutter
 
-SERVICES
---------
-Node.js (Required - JARVIS won't work without these):
-  - Vite (3000)           - Main web app
-  - Hardware Monitor (3100) - System stats
-  - HA Proxy (3101)       - API gateway
-
-Python (Optional - enhances features):
-  - Piper TTS (5000)      - Text-to-speech
-  - Embedding (5002)      - AI embeddings
-  - GPU Monitor (5003)    - GPU stats
-  - Vision Server (5004)  - Image analysis
-
+================================================================================
 REQUIREMENTS
-------------
-1. Node.js installed (run: node --version)
-2. npm packages installed (run: npm install)
+================================================================================
 
-OPTIONAL: For Python features:
-1. Python installed (run: python --version)  
-2. Python deps (run: Install-Python-Deps.bat)
+REQUIRED:
+  - Node.js (v18 or higher) - https://nodejs.org/
+  - npm packages (run: npm install)
 
+OPTIONAL (for full AI capabilities):
+  - Python 3.8+ - https://python.org/
+  - Piper voice model (run: Install-JARVIS-Voice.bat)
+
+================================================================================
+SERVICE PORTS
+================================================================================
+
+Port 3000  - Vite Dev Server (Main Dashboard)
+Port 3100  - Hardware Monitor
+Port 3101  - Home Assistant Proxy
+Port 5000  - Piper TTS Server (Python)
+Port 5001  - Whisper STT Server (Python)
+Port 5002  - Embedding Server (Python)
+Port 5003  - GPU Monitor (Python)
+Port 5004  - Vision Server (Python)
+
+================================================================================
 TROUBLESHOOTING
----------------
-Q: "node_modules not found" error
-A: Run: npm install
+================================================================================
 
-Q: Vite fails to start
-A: Make sure node_modules exists: dir node_modules\.bin\vite.cmd
+Problem:  "Node.js not found"
+Fix:      Install Node.js from https://nodejs.org/
 
-Q: Python services fail
-A: They're optional - run Install-Python-Deps.bat to enable them
+Problem:  "Port already in use"
+Fix:      Run JARVIS.bat - it will clean up existing processes automatically
 
-Q: Port already in use
-A: Run JARVIS_SHUTDOWN.bat to clean up, then try again
+Problem:  Python services not starting
+Fix:      Python is optional. Install Python 3.8+ for full AI features.
 
-Q: Chrome doesn't open
-A: JARVIS is still running - open http://localhost:3000 manually
+Problem:  Want to shutdown JARVIS
+Fix:      Close the JARVIS.bat window or press Ctrl+C
 
-FEATURES
---------
-+ Auto-detects best way to run Vite
-+ Handles crashes gracefully
-+ Automatic shutdown on exit
-+ Process monitoring
-+ Port conflict resolution
-+ Works with or without Python
+================================================================================
+ADVANCED USAGE
+================================================================================
+
+Manual Service Control (if needed):
+  npm run dev          - Start only Vite dev server
+  npm run proxy        - Start only HA Proxy
+  npm run hardware     - Start only Hardware Monitor
+
+Python Services (manual):
+  python whisper_server.py
+  python embedding_server.py
+  python gpu_monitor.py
+  python vision_server.py
+  python Piper/piper_server.py
+
+================================================================================
+FILE STRUCTURE
+================================================================================
+
+JARVIS.bat                    <-- START HERE - Main launcher
+Create-Desktop-Shortcut.bat   <-- Create desktop shortcut with icon
+Create-Shortcut.ps1           <-- PowerShell script for shortcut creation
+loading.html                  <-- Boot animation screen
+
+installer/
+  old-batch-files/            <-- Old batch files archived here
+  Install-JARVIS-Voice.bat    <-- Install Piper TTS voice
+  Install-Python-Deps.bat     <-- Install Python dependencies
+
+================================================================================
+SUPPORT
+================================================================================
+
+For issues and documentation:
+- See README.md for full documentation
+- Check AGENTS.md for development info
+
+================================================================================
+                        Stark Industries (c) 2024
+================================================================================

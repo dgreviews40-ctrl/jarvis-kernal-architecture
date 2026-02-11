@@ -7,9 +7,11 @@ J.A.R.V.I.S. is an advanced AI kernel architecture that integrates multiple AI p
 ### Key Features
 - **Multi-AI provider support** (Gemini, Ollama)
 - **Home Assistant integration** for smart home control
+- **Smart Context Routing** - AI automatically routes personal queries to memory and device queries to Home Assistant
 - **Voice recognition and synthesis** with wake word detection and Piper TTS
 - **Computer vision** with webcam and Home Assistant camera support
 - **Hardware monitoring** and system diagnostics (core.os)
+- **Humanization & Natural Conversation** - Proactive engagement, emotional intelligence, natural speech flow
 - **Plugin architecture v2** with sandboxing and lifecycle management
 - **Memory storage** and semantic recall system with Vector DB
 - **State management** with Zustand stores
@@ -543,6 +545,8 @@ Bundle size warnings are expected for feature chunks. The `chunkSizeWarningLimit
 
 | Document | Description |
 |----------|-------------|
+| `JARVIS_HUMANIZATION_ROADMAP.md` | Humanization roadmap and completed work (9/9 tasks done) |
+| `JARVIS_HUMANIZATION_TECHNICAL_GUIDE.md` | Technical implementation details |
 | `docs/ARCHITECTURE.md` | Architecture Decision Records (ADRs) |
 | `docs/TESTING.md` | Comprehensive testing guide |
 | `docs/STORES.md` | State management documentation |
@@ -551,5 +555,8 @@ Bundle size warnings are expected for feature chunks. The `chunkSizeWarningLimit
 | `docs/VOICE.md` | Voice setup and configuration |
 | `docs/CIRCUIT_BREAKER.md` | Circuit breaker pattern |
 | `docs/ENHANCED_TTS.md` | Enhanced TTS with natural speech |
+| `docs/NATURAL_SPEECH_FLOW.md` | Speech flow optimization guide |
+| `docs/PIPER_VOICE_GUIDE.md` | Piper voice selection (British vs American) |
+| `docs/PIPER_VOICE_SELECTION.md` | Voice detection and selection UI |
 | `docs/AGENT_ORCHESTRATOR.md` | Autonomous task execution |
 | `docs/SEARCH_SERVICE.md` | Web search integration |

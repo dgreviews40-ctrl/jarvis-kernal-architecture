@@ -1,33 +1,25 @@
 @echo off
-:: Create Desktop Shortcut for JARVIS
+:: J.A.R.V.I.S. Desktop Shortcut Creator
 
 cd /d "%~dp0"
+title J.A.R.V.I.S. Shortcut Creator
 
-set SCRIPT="%TEMP%\CreateShortcut.vbs"
-set TARGET=%CD%\JARVIS_RUN.bat
-set ICON=%CD%\public\favicon.ico
-set WORKING_DIR=%CD%
+cls
+echo.
+echo ============================================================
+echo           J.A.R.V.I.S. Desktop Shortcut Creator
+echo ============================================================
+echo.
 
-echo Set oWS = WScript.CreateObject("WScript.Shell") > %SCRIPT%
-echo sLinkFile = oWS.SpecialFolders("Desktop") ^& "\JARVIS.lnk" >> %SCRIPT%
-echo Set oLink = oWS.CreateShortcut(sLinkFile) >> %SCRIPT%
-echo oLink.TargetPath = "%TARGET%" >> %SCRIPT%
-echo oLink.WorkingDirectory = "%WORKING_DIR%" >> %SCRIPT%
-if exist "%ICON%" (
-    echo oLink.IconLocation = "%ICON%" >> %SCRIPT%
+powershell -NoProfile -ExecutionPolicy Bypass -File "Create-Shortcut.ps1"
+
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [ERROR] Failed to create shortcut.
+    pause
+    exit /b 1
 )
-echo oLink.Description = "JARVIS AI Assistant" >> %SCRIPT%
-echo oLink.WindowStyle = "1" >> %SCRIPT%
-echo oLink.Save >> %SCRIPT%
 
-cscript /nologo %SCRIPT%
-del %SCRIPT%
-
-echo ========================================
-echo Desktop shortcut created!
 echo.
-echo You can now launch JARVIS from your desktop.
-echo.
-echo NOTE: First launch may take a minute as services start up.
-echo ========================================
 pause
+exit /b 0

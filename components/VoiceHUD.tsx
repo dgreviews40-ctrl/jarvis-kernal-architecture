@@ -171,11 +171,38 @@ export const VoiceHUD: React.FC<VoiceHUDProps> = ({ onToggle }) => {
                   </span>
               ) : (
                   <span className="text-[10px] text-gray-600 font-mono italic">
-                      {state === VoiceState.LISTENING ? "Waiting for audio..." : "..."}
+                      {state === VoiceState.LISTENING ? "Waiting for audio..." : 
+                       state === VoiceState.IDLE ? "Listening for 'Jarvis'..." : "..."}
                   </span>
               )}
           </div>
       )}
+      
+      {/* Voice Off Help Message */}
+      {isOffline && (
+          <div className="mt-2 p-3 bg-gray-900/50 border border-gray-700 rounded text-center">
+              <p className="text-xs text-gray-400">
+                  Click the <Power size={10} className="inline mx-1"/> button above to enable voice control
+              </p>
+              <p className="text-[10px] text-gray-600 mt-1">
+                  Say &quot;Jarvis&quot; to wake, then give your command
+              </p>
+          </div>
+      )}
+      
+      {/* Browser Warning - Show if not Chrome (check for brave property or non-Chrome UA) */}
+      {(typeof navigator !== 'undefined' && (
+          // @ts-expect-error - brave is not in standard navigator type
+          navigator.brave || 
+          !navigator.userAgent.includes('Chrome') || 
+          navigator.userAgent.includes('Edg')
+      )) ? (
+          <div className="mt-2 p-2 bg-yellow-900/20 border border-yellow-700/50 rounded text-center">
+              <p className="text-[10px] text-yellow-500">
+                  ⚠️ For best voice support, please use Google Chrome
+              </p>
+          </div>
+      ) : null}
 
       {/* Context History Window */}
       {!isMuted && session && (

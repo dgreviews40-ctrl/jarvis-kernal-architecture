@@ -333,21 +333,35 @@ export class MemoryConsolidationService {
     // Check for duplicates across all memories
     const allMemories = await localVectorDB.getAll();
     let duplicates = 0;
-
-    for (let i = 0; i < allMemories.length; i++) {
-      for (let j = i + 1; j < allMemories.length; j++) {
-        const memA = allMemories[i];
-        const memB = allMemories[j];
+    const processedIds = new Set<string>();
+    
+    // Only check memories created in the last hour (new duplicates)
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    const recentMemories = allMemories.filter(m => m.metadata.created > oneHourAgo);
+    
+    // Check recent memories against all older memories
+    for (const newMem of recentMemories) {
+      // Skip very short memories (less than 10 chars) - too prone to false positives
+      if (newMem.metadata.content.length < 10) continue;
+      
+      for (const oldMem of allMemories) {
+        // Don't compare with itself or already processed
+        if (newMem.id === oldMem.id || processedIds.has(oldMem.id)) continue;
+        
+        // Skip very short old memories too
+        if (oldMem.metadata.content.length < 10) continue;
 
         const similarity = this.calculateContentSimilarity(
-          memA.metadata.content,
-          memB.metadata.content
+          newMem.metadata.content,
+          oldMem.metadata.content
         );
 
         if (similarity > this.config.duplicateThreshold) {
-          // Remove duplicate
-          await localVectorDB.delete(memB.id);
+          // Remove the newer duplicate, keep the older one
+          await localVectorDB.delete(newMem.id);
+          processedIds.add(newMem.id);
           duplicates++;
+          break; // Stop checking this new memory, it's already marked as duplicate
         }
       }
     }

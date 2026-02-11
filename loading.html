@@ -3,883 +3,1148 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JARVIS - Initializing</title>
+    <title>J.A.R.V.I.S. - System Boot</title>
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&family=Share+Tech+Mono&display=swap');
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --cyan: #00d4ff;
+            --cyan-glow: rgba(0, 212, 255, 0.5);
+            --orange: #ff6b35;
+            --orange-glow: rgba(255, 107, 53, 0.4);
+            --dark: #050505;
+            --grid-color: rgba(0, 212, 255, 0.03);
         }
 
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&family=Share+Tech+Mono&display=swap');
-
         body {
-            background: #000;
-            color: #00d4ff;
-            font-family: 'Rajdhani', 'Orbitron', sans-serif;
+            background: var(--dark);
+            color: var(--cyan);
+            font-family: 'Rajdhani', sans-serif;
             overflow: hidden;
             height: 100vh;
             display: flex;
             position: relative;
         }
 
-        /* Background effects */
         .grid {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             background-image: 
-                linear-gradient(rgba(0, 212, 255, 0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 212, 255, 0.02) 1px, transparent 1px);
-            background-size: 30px 30px;
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: gridMove 20s linear infinite;
             pointer-events: none;
         }
 
-        .scanline {
+        @keyframes gridMove {
+            0% { transform: perspective(500px) rotateX(60deg) translateY(0); }
+            100% { transform: perspective(500px) rotateX(60deg) translateY(50px); }
+        }
+
+        .scanlines {
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 212, 255, 0.03) 2px, rgba(0, 212, 255, 0.03) 4px);
+            animation: scanlineFlicker 0.1s infinite;
+            pointer-events: none;
+        }
+
+        @keyframes scanlineFlicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.98; }
+        }
+
+        .scan-bar {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(90deg, transparent, var(--cyan-glow), var(--cyan), var(--cyan-glow), transparent);
+            box-shadow: 0 0 20px var(--cyan), 0 0 40px var(--cyan-glow);
+            animation: scanBarMove 3s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes scanBarMove {
+            0% { top: -4px; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100vh; opacity: 0; }
+        }
+
+        .particles {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            width: 2px; height: 2px;
+            background: var(--cyan);
+            border-radius: 50%;
+            opacity: 0;
+            animation: particleFloat 8s infinite;
+            box-shadow: 0 0 6px var(--cyan);
+        }
+
+        @keyframes particleFloat {
+            0% { opacity: 0; transform: translateY(100vh) scale(0); }
+            10% { opacity: 1; transform: translateY(90vh) scale(1); }
+            90% { opacity: 1; transform: translateY(10vh) scale(1); }
+            100% { opacity: 0; transform: translateY(0) scale(0); }
+        }
+
+        .vignette {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.4) 100%);
+            pointer-events: none;
+        }
+
+        .corner {
+            position: absolute;
+            width: 100px; height: 100px;
+            border: 2px solid var(--cyan);
+            opacity: 0.5;
+            animation: cornerPulse 2s ease-in-out infinite;
+        }
+
+        .corner-tl { top: 20px; left: 20px; border-right: none; border-bottom: none; border-top-left-radius: 10px; }
+        .corner-tr { top: 20px; right: 20px; border-left: none; border-bottom: none; border-top-right-radius: 10px; }
+        .corner-bl { bottom: 20px; left: 20px; border-right: none; border-top: none; border-bottom-left-radius: 10px; }
+        .corner-br { bottom: 20px; right: 20px; border-left: none; border-top: none; border-bottom-right-radius: 10px; }
+
+        @keyframes cornerPulse {
+            0%, 100% { opacity: 0.3; box-shadow: 0 0 10px var(--cyan-glow); }
+            50% { opacity: 0.7; box-shadow: 0 0 20px var(--cyan-glow); }
+        }
+
+        .container {
+            display: flex;
             width: 100%;
             height: 100%;
-            background: linear-gradient(to bottom, transparent 50%, rgba(0, 212, 255, 0.015) 50%);
-            background-size: 100% 4px;
-            pointer-events: none;
-            animation: scanline 10s linear infinite;
+            position: relative;
+            z-index: 10;
         }
 
-        @keyframes scanline {
-            from { transform: translateY(0); }
-            to { transform: translateY(100vh); }
-        }
-
-        /* Left panel - System Status */
         .left-panel {
-            width: 280px;
+            width: 320px;
             border-right: 1px solid rgba(0, 212, 255, 0.2);
-            padding: 30px 20px;
+            padding: 40px 25px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
-            background: linear-gradient(90deg, rgba(0, 212, 255, 0.03), transparent);
+            gap: 25px;
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.05), transparent);
         }
 
         .panel-title {
             font-family: 'Orbitron', sans-serif;
-            font-size: 12px;
-            letter-spacing: 3px;
+            font-size: 11px;
+            letter-spacing: 4px;
             color: rgba(0, 212, 255, 0.6);
-            border-bottom: 1px solid rgba(0, 212, 255, 0.2);
-            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.3);
+            padding-bottom: 12px;
+            text-transform: uppercase;
         }
 
-        /* CPU Cores visualization */
         .cpu-cores {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 4px;
+            gap: 6px;
         }
 
         .core {
             aspect-ratio: 1;
             background: rgba(0, 212, 255, 0.1);
             border: 1px solid rgba(0, 212, 255, 0.2);
-            transition: all 0.1s;
+            transition: all 0.15s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .core::before {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 0; height: 0;
+            background: var(--cyan);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.2s;
         }
 
         .core.active {
-            background: rgba(0, 212, 255, 0.6);
-            box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+            background: rgba(0, 212, 255, 0.3);
+            border-color: var(--cyan);
+            box-shadow: 0 0 15px var(--cyan-glow);
         }
+
+        .core.active::before { width: 60%; height: 60%; }
 
         .core.high {
-            background: rgba(255, 200, 100, 0.8);
-            box-shadow: 0 0 10px rgba(255, 200, 100, 0.5);
+            background: rgba(255, 107, 53, 0.4);
+            border-color: var(--orange);
+            box-shadow: 0 0 15px var(--orange-glow);
         }
 
-        /* Memory bar */
+        .service-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .service-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 12px;
+            background: rgba(0, 212, 255, 0.03);
+            border-left: 3px solid transparent;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .service-item.pending { border-left-color: rgba(0, 212, 255, 0.3); }
+        .service-item.starting { 
+            border-left-color: var(--orange); 
+            background: rgba(255, 107, 53, 0.1);
+            animation: servicePulse 1s infinite;
+        }
+        .service-item.ready { 
+            border-left-color: #00ff88; 
+            background: rgba(0, 255, 136, 0.1);
+        }
+        .service-item.error { border-left-color: #ff4444; }
+        .service-item.waiting { border-left-color: #ffaa00; }
+
+        @keyframes servicePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .service-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-icon {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: rgba(0, 212, 255, 0.3);
+        }
+
+        .service-item.ready .status-icon {
+            background: #00ff88;
+            box-shadow: 0 0 8px #00ff88;
+        }
+
+        .service-item.starting .status-icon {
+            background: var(--orange);
+            animation: blink 0.5s infinite;
+        }
+
+        .service-item.waiting .status-icon {
+            background: #ffaa00;
+            animation: blink 0.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .service-status {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
         .memory-section {
-            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .mem-label {
-            font-size: 10px;
-            letter-spacing: 2px;
-            color: rgba(0, 212, 255, 0.5);
-            margin-bottom: 5px;
             display: flex;
             justify-content: space-between;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
 
         .mem-bar {
-            height: 6px;
+            height: 4px;
             background: rgba(0, 212, 255, 0.1);
-            border: 1px solid rgba(0, 212, 255, 0.2);
-            position: relative;
             overflow: hidden;
+            position: relative;
         }
 
         .mem-fill {
             height: 100%;
-            background: linear-gradient(90deg, #00d4ff, #0088ff);
+            background: linear-gradient(90deg, var(--cyan), var(--orange));
             width: 0%;
-            transition: width 0.3s;
+            transition: width 0.5s;
+            box-shadow: 0 0 10px var(--cyan-glow);
         }
 
-        /* Process list */
-        .process-list {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            max-height: 200px;
-            overflow: hidden;
-        }
-
-        .process-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 3px 6px;
-            background: rgba(0, 212, 255, 0.05);
-            border-left: 2px solid transparent;
-            transition: all 0.3s;
-        }
-
-        .process-item.running {
-            border-left-color: #00d4ff;
-            background: rgba(0, 212, 255, 0.1);
-        }
-
-        .process-item.complete {
-            border-left-color: #00ff88;
-            background: rgba(0, 255, 136, 0.1);
-            color: #00ff88;
-        }
-
-        .process-name {
-            color: rgba(0, 212, 255, 0.8);
-        }
-
-        .process-status {
-            color: rgba(0, 212, 255, 0.5);
-        }
-
-        /* Center - Main Display */
         .center-panel {
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
             position: relative;
         }
 
-        /* Main hex animation */
         .hex-container {
             position: relative;
-            width: 400px;
-            height: 400px;
+            width: 300px; height: 300px;
+            margin-bottom: 40px;
         }
 
         .hex-ring {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            border-radius: 50%;
-            border: 1px solid rgba(0, 212, 255, 0.2);
+            width: 100%; height: 100%;
+            border: 2px solid rgba(0, 212, 255, 0.2);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            animation: hexRotate 10s linear infinite;
         }
 
-        .hex-ring:nth-child(1) { width: 350px; height: 350px; animation: rotate 20s linear infinite; }
-        .hex-ring:nth-child(2) { width: 300px; height: 300px; animation: rotateReverse 15s linear infinite; border-style: dashed; }
-        .hex-ring:nth-child(3) { width: 250px; height: 250px; animation: rotate 10s linear infinite; border-color: rgba(0, 212, 255, 0.4); }
+        .hex-ring:nth-child(1) { animation-duration: 10s; border-color: rgba(0, 212, 255, 0.3); }
+        .hex-ring:nth-child(2) { 
+            animation-duration: 15s; 
+            animation-direction: reverse;
+            width: 80%; height: 80%;
+            border-color: rgba(0, 212, 255, 0.2);
+        }
+        .hex-ring:nth-child(3) { 
+            animation-duration: 20s;
+            width: 60%; height: 60%;
+            border-color: rgba(255, 107, 53, 0.3);
+        }
 
-        @keyframes rotate { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
-        @keyframes rotateReverse { from { transform: translate(-50%, -50%) rotate(360deg); } to { transform: translate(-50%, -50%) rotate(0deg); } }
+        @keyframes hexRotate {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
 
         .hex {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            width: 180px;
-            height: 180px;
+            width: 120px; height: 120px;
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(255, 107, 53, 0.2));
             clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-            background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(0, 100, 200, 0.15));
-            border: 2px solid rgba(0, 212, 255, 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
-            animation: hexPulse 3s ease-in-out infinite;
-        }
-
-        .hex::before {
-            content: '';
-            position: absolute;
-            inset: 15px;
-            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-            border: 1px solid rgba(0, 212, 255, 0.3);
+            box-shadow: 0 0 30px var(--cyan-glow), inset 0 0 30px rgba(0, 212, 255, 0.1);
+            animation: hexPulse 2s ease-in-out infinite;
         }
 
         @keyframes hexPulse {
-            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
-            50% { transform: translate(-50%, -50%) scale(1.02); opacity: 1; }
+            0%, 100% { 
+                box-shadow: 0 0 30px var(--cyan-glow), inset 0 0 30px rgba(0, 212, 255, 0.1);
+                transform: translate(-50%, -50%) scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 50px var(--cyan-glow), inset 0 0 40px rgba(0, 212, 255, 0.2);
+                transform: translate(-50%, -50%) scale(1.02);
+            }
         }
 
         .hex-inner {
             font-family: 'Orbitron', sans-serif;
-            font-size: 64px;
+            font-size: 48px;
             font-weight: 900;
-            color: #00d4ff;
-            text-shadow: 0 0 30px #00d4ff, 0 0 60px #00d4ff;
-            animation: textGlow 3s ease-in-out infinite;
+            background: linear-gradient(180deg, var(--cyan), var(--orange));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px var(--cyan-glow);
         }
 
-        @keyframes textGlow {
-            0%, 100% { text-shadow: 0 0 30px #00d4ff, 0 0 60px #00d4ff; }
-            50% { text-shadow: 0 0 50px #00d4ff, 0 0 100px #00d4ff, 0 0 150px #00d4ff; }
-        }
-
-        /* Main status */
         .main-status {
             text-align: center;
-            margin-top: 40px;
+            position: relative;
         }
 
         .jarvis-title {
             font-family: 'Orbitron', sans-serif;
-            font-size: 32px;
-            font-weight: 700;
-            letter-spacing: 16px;
-            color: #fff;
-            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
-            margin-bottom: 8px;
+            font-size: 56px;
+            font-weight: 900;
+            letter-spacing: 12px;
+            background: linear-gradient(180deg, #fff 0%, var(--cyan) 50%, rgba(0, 212, 255, 0.3) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 40px var(--cyan-glow);
+            margin-bottom: 10px;
+            animation: titleGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes titleGlow {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.3); }
+        }
+
+        .subtitle {
+            font-size: 12px;
+            letter-spacing: 8px;
+            color: rgba(0, 212, 255, 0.5);
+            text-transform: uppercase;
+            margin-bottom: 30px;
         }
 
         .boot-phase {
+            font-family: 'Share Tech Mono', monospace;
             font-size: 14px;
-            letter-spacing: 4px;
-            color: rgba(0, 212, 255, 0.8);
-            height: 24px;
+            letter-spacing: 3px;
+            color: var(--cyan);
             margin-bottom: 20px;
+            text-transform: uppercase;
+            min-height: 20px;
         }
 
         .main-progress {
-            width: 500px;
-            height: 4px;
+            width: 400px; height: 4px;
             background: rgba(0, 212, 255, 0.1);
+            margin: 0 auto 15px;
             position: relative;
             overflow: hidden;
-            margin: 0 auto;
+        }
+
+        .main-progress::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: repeating-linear-gradient(90deg, transparent, transparent 10px, rgba(0, 212, 255, 0.1) 10px, rgba(0, 212, 255, 0.1) 12px);
         }
 
         .main-progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #00d4ff, #0088ff, #00d4ff);
-            background-size: 200% 100%;
-            width: 0%;
-            animation: shimmer 2s linear infinite;
-            box-shadow: 0 0 20px #00d4ff;
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, var(--cyan), var(--orange));
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 20px var(--cyan-glow);
+            position: relative;
         }
 
-        @keyframes shimmer {
-            0% { background-position: 200% 0; }
-            100% { background-position: -200% 0; }
+        .main-progress-bar::after {
+            content: '';
+            position: absolute;
+            right: 0; top: -3px;
+            width: 10px; height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 20px #fff, 0 0 40px var(--cyan);
         }
 
         .progress-percent {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 48px;
-            font-weight: 700;
-            color: #00d4ff;
-            margin-top: 20px;
-            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 24px;
+            color: var(--cyan);
+            text-shadow: 0 0 10px var(--cyan-glow);
         }
 
-        /* Right panel - Data Stream */
+        .voice-visualizer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            height: 40px;
+            margin-top: 20px;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .voice-visualizer.active { opacity: 1; }
+
+        .wave-bar {
+            width: 4px;
+            background: linear-gradient(180deg, var(--cyan), var(--orange));
+            border-radius: 2px;
+            animation: waveAnimation 0.5s ease-in-out infinite;
+        }
+
+        @keyframes waveAnimation {
+            0%, 100% { height: 10%; }
+            50% { height: 100%; }
+        }
+
+        .launch-countdown {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            letter-spacing: 4px;
+            color: #00ff88;
+            opacity: 0;
+            transition: all 0.5s;
+            text-transform: uppercase;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+        }
+
+        .launch-countdown.visible {
+            opacity: 1;
+            animation: launchPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes launchPulse {
+            0%, 100% { text-shadow: 0 0 20px rgba(0, 255, 136, 0.5); }
+            50% { text-shadow: 0 0 40px rgba(0, 255, 136, 0.8), 0 0 60px rgba(0, 255, 136, 0.4); }
+        }
+
         .right-panel {
-            width: 320px;
+            width: 380px;
             border-left: 1px solid rgba(0, 212, 255, 0.2);
-            padding: 30px 20px;
+            padding: 40px 25px;
             display: flex;
             flex-direction: column;
-            background: linear-gradient(-90deg, rgba(0, 212, 255, 0.03), transparent);
+            background: linear-gradient(-90deg, rgba(0, 212, 255, 0.05), transparent);
         }
 
-        /* Terminal output */
         .terminal {
+            flex: 1;
+            overflow: hidden;
             font-family: 'Share Tech Mono', monospace;
             font-size: 11px;
             line-height: 1.6;
-            color: rgba(0, 212, 255, 0.7);
-            height: 300px;
-            overflow: hidden;
             display: flex;
             flex-direction: column-reverse;
         }
 
         .terminal-line {
-            padding: 2px 0;
+            padding: 3px 0;
             opacity: 0;
-            animation: fadeIn 0.3s forwards;
+            animation: terminalFadeIn 0.3s forwards;
         }
 
-        @keyframes fadeIn {
+        @keyframes terminalFadeIn {
             to { opacity: 1; }
         }
 
-        .timestamp {
+        .terminal-line .timestamp {
             color: rgba(0, 212, 255, 0.4);
+            margin-right: 10px;
         }
 
-        .success { color: #00ff88; }
-        .warning { color: #ffaa00; }
-        .info { color: #00d4ff; }
+        .terminal-line.info { color: var(--cyan); }
+        .terminal-line.success { color: #00ff88; }
+        .terminal-line.warning { color: var(--orange); }
+        .terminal-line.error { color: #ff4444; }
+        .terminal-line.voice { color: #ffdd44; }
 
-        /* Network visualization */
-        .network-viz {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid rgba(0, 212, 255, 0.2);
-        }
-
-        .packets {
-            display: flex;
-            gap: 2px;
-            height: 60px;
-            align-items: flex-end;
-        }
-
-        .packet {
-            flex: 1;
-            background: rgba(0, 212, 255, 0.3);
-            transition: height 0.1s;
-        }
-
-        /* Corner decorations */
-        .corner {
-            position: absolute;
-            width: 60px;
-            height: 60px;
-            border: 2px solid rgba(0, 212, 255, 0.3);
-        }
-
-        .corner-tl { top: 20px; left: 300px; border-right: none; border-bottom: none; }
-        .corner-tr { top: 20px; right: 340px; border-left: none; border-bottom: none; }
-        .corner-bl { bottom: 20px; left: 300px; border-right: none; border-top: none; }
-        .corner-br { bottom: 20px; right: 340px; border-left: none; border-top: none; }
-
-        /* Version */
         .version {
             position: absolute;
-            top: 30px;
-            right: 40px;
+            top: 20px; right: 25px;
+            font-family: 'Share Tech Mono', monospace;
             font-size: 10px;
-            letter-spacing: 2px;
             color: rgba(0, 212, 255, 0.4);
+            letter-spacing: 2px;
         }
 
-        /* Particles */
-        .particle {
-            position: absolute;
-            width: 2px;
-            height: 2px;
-            background: #00d4ff;
-            border-radius: 50%;
-            opacity: 0;
-            pointer-events: none;
+        body.fade-out {
+            animation: fadeOutToDashboard 2s ease-out forwards;
         }
 
-        /* Exit transition */
-        .fade-out {
-            animation: fadeOut 1.5s ease-out forwards;
-        }
-
-        @keyframes fadeOut {
-            to { opacity: 0; transform: scale(1.05); }
-        }
-
-        /* Start overlay */
-        .start-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.95);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            cursor: pointer;
-            transition: opacity 0.5s;
-        }
-
-        .start-overlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        .start-text {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 14px;
-            letter-spacing: 6px;
-            color: #00d4ff;
-            animation: pulse 2s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 0.4; }
-            50% { opacity: 1; }
+        @keyframes fadeOutToDashboard {
+            0% { opacity: 1; filter: brightness(1); }
+            50% { opacity: 0.5; filter: brightness(2); }
+            100% { opacity: 0; filter: brightness(0); }
         }
     </style>
 </head>
 <body>
-    <div class="start-overlay" id="startOverlay">
-        <div class="start-text">INITIALIZE SYSTEM</div>
-    </div>
-
     <div class="grid"></div>
-    <div class="scanline"></div>
+    <div class="scanlines"></div>
+    <div class="scan-bar"></div>
+    <div class="vignette"></div>
+    <div class="particles" id="particles"></div>
     <div class="version">BUILD 2.0.1 // STARK INDUSTRIES</div>
+
+    <!-- Click to start overlay for audio autoplay -->
+    <div id="clickOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: opacity 0.5s;">
+        <div style="font-family: 'Orbitron', sans-serif; font-size: 24px; color: #00d4ff; text-shadow: 0 0 20px rgba(0,212,255,0.8); margin-bottom: 20px; letter-spacing: 4px;">J.A.R.V.I.S.</div>
+        <div style="font-family: 'Rajdhani', sans-serif; font-size: 14px; color: #ff6b35; letter-spacing: 2px; animation: pulse 1.5s infinite;">CLICK ANYWHERE TO INITIALIZE SYSTEM</div>
+        <div style="margin-top: 30px; font-size: 12px; color: rgba(0,212,255,0.5); font-family: 'Share Tech Mono', monospace;">Audio Experience Enabled</div>
+    </div>
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.05); }
+        }
+    </style>
 
     <div class="corner corner-tl"></div>
     <div class="corner corner-tr"></div>
     <div class="corner corner-bl"></div>
     <div class="corner corner-br"></div>
 
-    <!-- Left Panel: System Resources -->
-    <div class="left-panel">
-        <div class="panel-title">NEURAL CORES</div>
-        <div class="cpu-cores" id="cpuCores"></div>
+    <div class="container">
+        <div class="left-panel">
+            <div class="panel-title">System Services</div>
+            <div class="service-list" id="serviceList"></div>
 
-        <div class="panel-title" style="margin-top: 20px;">MEMORY ALLOCATION</div>
-        <div class="memory-section">
-            <div class="mem-label">
-                <span>RAM</span>
-                <span id="ramText">0 / 128 TB</span>
-            </div>
-            <div class="mem-bar">
-                <div class="mem-fill" id="ramBar"></div>
-            </div>
-        </div>
-        <div class="memory-section">
-            <div class="mem-label">
-                <span>GPU</span>
-                <span id="gpuText">0 / 64 TB</span>
-            </div>
-            <div class="mem-bar">
-                <div class="mem-fill" id="gpuBar"></div>
+            <div class="panel-title" style="margin-top: 20px;">Neural Cores</div>
+            <div class="cpu-cores" id="cpuCores"></div>
+
+            <div class="panel-title" style="margin-top: 20px;">Memory Allocation</div>
+            <div class="memory-section">
+                <div class="mem-label">
+                    <span>System RAM</span>
+                    <span id="ramText">0%</span>
+                </div>
+                <div class="mem-bar">
+                    <div class="mem-fill" id="ramBar"></div>
+                </div>
             </div>
         </div>
 
-        <div class="panel-title" style="margin-top: 20px;">ACTIVE PROCESSES</div>
-        <div class="process-list" id="processList"></div>
-    </div>
+        <div class="center-panel">
+            <div class="hex-container">
+                <div class="hex-ring"></div>
+                <div class="hex-ring"></div>
+                <div class="hex-ring"></div>
+                <div class="hex">
+                    <div class="hex-inner" id="hexText">J</div>
+                </div>
+            </div>
 
-    <!-- Center Panel: Main Display -->
-    <div class="center-panel">
-        <div class="hex-container">
-            <div class="hex-ring"></div>
-            <div class="hex-ring"></div>
-            <div class="hex-ring"></div>
-            <div class="hex">
-                <div class="hex-inner">J</div>
+            <div class="main-status">
+                <div class="jarvis-title">J.A.R.V.I.S.</div>
+                <div class="subtitle">Just A Rather Very Intelligent System</div>
+                <div class="boot-phase" id="bootPhase">INITIALIZING SYSTEM</div>
+                <div class="main-progress">
+                    <div class="main-progress-bar" id="mainProgress"></div>
+                </div>
+                <div class="progress-percent" id="progressPercent">0%</div>
+                
+                <div class="voice-visualizer" id="voiceVisualizer"></div>
+            </div>
+
+            <div class="launch-countdown" id="launchCountdown">
+                System Ready - Launching Dashboard
             </div>
         </div>
 
-        <div class="main-status">
-            <div class="jarvis-title">J.A.R.V.I.S.</div>
-            <div class="boot-phase" id="bootPhase">SYSTEM STANDBY</div>
-            <div class="main-progress">
-                <div class="main-progress-bar" id="mainProgress"></div>
-            </div>
-            <div class="progress-percent" id="progressPercent">0%</div>
-        </div>
-    </div>
-
-    <!-- Right Panel: Data Stream -->
-    <div class="right-panel">
-        <div class="panel-title">SYSTEM LOG</div>
-        <div class="terminal" id="terminal"></div>
-
-        <div class="network-viz">
-            <div class="panel-title">DATA THROUGHPUT</div>
-            <div class="packets" id="packets"></div>
+        <div class="right-panel">
+            <div class="panel-title">System Log</div>
+            <div class="terminal" id="terminal"></div>
         </div>
     </div>
 
     <script>
-        // Audio Context for complex sounds
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioContext();
-
-        // Complex layered boot sound
-        function playBootSequence() {
-            const now = audioCtx.currentTime;
-            
-            // Low drone - power hum
-            const drone = audioCtx.createOscillator();
-            const droneGain = audioCtx.createGain();
-            drone.type = 'sawtooth';
-            drone.frequency.setValueAtTime(55, now);
-            drone.frequency.exponentialRampToValueAtTime(60, now + 3);
-            droneGain.gain.setValueAtTime(0, now);
-            droneGain.gain.linearRampToValueAtTime(0.08, now + 0.5);
-            droneGain.gain.exponentialRampToValueAtTime(0.03, now + 3);
-            
-            // Lowpass filter for drone
-            const filter = audioCtx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.setValueAtTime(200, now);
-            filter.frequency.linearRampToValueAtTime(400, now + 2);
-            
-            drone.connect(filter);
-            filter.connect(droneGain);
-            droneGain.connect(audioCtx.destination);
-            drone.start(now);
-            drone.stop(now + 4);
-
-            // Processing chirps - random computer sounds
-            for (let i = 0; i < 15; i++) {
-                const chirp = audioCtx.createOscillator();
-                const chirpGain = audioCtx.createGain();
-                const chirpTime = now + 0.5 + Math.random() * 3;
-                
-                chirp.type = 'square';
-                chirp.frequency.setValueAtTime(800 + Math.random() * 2000, chirpTime);
-                chirp.frequency.exponentialRampToValueAtTime(100, chirpTime + 0.1);
-                
-                chirpGain.gain.setValueAtTime(0, chirpTime);
-                chirpGain.gain.linearRampToValueAtTime(0.03, chirpTime + 0.01);
-                chirpGain.gain.exponentialRampToValueAtTime(0.001, chirpTime + 0.1);
-                
-                chirp.connect(chirpGain);
-                chirpGain.connect(audioCtx.destination);
-                chirp.start(chirpTime);
-                chirp.stop(chirpTime + 0.15);
-            }
-
-            // High-tech "activation" sound
-            const activate = audioCtx.createOscillator();
-            const activateGain = audioCtx.createGain();
-            activate.type = 'sine';
-            activate.frequency.setValueAtTime(200, now + 0.2);
-            activate.frequency.exponentialRampToValueAtTime(800, now + 1);
-            activateGain.gain.setValueAtTime(0, now + 0.2);
-            activateGain.gain.linearRampToValueAtTime(0.05, now + 0.4);
-            activateGain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
-            
-            activate.connect(activateGain);
-            activateGain.connect(audioCtx.destination);
-            activate.start(now + 0.2);
-            activate.stop(now + 1.5);
-        }
-
-        // Success/completion sound
-        function playReadySound() {
-            const now = audioCtx.currentTime;
-            
-            // Layered chords
-            const freqs = [220, 277, 330, 440];
-            freqs.forEach((f, i) => {
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.value = f;
-                gain.gain.setValueAtTime(0, now + i * 0.05);
-                gain.gain.linearRampToValueAtTime(0.05, now + i * 0.05 + 0.1);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 3);
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                osc.start(now + i * 0.05);
-                osc.stop(now + 3);
-            });
-
-            // Final high note
-            const final = audioCtx.createOscillator();
-            const finalGain = audioCtx.createGain();
-            final.type = 'triangle';
-            final.frequency.setValueAtTime(880, now + 0.3);
-            final.frequency.exponentialRampToValueAtTime(1760, now + 1);
-            finalGain.gain.setValueAtTime(0, now + 0.3);
-            finalGain.gain.linearRampToValueAtTime(0.08, now + 0.5);
-            finalGain.gain.exponentialRampToValueAtTime(0.001, now + 2);
-            final.connect(finalGain);
-            finalGain.connect(audioCtx.destination);
-            final.start(now + 0.3);
-            final.stop(now + 2);
-        }
-
-        // Processing hum - continuous during boot
-        let processingHum = null;
-        function startProcessingHum() {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            const filter = audioCtx.createBiquadFilter();
-            
-            osc.type = 'sawtooth';
-            osc.frequency.value = 80;
-            
-            filter.type = 'lowpass';
-            filter.frequency.value = 300;
-            
-            gain.gain.value = 0.02;
-            
-            osc.connect(filter);
-            filter.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start();
-            
-            processingHum = { osc, gain };
-        }
-
-        function stopProcessingHum() {
-            if (processingHum) {
-                processingHum.gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-                processingHum.osc.stop(audioCtx.currentTime + 0.5);
-                processingHum = null;
-            }
-        }
-
-        // CPU Cores
-        const cpuCores = document.getElementById('cpuCores');
-        for (let i = 0; i < 32; i++) {
-            const core = document.createElement('div');
-            core.className = 'core';
-            cpuCores.appendChild(core);
-        }
-
-        // Animate CPU cores
-        setInterval(() => {
-            const cores = document.querySelectorAll('.core');
-            cores.forEach(core => {
-                const r = Math.random();
-                if (r > 0.7) {
-                    core.className = 'core active';
-                    if (r > 0.95) core.className = 'core high';
-                } else {
-                    core.className = 'core';
-                }
-            });
-        }, 100);
-
-        // Memory bars
-        const ramBar = document.getElementById('ramBar');
-        const ramText = document.getElementById('ramText');
-        const gpuBar = document.getElementById('gpuBar');
-        const gpuText = document.getElementById('gpuText');
-
-        function updateMemory() {
-            const ramVal = Math.min(100, parseFloat(ramBar.style.width || 0) + Math.random() * 3);
-            const gpuVal = Math.min(100, parseFloat(gpuBar.style.width || 0) + Math.random() * 2);
-            
-            ramBar.style.width = ramVal + '%';
-            ramText.textContent = Math.floor(ramVal * 1.28) + ' / 128 TB';
-            gpuBar.style.width = gpuVal + '%';
-            gpuText.textContent = Math.floor(gpuVal * 0.64) + ' / 64 TB';
-        }
-        setInterval(updateMemory, 200);
-
-        // Process list
-        const processes = [
-            { name: 'neural_net_init', label: 'Neural Network' },
-            { name: 'voice_synth', label: 'Voice Synthesis' },
-            { name: 'hw_monitor', label: 'Hardware Monitor' },
-            { name: 'api_proxy', label: 'API Gateway' },
-            { name: 'llm_loader', label: 'LLM Loading' },
-            { name: 'embeddings', label: 'Embeddings DB' },
-            { name: 'ui_renderer', label: 'UI Renderer' },
-            { name: 'security', label: 'Security Module' }
+        const services = [
+            { id: 'shutdown', name: 'Shutdown Server', port: 9999, required: true },
+            { id: 'hardware', name: 'Hardware Monitor', port: 3100, required: true },
+            { id: 'proxy', name: 'HA Proxy', port: 3101, required: true },
+            { id: 'piper', name: 'Piper TTS', port: 5000, required: false },
+            { id: 'whisper', name: 'Whisper STT', port: 5001, required: false },
+            { id: 'embedding', name: 'Embedding Server', port: 5002, required: false },
+            { id: 'gpumon', name: 'GPU Monitor', port: 5003, required: false },
+            { id: 'vision', name: 'Vision Server', port: 5004, required: false },
+            { id: 'vite', name: 'J.A.R.V.I.S. Core', port: 3000, required: true }
         ];
 
-        const processList = document.getElementById('processList');
-        processes.forEach(p => {
-            const div = document.createElement('div');
-            div.className = 'process-item';
-            div.id = 'proc-' + p.name;
-            div.innerHTML = `<span class="process-name">${p.label}</span><span class="process-status">WAIT</span>`;
-            processList.appendChild(div);
-        });
+        let serviceStatus = {};
+        let hasSpoken = false;
+        let hasSpokenReady = false;
+        let bgMusic = null;
 
-        // Terminal
-        const terminal = document.getElementById('terminal');
-        const logMessages = [
-            { text: 'Loading transformer architecture...', type: 'info', delay: 1000 },
-            { text: 'Mounting CUDA kernels...', type: 'info', delay: 2500 },
-            { text: 'Allocating GPU memory blocks...', type: 'info', delay: 4000 },
-            { text: 'Initializing attention mechanisms...', type: 'info', delay: 5500 },
-            { text: 'Loading 175B parameters...', type: 'warning', delay: 7000 },
-            { text: 'Optimizing tensor operations...', type: 'info', delay: 9000 },
-            { text: 'Calibrating neural pathways...', type: 'info', delay: 11000 },
-            { text: 'Voice model loaded: en-US-stark', type: 'success', delay: 13000 },
-            { text: 'Hardware monitors active', type: 'success', delay: 15000 },
-            { text: 'API gateway online', type: 'success', delay: 17000 },
-            { text: 'All systems operational', type: 'success', delay: 20000 }
-        ];
-
-        function addLog(msg, type) {
-            const line = document.createElement('div');
-            line.className = 'terminal-line ' + type;
-            const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.' + String(Date.now() % 1000).padStart(3, '0');
-            line.innerHTML = `<span class="timestamp">[${time}]</span> ${msg}`;
-            terminal.insertBefore(line, terminal.firstChild);
-            if (terminal.children.length > 20) terminal.removeChild(terminal.lastChild);
+        // Get time-based greeting
+        function getGreeting() {
+            const hour = new Date().getHours();
+            if (hour < 12) return 'Good morning';
+            else if (hour < 18) return 'Good afternoon';
+            else return 'Good evening';
         }
 
-        logMessages.forEach(m => {
-            setTimeout(() => addLog(m.text, m.type), m.delay);
-        });
-
-        // Network packets
-        const packetsContainer = document.getElementById('packets');
-        for (let i = 0; i < 50; i++) {
-            const p = document.createElement('div');
-            p.className = 'packet';
-            packetsContainer.appendChild(p);
+        function init() {
+            createParticles();
+            createCpuCores();
+            createServiceList();
+            createVoiceVisualizer();
+            
+            // Setup click overlay for audio autoplay
+            const overlay = document.getElementById('clickOverlay');
+            const startSystem = () => {
+                overlay.style.opacity = '0';
+                setTimeout(() => overlay.remove(), 500);
+                startBackgroundMusic();
+                addTerminalLine('J.A.R.V.I.S. Boot Sequence Initiated', 'info');
+                addTerminalLine('Build 2.0.1 - Stark Industries', 'info');
+                addTerminalLine('', 'info');
+                setTimeout(startBootSequence, 500);
+            };
+            
+            overlay.addEventListener('click', startSystem);
+            
+            // Also try on any keypress
+            document.addEventListener('keydown', function keyHandler(e) {
+                document.removeEventListener('keydown', keyHandler);
+                if (overlay.parentNode) startSystem();
+            }, { once: true });
         }
 
-        setInterval(() => {
-            const packets = document.querySelectorAll('.packet');
-            packets.forEach(p => {
-                p.style.height = Math.random() * 100 + '%';
-                p.style.opacity = Math.random() > 0.3 ? 0.3 + Math.random() * 0.7 : 0.1;
-            });
-        }, 100);
-
-        // Boot phases
-        const phases = [
-            { text: 'INITIALIZING NEURAL ARCHITECTURE', progress: 0 },
-            { text: 'LOADING LANGUAGE MODELS', progress: 15 },
-            { text: 'CALIBRATING SYNTHESIS ENGINE', progress: 35 },
-            { text: 'MOUNTING HARDWARE INTERFACE', progress: 55 },
-            { text: 'ESTABLISHING SECURE CONNECTIONS', progress: 75 },
-            { text: 'FINALIZING BOOT SEQUENCE', progress: 90 },
-            { text: 'SYSTEM READY', progress: 100 }
-        ];
-
-        const bootPhase = document.getElementById('bootPhase');
-        const mainProgress = document.getElementById('mainProgress');
-        const progressPercent = document.getElementById('progressPercent');
-
-        let currentPhase = 0;
-        let progress = 0;
-
-        function updatePhase() {
-            if (currentPhase < phases.length) {
-                bootPhase.textContent = phases[currentPhase].text;
+        function createParticles() {
+            const container = document.getElementById('particles');
+            for (let i = 0; i < 30; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 8 + 's';
+                particle.style.animationDuration = (8 + Math.random() * 4) + 's';
+                container.appendChild(particle);
             }
         }
 
-        // Progress animation
-        const progressInterval = setInterval(() => {
-            if (progress < 95) {
-                progress += 0.3 + Math.random() * 0.5;
-                if (progress > 95) progress = 95;
-                
-                mainProgress.style.width = progress + '%';
-                progressPercent.textContent = Math.floor(progress) + '%';
-                
-                // Update phase based on progress
-                const phaseIdx = phases.findIndex((p, i) => 
-                    progress >= p.progress && (i === phases.length - 1 || progress < phases[i + 1].progress)
-                );
-                if (phaseIdx !== -1 && phaseIdx !== currentPhase) {
-                    currentPhase = phaseIdx;
-                    updatePhase();
-                }
-
-                // Update process statuses
-                if (progress > 10) document.getElementById('proc-neural_net_init').className = 'process-item running';
-                if (progress > 20) document.getElementById('proc-neural_net_init').className = 'process-item complete';
-                if (progress > 25) document.getElementById('proc-llm_loader').className = 'process-item running';
-                if (progress > 40) document.getElementById('proc-voice_synth').className = 'process-item running';
-                if (progress > 50) document.getElementById('proc-llm_loader').className = 'process-item complete';
-                if (progress > 55) document.getElementById('proc-embeddings').className = 'process-item running';
-                if (progress > 60) document.getElementById('proc-voice_synth').className = 'process-item complete';
-                if (progress > 65) document.getElementById('proc-hw_monitor').className = 'process-item running';
-                if (progress > 70) document.getElementById('proc-hw_monitor').className = 'process-item complete';
-                if (progress > 75) document.getElementById('proc-api_proxy').className = 'process-item running';
-                if (progress > 80) document.getElementById('proc-api_proxy').className = 'process-item complete';
-                if (progress > 85) document.getElementById('proc-ui_renderer').className = 'process-item running';
-                if (progress > 90) document.getElementById('proc-security').className = 'process-item running';
-                if (progress > 92) {
-                    document.getElementById('proc-ui_renderer').className = 'process-item complete';
-                    document.getElementById('proc-security').className = 'process-item complete';
-                    document.getElementById('proc-embeddings').className = 'process-item complete';
-                }
+        function createVoiceVisualizer() {
+            const container = document.getElementById('voiceVisualizer');
+            for (let i = 0; i < 20; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'wave-bar';
+                bar.style.height = '10%';
+                bar.style.animationDelay = (i * 0.05) + 's';
+                container.appendChild(bar);
             }
-        }, 200);
+        }
 
-        // Check if JARVIS is ready
-        let checkInterval;
-        let attempts = 0;
-
-        function checkReady() {
-            attempts++;
-            fetch('http://localhost:3000', { mode: 'no-cors' })
-                .then(() => {
-                    clearInterval(checkInterval);
-                    clearInterval(progressInterval);
-                    stopProcessingHum();
-                    
-                    progress = 100;
-                    mainProgress.style.width = '100%';
-                    progressPercent.textContent = '100%';
-                    bootPhase.textContent = 'SYSTEM READY';
-                    
-                    // All processes complete
-                    document.querySelectorAll('.process-item').forEach(p => p.className = 'process-item complete');
-                    
-                    addLog('JARVIS online - Welcome back, sir', 'success');
-                    playReadySound();
-
-                    setTimeout(() => {
-                        document.body.classList.add('fade-out');
-                        setTimeout(() => {
-                            window.location.href = 'http://localhost:3000';
-                        }, 1500);
-                    }, 1200);
-                })
-                .catch(() => {
-                    if (attempts > 180) {
-                        clearInterval(checkInterval);
-                        bootPhase.textContent = 'CONNECTION TIMEOUT';
-                        bootPhase.style.color = '#ff4444';
-                        stopProcessingHum();
-                    }
+        // Check if Piper is actually ready to speak
+        async function isPiperReady() {
+            try {
+                const response = await fetch('http://localhost:5000/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: 'test', voice: 'jarvis-high' })
                 });
+                return response.ok;
+            } catch (e) {
+                return false;
+            }
         }
 
-        // Start overlay
-        const startOverlay = document.getElementById('startOverlay');
-        let systemStarted = false;
-
-        startOverlay.addEventListener('click', () => {
-            if (systemStarted) return;
-            systemStarted = true;
-            
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            
-            startOverlay.classList.add('hidden');
-            playBootSequence();
-            startProcessingHum();
-            updatePhase();
-            addLog('Boot sequence initiated...', 'info');
-            
-            setTimeout(() => {
-                checkInterval = setInterval(checkReady, 1000);
-            }, 10000);
-        });
-
-        // Auto-start after 1 second
-        setTimeout(() => {
-            if (!systemStarted) {
-                startOverlay.click();
+        // Start background music
+        let audioStarted = false;
+        function startBackgroundMusic() {
+            if (audioStarted) return;
+            if (!bgMusic) {
+                bgMusic = new Audio('iron_man_back_in.mp3');
+                bgMusic.volume = 0.4;
+                bgMusic.loop = false;
             }
-        }, 1000);
+            bgMusic.play().then(() => {
+                audioStarted = true;
+                console.log('Background music started');
+            }).catch(e => {
+                // Autoplay blocked - will retry on user interaction
+                console.log('Music autoplay blocked, waiting for user interaction');
+            });
+        }
+        
+        // Try to start audio on any user interaction
+        function tryStartAudio() {
+            if (!audioStarted) {
+                startBackgroundMusic();
+            }
+        }
+
+        // Stop background music
+        function stopBackgroundMusic() {
+            if (bgMusic && !bgMusic.paused) {
+                // Fade out
+                const fadeInterval = setInterval(() => {
+                    if (bgMusic.volume > 0.05) {
+                        bgMusic.volume -= 0.05;
+                    } else {
+                        bgMusic.pause();
+                        clearInterval(fadeInterval);
+                    }
+                }, 100);
+            }
+        }
+
+        // Speak using Piper TTS server with retry
+        async function speakWithPiper(text, retryCount = 0) {
+            if (hasSpoken && text.includes('Good') && text.includes('booting') && !text.includes('ready')) return;
+            if (text.includes('ready')) hasSpokenReady = true;
+            hasSpoken = true;
+            
+            const visualizer = document.getElementById('voiceVisualizer');
+            visualizer.classList.add('active');
+            addTerminalLine('JARVIS: "' + text + '"', 'voice');
+            
+            // Wait a moment for Piper to be fully ready (first time) - check for greeting phrases
+            if (retryCount === 0 && (text.includes('Good morning') || text.includes('Good afternoon') || text.includes('Good evening'))) {
+                await delay(2000);
+            }
+            
+            try {
+                // Call the Piper TTS server
+                const response = await fetch('http://localhost:5000/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        text: text,
+                        voice: 'jarvis-high',
+                        speaker_id: 0,
+                        length_scale: 0.75
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Piper server error: ' + response.status);
+                }
+                
+                // Get audio and play it
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                
+                audio.onended = () => {
+                    setTimeout(() => visualizer.classList.remove('active'), 500);
+                    URL.revokeObjectURL(audioUrl);
+                };
+                
+                audio.onerror = () => {
+                    setTimeout(() => visualizer.classList.remove('active'), 500);
+                    URL.revokeObjectURL(audioUrl);
+                };
+                
+                await audio.play();
+                
+            } catch (e) {
+                // Retry up to 3 times
+                if (retryCount < 3) {
+                    addTerminalLine('Waiting for JARVIS voice...', 'info');
+                    await delay(2000);
+                    return speakWithPiper(text, retryCount + 1);
+                }
+                
+                // Piper not available after retries
+                addTerminalLine('JARVIS voice not ready, using system voice...', 'warning');
+                
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 0.85;
+                utterance.pitch = 0.8;
+                utterance.volume = 1;
+                
+                // Try to find a male voice
+                const voices = window.speechSynthesis.getVoices();
+                const maleVoice = voices.find(v => 
+                    v.name.includes('Male') || 
+                    v.name.includes('David') || 
+                    v.name.includes('Google US English') ||
+                    v.name.includes('Microsoft David')
+                );
+                if (maleVoice) utterance.voice = maleVoice;
+                
+                utterance.onend = () => {
+                    setTimeout(() => visualizer.classList.remove('active'), 500);
+                };
+                
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function createCpuCores() {
+            const container = document.getElementById('cpuCores');
+            for (let i = 0; i < 16; i++) {
+                const core = document.createElement('div');
+                core.className = 'core';
+                core.id = `core-${i}`;
+                container.appendChild(core);
+            }
+            
+            setInterval(() => {
+                for (let i = 0; i < 16; i++) {
+                    const core = document.getElementById(`core-${i}`);
+                    const active = Math.random() > 0.3;
+                    const high = Math.random() > 0.85;
+                    core.className = `core ${active ? 'active' : ''} ${high ? 'high' : ''}`;
+                }
+                
+                const ramPercent = Math.floor(Math.random() * 30) + 20;
+                document.getElementById('ramBar').style.width = `${ramPercent}%`;
+                document.getElementById('ramText').textContent = `${ramPercent}%`;
+            }, 100);
+        }
+
+        function createServiceList() {
+            const container = document.getElementById('serviceList');
+            services.forEach(service => {
+                serviceStatus[service.id] = 'pending';
+                
+                const item = document.createElement('div');
+                item.className = 'service-item pending';
+                item.id = `service-${service.id}`;
+                item.innerHTML = `
+                    <div class="service-name">
+                        <div class="status-icon"></div>
+                        ${service.name}
+                    </div>
+                    <div class="service-status">Waiting...</div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function updateService(serviceId, status, message = '') {
+            const item = document.getElementById(`service-${serviceId}`);
+            if (!item) return;
+            
+            serviceStatus[serviceId] = status;
+            item.className = `service-item ${status}`;
+            
+            const statusText = item.querySelector('.service-status');
+            const statusMessages = {
+                pending: 'Waiting...',
+                starting: 'Starting...',
+                ready: 'Online',
+                error: 'Failed',
+                waiting: 'Waiting...'
+            };
+            statusText.textContent = message || statusMessages[status] || status;
+        }
+
+        function addTerminalLine(text, type = 'info') {
+            const terminal = document.getElementById('terminal');
+            const line = document.createElement('div');
+            line.className = `terminal-line ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString('en-US', { 
+                hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' 
+            });
+            
+            line.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${text}`;
+            terminal.insertBefore(line, terminal.firstChild);
+            
+            while (terminal.children.length > 50) {
+                terminal.removeChild(terminal.lastChild);
+            }
+        }
+
+        // Smooth progress animation - updates target, animation loop handles the rest
+        let currentProgressValue = 5;
+        let targetProgressValue = 5;
+        
+        function updateProgress(percent, phase) {
+            targetProgressValue = percent;
+            if (phase) {
+                document.getElementById('bootPhase').textContent = phase;
+            }
+        }
+        
+        function animateProgress() {
+            if (currentProgressValue < targetProgressValue) {
+                currentProgressValue += 0.8; // Smooth increment
+                if (currentProgressValue > targetProgressValue) {
+                    currentProgressValue = targetProgressValue;
+                }
+                document.getElementById('mainProgress').style.width = `${currentProgressValue}%`;
+                document.getElementById('progressPercent').textContent = `${Math.floor(currentProgressValue)}%`;
+            }
+            requestAnimationFrame(animateProgress);
+        }
+
+        // Silent port check - doesn't spam console
+        function checkPort(port) {
+            return new Promise((resolve) => {
+                const xhr = new XMLHttpRequest();
+                xhr.timeout = 1000;
+                
+                xhr.onreadystatechange = () => {
+                    if (xhr.readyState === 4) {
+                        // Any response means port is listening
+                        resolve(true);
+                    }
+                };
+                
+                xhr.onerror = () => resolve(true); // Connection refused = port not ready
+                xhr.ontimeout = () => resolve(false);
+                
+                try {
+                    xhr.open('GET', `http://localhost:${port}/`, true);
+                    xhr.send();
+                } catch (e) {
+                    resolve(false);
+                }
+                
+                // Absolute fallback
+                setTimeout(() => resolve(false), 1100);
+            });
+        }
+
+        // Start the smooth progress animation
+        animateProgress();
+
+        async function waitForServices() {
+            addTerminalLine('Waiting for services to start...', 'info');
+            
+            let allReady = false;
+            let attempts = 0;
+            const maxAttempts = 90; // 90 seconds max
+            let servicesFound = 0;
+            
+            while (!allReady && attempts < maxAttempts) {
+                allReady = true;
+                let newlyReady = 0;
+                
+                // Only check services that aren't ready yet
+                const pendingServices = services.filter(s => serviceStatus[s.id] !== 'ready');
+                
+                for (const service of pendingServices) {
+                    const isReady = await checkPort(service.port);
+                    
+                    if (isReady) {
+                        updateService(service.id, 'ready');
+                        addTerminalLine(`${service.name} is online`, 'success');
+                        newlyReady++;
+                        servicesFound++;
+                        
+                        // Update target progress based on services found
+                        // Each service = ~10% progress (9 services = 90% + 5% base + 5% final)
+                        targetProgressValue = Math.min(90, 5 + (servicesFound * 10));
+                        
+                        // Speak when Piper is ready (first time) - with delay for initialization
+                        if (service.id === 'piper' && !hasSpoken) {
+                            addTerminalLine('JARVIS voice system online', 'success');
+                            // Wait 3 seconds for Piper to fully initialize before speaking
+                            setTimeout(() => {
+                                const greeting = getGreeting();
+                                speakWithPiper(`${greeting}, sir. I am booting up my core system. Sit back and relax, enjoy the tunes as I get the system warmed up.`);
+                            }, 3000);
+                        }
+                        
+                        // If Vite is ready, we can proceed
+                        if (service.id === 'vite') {
+                            addTerminalLine('J.A.R.V.I.S. Core is ready!', 'success');
+                            targetProgressValue = 95;
+                            return true;
+                        }
+                    } else {
+                        allReady = false;
+                        if (serviceStatus[service.id] === 'pending') {
+                            updateService(service.id, 'waiting');
+                        }
+                    }
+                }
+                
+                // Small incremental progress when waiting (creeps forward slowly)
+                if (newlyReady === 0 && targetProgressValue < 95) {
+                    targetProgressValue += 0.3; // Creep forward 0.3% per second while waiting
+                }
+                
+                // Update the text label
+                const readyCount = Object.values(serviceStatus).filter(s => s === 'ready').length;
+                document.getElementById('bootPhase').textContent = `INITIALIZING SERVICES - ${readyCount}/${services.length}`;
+                
+                if (!allReady) {
+                    attempts++;
+                    // Log status every 5 seconds, not every second
+                    if (attempts % 5 === 0) {
+                        addTerminalLine(`Still waiting... (${attempts}s elapsed)`, 'info');
+                    }
+                    await delay(1000);
+                }
+            }
+            
+            return allReady;
+        }
+
+        // Wait for Vite to actually serve content
+        async function waitForViteContent(maxAttempts = 30) {
+            addTerminalLine('Verifying dashboard is ready...', 'info');
+            
+            for (let i = 0; i < maxAttempts; i++) {
+                try {
+                    const response = await fetch('http://localhost:3000/', {
+                        method: 'HEAD',
+                        mode: 'no-cors'
+                    });
+                    // If we get here, Vite is responding
+                    addTerminalLine('Dashboard verified ready', 'success');
+                    return true;
+                } catch (e) {
+                    await delay(1000);
+                }
+            }
+            return false;
+        }
+
+        async function startBootSequence() {
+            updateProgress(5, 'WAITING FOR SERVICES');
+            addTerminalLine('Initializing system components...', 'info');
+            
+            // Wait for all services to be ready
+            const allReady = await waitForServices();
+            
+            if (allReady || serviceStatus.vite === 'ready') {
+                // EXTRA CHECK: Make sure Vite is actually serving content
+                addTerminalLine('Waiting for dashboard to be fully ready...', 'info');
+                await delay(2000); // Give Vite a moment
+                
+                const viteReady = await waitForViteContent(20);
+                
+                updateProgress(100, 'SYSTEM ONLINE');
+                document.getElementById('hexText').textContent = '✓';
+                addTerminalLine('All systems operational', 'success');
+                
+                document.getElementById('launchCountdown').classList.add('visible');
+                
+                // Speak ready message
+                if (!hasSpokenReady) {
+                    await speakWithPiper('Systems ready. Opening dashboard.');
+                }
+                
+                // Stop background music before redirect
+                stopBackgroundMusic();
+                
+                // Wait for speech to finish then redirect
+                setTimeout(() => {
+                    document.body.classList.add('fade-out');
+                    setTimeout(() => {
+                        // Use replace instead of href to avoid back button issues
+                        window.location.replace('http://localhost:3000');
+                    }, 2000);
+                }, 4000);
+            } else {
+                addTerminalLine('Some services failed to start', 'warning');
+                addTerminalLine('Opening dashboard anyway...', 'info');
+                
+                // Stop background music before redirect
+                stopBackgroundMusic();
+                
+                setTimeout(() => {
+                    document.body.classList.add('fade-out');
+                    setTimeout(() => {
+                        window.location.replace('http://localhost:3000');
+                    }, 2000);
+                }, 3000);
+            }
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Preload voices for fallback
+        if (window.speechSynthesis) {
+            window.speechSynthesis.getVoices();
+        }
+
+        init();
     </script>
 </body>
 </html>

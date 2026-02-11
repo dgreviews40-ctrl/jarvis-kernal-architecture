@@ -579,6 +579,77 @@ export class KnowledgeGraph {
   }
 
   /**
+   * Get contextual information for AI prompt enhancement
+   * Returns entity relationships and facts relevant to the query
+   */
+  getContextForPrompt(text: string): {
+    hasContext: boolean;
+    contextText: string;
+    entities: string[];
+  } {
+    const entities = this.extractEntities(text);
+    
+    if (entities.length === 0) {
+      return { hasContext: false, contextText: '', entities: [] };
+    }
+
+    const contextParts: string[] = [];
+    const entityNames: string[] = [];
+
+    for (const entity of entities) {
+      entityNames.push(entity.name);
+      
+      // Get relationships for this entity
+      const relationships = this.getEntityRelationships(entity.id);
+      
+      if (relationships.length > 0) {
+        const relevantRels = relationships
+          .sort((a, b) => b.confidence - a.confidence)
+          .slice(0, 3); // Top 3 most confident
+
+        for (const rel of relevantRels) {
+          const target = this.entities.get(rel.targetId);
+          if (target) {
+            contextParts.push(`${entity.name} ${rel.type.replace(/_/g, ' ')} ${target.name}`);
+          }
+        }
+      }
+
+      // Include entity attributes if any
+      if (entity.attributes.size > 0) {
+        const attrs = Array.from(entity.attributes.entries())
+          .slice(0, 2)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(', ');
+        if (attrs) {
+          contextParts.push(`${entity.name} has ${attrs}`);
+        }
+      }
+    }
+
+    // Check for paths between entities (if multiple found)
+    if (entities.length >= 2) {
+      const path = this.findPath(entities[0].name, entities[1].name);
+      if (path && path.pathLength > 1) {
+        const pathDesc = path.relationships
+          .map(r => r.type.replace(/_/g, ' '))
+          .join(' → ');
+        contextParts.push(`Connection: ${entities[0].name} → ${pathDesc} → ${entities[1].name}`);
+      }
+    }
+
+    if (contextParts.length === 0) {
+      return { hasContext: false, contextText: '', entities: entityNames };
+    }
+
+    return {
+      hasContext: true,
+      contextText: contextParts.join('. ') + '.',
+      entities: entityNames
+    };
+  }
+
+  /**
    * Clear all data
    */
   clear(): void {

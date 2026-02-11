@@ -1,0 +1,35 @@
+{
+  "id": "__PLUGIN_ID__",
+  "name": "__PLUGIN_NAME__",
+  "version": "1.0.0",
+  "description": "__PLUGIN_DESCRIPTION__",
+  "author": "Anonymous",
+  "license": "MIT",
+  "engineVersion": "1.0.0",
+  "permissions": [
+    "ui:panel",
+    "memory:read",
+    "memory:write"
+  ],
+  "capabilities": [
+    {
+      "name": "ui_panel",
+      "version": "1.0.0",
+      "description": "React-based UI panel"
+    }
+  ],
+  "entry": {
+    "ui": "Panel.tsx"
+  },
+  "tags": ["ui", "react", "panel"],
+  "configSchema": {
+    "theme": {
+      "type": "select",
+      "label": "Theme",
+      "description": "UI color theme",
+      "options": ["dark", "light", "auto"],
+      "default": "dark",
+      "required": false
+    }
+  }
+}

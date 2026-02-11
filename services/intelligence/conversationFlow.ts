@@ -544,6 +544,80 @@ export class ConversationFlowManager {
   }
 
   /**
+   * Phase 1, Task 3: Get strategic guidance for AI response generation
+   * Returns instructions to inject into system prompt
+   */
+  getStrategicGuidance(): {
+    strategy: string;
+    tone: string;
+    stage: string;
+    engagement: string;
+    guidance: string;
+  } {
+    const strategy = this.determineResponseStrategy();
+    
+    // Build guidance based on strategy and stage
+    let guidance = '';
+    
+    // Strategy-based guidance
+    switch (strategy.type) {
+      case 'direct':
+        guidance = 'Be direct and efficient in your response. Get to the point quickly while remaining helpful.';
+        break;
+      case 'exploratory':
+        guidance = 'The user is engaged and interested. Feel free to explore related topics, offer additional insights, or suggest related areas they might find interesting. Be enthusiastic about helping them learn more.';
+        break;
+      case 'clarifying':
+        guidance = 'The user may need clarification. Be patient, clear, and thorough in your explanation. Check that you understood their request correctly.';
+        break;
+      case 'concluding':
+        guidance = 'The conversation is winding down. Summarize key points if helpful, and offer final assistance. Be warm but concise.';
+        break;
+      case 're-engaging':
+        guidance = 'User engagement is low. Try to reconnect by being warm, offering specific help, or asking a relevant question. Show enthusiasm to assist.';
+        break;
+    }
+    
+    // Tone-based additions
+    switch (strategy.tone) {
+      case 'enthusiastic':
+        guidance += ' Show genuine enthusiasm and energy in your response.';
+        break;
+      case 'supportive':
+        guidance += ' Be warm, supportive, and encouraging.';
+        break;
+      case 'concise':
+        guidance += ' Keep your response brief and to the point.';
+        break;
+      case 'neutral':
+        guidance += ' Maintain a professional, balanced tone.';
+        break;
+    }
+    
+    // Stage-based context
+    if (this.state.stage === 'opening') {
+      guidance += ' This is early in the conversation - establish rapport and be welcoming.';
+    } else if (this.state.stage === 'deepening') {
+      guidance += ' The conversation has depth - you can reference earlier points and build on shared context.';
+    }
+    
+    // Engagement-based adjustments
+    if (this.state.userEngagement === 'high') {
+      guidance += ' The user is highly engaged - match their energy and provide comprehensive responses.';
+    } else if (this.state.userEngagement === 'low') {
+      guidance += ' The user seems less engaged - try to be more engaging or ask what they specifically need.';
+    }
+    
+    return {
+      strategy: strategy.type,
+      tone: strategy.tone,
+      stage: this.state.stage,
+      engagement: this.state.userEngagement,
+      guidance
+    };
+  }
+
+  /**
    * Reset conversation flow
    */
   reset(): void {

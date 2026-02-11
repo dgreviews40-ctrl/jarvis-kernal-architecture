@@ -2,6 +2,58 @@
 
 All notable changes to the JARVIS Kernel project.
 
+## [1.5.2] - 2026-02-10
+
+### Overview
+Major humanization update transforming JARVIS into a more natural, conversational AI companion. All 9 humanization tasks completed across 4 phases.
+
+### Added
+- **Proactive Engagement System** - Event-driven notifications and suggestions
+  - `proactiveEventHandler.ts` - Bridges events to notifications/TTS
+  - `ProactiveSuggestions.tsx` - Floating suggestion panel UI
+  - Milestone alerts, achievement notifications, concern follow-ups
+  
+- **Natural Speech Flow** - Smart TTS with sentence boundary detection
+  - Sentence-level buffering instead of time-based chunks
+  - Natural pause insertion at clause boundaries
+  - Smoother voice streaming integration
+  
+- **Semantic Memory Context** - Memory injection into AI prompts
+  - `semanticMemory.ts` - Context-aware memory retrieval
+  - Automatic categorization (facts, preferences, episodes)
+  - Natural formatting for AI consumption
+  
+- **Knowledge Graph Context** - Entity relationships in prompts
+  - `knowledgeGraph.ts` - Relationship extraction
+  - Context injection for more informed responses
+  
+- **Unified Sentiment Analysis** - Consolidated emotion system
+  - `unifiedSentiment.ts` - Merges moodDetection, advancedSentiment, emotionalMemory
+  - Single interface with caching and history tracking
+  - Response guidance based on emotional state
+  
+- **Conversation Flow Strategy** - Strategic response generation
+  - `conversationFlow.ts` - Stage management and response strategy
+  - Dynamic tone adjustment based on engagement
+  - Conversation continuation prompts
+  
+- **Personality Unification** - Dynamic personality injection
+  - Merged `personalityEngine` into `jarvisPersonality.ts`
+  - Trait adaptation based on context
+  - Natural language generation templates
+
+### Enhanced
+- **Conversation Service** - Template-based natural response generation
+- **Streaming Service** - Integrated voiceStreaming for smart TTS
+- **Intelligence Orchestrator** - Semantic memory and KG context injection
+
+### Technical
+- 471 tests passing (100%)
+- TypeScript compilation: 0 errors (in project code)
+- Build successful with all optimizations
+
+---
+
 ## [1.5.1] - 2026-02-09
 
 ### Overview

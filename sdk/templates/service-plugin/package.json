@@ -1,0 +1,17 @@
+{
+  "name": "__PLUGIN_NAME__",
+  "version": "1.0.0",
+  "description": "__PLUGIN_DESCRIPTION__",
+  "type": "module",
+  "scripts": {
+    "dev": "jarvis-plugin dev",
+    "validate": "jarvis-plugin validate",
+    "build": "jarvis-plugin build"
+  },
+  "dependencies": {
+    "@jarvis/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "create-jarvis-plugin": "^1.0.0"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "__PLUGIN_ID__",
+  "name": "__PLUGIN_NAME__",
+  "version": "1.0.0",
+  "description": "__PLUGIN_DESCRIPTION__",
+  "author": "Anonymous",
+  "license": "MIT",
+  "engineVersion": "1.0.0",
+  "permissions": [
+    "system:notification",
+    "audio:output"
+  ],
+  "capabilities": [
+    {
+      "name": "command_handler",
+      "version": "1.0.0",
+      "description": "Handles voice commands"
+    }
+  ],
+  "entry": {
+    "background": "plugin.ts"
+  },
+  "tags": ["commands", "voice", "utility"],
+  "configSchema": {
+    "greeting": {
+      "type": "string",
+      "label": "Greeting Message",
+      "description": "Message to speak when activated",
+      "default": "Command plugin ready!",
+      "required": false
+    }
+  }
+}

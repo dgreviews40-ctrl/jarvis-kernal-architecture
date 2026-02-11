@@ -4,6 +4,8 @@ import './src/index.css'; // Import Tailwind CSS
 import App from './App';
 import { JARVISErrorBoundary } from './components/ErrorBoundary';
 import { checkStorageVersion } from './stores';
+import { healthMonitor } from './services/healthMonitor';
+import { isLocalStorageAvailable } from './services/safeUtils';
 
 // Suppress Chrome extension message channel errors (these are from browser extensions, not our code)
 const originalConsoleError = console.error;
@@ -29,20 +31,25 @@ window.addEventListener('unhandledrejection', (event) => {
 
 // Force clear old plugin registry cache on startup
 // This ensures stale mock plugins are removed when registry definition changes
-try {
-  const CURRENT_REGISTRY_VERSION = 13;
-  const storedVersion = localStorage.getItem('jarvis_plugin_registry_version');
-  if (!storedVersion || parseInt(storedVersion) < CURRENT_REGISTRY_VERSION) {
-    console.log('[JARVIS] Clearing stale plugin registry cache...');
-    localStorage.removeItem('jarvis_plugin_registry');
-    localStorage.setItem('jarvis_plugin_registry_version', CURRENT_REGISTRY_VERSION.toString());
-  }
+if (isLocalStorageAvailable()) {
+  try {
+    const CURRENT_REGISTRY_VERSION = 13;
+    const storedVersion = localStorage.getItem('jarvis_plugin_registry_version');
+    if (!storedVersion || parseInt(storedVersion) < CURRENT_REGISTRY_VERSION) {
+      console.log('[JARVIS] Clearing stale plugin registry cache...');
+      localStorage.removeItem('jarvis_plugin_registry');
+      localStorage.setItem('jarvis_plugin_registry_version', CURRENT_REGISTRY_VERSION.toString());
+    }
 
-  // Check storage version and migrate if needed
-  checkStorageVersion();
-} catch (e) {
-  console.warn('[JARVIS] localStorage not available or quota exceeded:', e);
+    // Check storage version and migrate if needed
+    checkStorageVersion();
+  } catch (e) {
+    console.warn('[JARVIS] localStorage operation failed:', e);
+  }
 }
+
+// Initialize health monitoring
+healthMonitor.start();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

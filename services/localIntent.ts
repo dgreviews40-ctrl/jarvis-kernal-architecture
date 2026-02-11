@@ -196,10 +196,37 @@ const INTENT_PATTERNS: IntentPattern[] = [
     keywords: ['turn', 'toggle', 'switch', 'activate', 'enable', 'disable', 'open', 'close', 'lock', 'unlock', 'play', 'pause', 'stop', 'set', 'adjust', 'run', 'launch', 'increase', 'decrease', 'light', 'fan', 'thermostat']
   },
   
+  // SIMPLE_QUERY - Common conversational questions (high confidence)
+  {
+    type: IntentType.QUERY,
+    confidence: 0.88,
+    complexity: 0.3,
+    patterns: [
+      // Personal/conversational queries
+      /\bhow\s+are\s+(you|you doing|things)\b/i,
+      /\bwhat('s| is)\s+your\s+name\b/i,
+      /\b(do you|can you|will you)\s+(know|remember|recall)\s+(my\s+)?name\b/i,
+      /\bwho\s+am\s+i\b/i,
+      /\btell\s+me\s+about\s+yourself\b/i,
+      /\bwhat\s+can\s+you\s+do\b/i,
+      /\bwhat\s+time\s+is\s+(it|it now)\b/i,
+      /\bwhat\s+day\s+is\s+(it|today)\b/i,
+      /\bhow\s+(are you|is it going|are things)\b/i,
+      // Weather (simple forms)
+      /\bwhat('s|s| is)\s+(the\s+)?weather\b/i,
+      /\bhow('s| is)\s+(the\s+)?weather\b/i,
+      // Simple recommendations
+      /\b(do you have|what are)\s+(any\s+)?recommendations\b/i,
+      /\bwhat\s+(do you|should i)\s+(suggest|recommend)\b/i,
+      /\bwhat\s+(can|should)\s+i\s+do\b/i
+    ],
+    keywords: ['how are you', 'your name', 'my name', 'who am i', 'what time', 'what day', 'weather', 'recommendations', 'suggest']
+  },
+  
   // QUERY - Catch-all for questions (lowest priority in patterns)
   {
     type: IntentType.QUERY,
-    confidence: 0.65,
+    confidence: 0.70,
     complexity: 0.6,
     patterns: [
       /^(what|who|when|where|why|how|which|whose|whom)/i,

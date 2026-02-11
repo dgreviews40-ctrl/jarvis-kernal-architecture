@@ -201,30 +201,13 @@ class PiperLauncherService {
       // Fall through to next method
     }
 
-    // Method 2: Try to use a custom protocol handler (if registered)
-    // This would require the user to have registered a protocol handler
-    try {
-      // Attempt to open via a custom protocol that might be registered
-      const protocolUrl = `jarvis://piper/start?path=${encodeURIComponent(this.PIPER_DIR)}`;
-      const link = document.createElement('a');
-      link.href = protocolUrl;
-      link.click();
-      
-      // We can't know if this worked, so return true and let the polling check
-      logger.info('PIPER', 'Attempted to launch via custom protocol');
-      return true;
-    } catch (err) {
-      logger.info('PIPER', 'Custom protocol not available', { error: (err as Error).message });
-      // Fall through
-    }
-
-    // Method 3: Provide instructions for manual launch
-    // Browsers cannot directly execute local batch files for security reasons
-    logger.warning('PIPER', 'Auto-launch not available in browser environment');
+    // Method 2: Poll to check if Piper was started by JARVIS.bat
+    // The batch file should have started Piper on port 5000
+    logger.info('PIPER', 'Piper should be started by JARVIS.bat - polling for availability');
     
-    // Return true to allow polling to check if user starts it manually
-    // or if it was already started by another means
-    return true;
+    // Browser cannot spawn processes. The user must restart with JARVIS.bat
+    // Return false to show error message immediately
+    return false;
   }
 
   /**
@@ -283,13 +266,16 @@ class PiperLauncherService {
    * Generate manual start instructions
    */
   public getManualInstructions(): string {
-    return `Piper server is not running. To start it manually:
+    return `Piper TTS server is not running.
 
-1. Open Command Prompt
-2. Run: cd "${this.PIPER_DIR}"
-3. Run: python piper_server.py
+To start Piper, close this browser window and run:
+  JARVIS.bat
 
-Or double-click: ${this.PIPER_DIR}\\${this.START_SCRIPT}`;
+This will start all services including Piper TTS.
+
+Alternative manual start:
+1. Open Command Prompt in the JARVIS folder
+2. Run: python Piper\\piper_server.py`;
   }
 
   /**

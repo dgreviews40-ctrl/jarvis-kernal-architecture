@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Settings, Camera, Shield, Cpu, Key, Save, FileText, Mic, Activity, Power, Video, Brain, Volume2, Sparkles, Server, Globe, CheckCircle2, XCircle, Info, Zap, Settings2, Database, Download, Upload, Share2, HardDrive, Network, Loader2, Monitor, Box, Terminal, ExternalLink, ShieldCheck, ShieldAlert as AlertIcon, Laptop, MousePointer2, Link, AlertTriangle, Code2, Play } from 'lucide-react';
+import { Settings, Camera, Shield, Cpu, Key, Save, FileText, Mic, Activity, Power, Video, Brain, Volume2, Sparkles, Server, Globe, CheckCircle2, XCircle, Info, Zap, Settings2, Database, Download, Upload, Share2, HardDrive, Network, Loader2, Monitor, Box, Terminal, ExternalLink, ShieldCheck, ShieldAlert as AlertIcon, Laptop, MousePointer2, Link, AlertTriangle, Code2, Play, RefreshCw } from 'lucide-react';
 import { vision } from '../services/vision';
 import { voice } from '../services/voice';
 import { piperTTS, RECOMMENDED_PIPER_VOICES, PIPER_SETUP_INSTRUCTIONS } from '../services/piperTTS';
@@ -130,6 +130,8 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCam, setSelectedCam] = useState<string>('');
   const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [availablePiperVoices, setAvailablePiperVoices] = useState<Array<{name: string; language: string; quality: string}>>([]);
+  const [isLoadingPiperVoices, setIsLoadingPiperVoices] = useState(false);
   
   // Archive States
   const [exportDest, setExportDest] = useState<'LOCAL' | 'NETWORK'>('LOCAL');
@@ -373,16 +375,52 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   }, []);
 
   const handleStartPiper = async () => {
-    const success = await piperLauncher.startServer();
-    if (!success) {
-      // Show manual instructions if auto-start failed
-      alert(piperLauncher.getManualInstructions());
-    }
+    // Browser cannot spawn local processes for security reasons
+    // Show instructions to restart with JARVIS.bat
+    alert(piperLauncher.getManualInstructions());
   };
 
   const checkPiperStatus = async () => {
     await piperLauncher.checkStatus();
   };
+
+  // Fetch available Piper voices from the server
+  const fetchPiperVoices = async () => {
+    if (piperLauncherStatus !== 'RUNNING') {
+      setAvailablePiperVoices([]);
+      return;
+    }
+    
+    setIsLoadingPiperVoices(true);
+    try {
+      console.log('[SETTINGS] Fetching Piper voices...');
+      const voices = await piperTTS.getVoices();
+      console.log('[SETTINGS] Found voices:', voices);
+      setAvailablePiperVoices(voices);
+      
+      // If current voice is not in the list, select the first available
+      if (voices.length > 0 && !voices.find(v => v.name === voiceConfig.voiceName)) {
+        const firstVoice = voices[0];
+        console.log(`[SETTINGS] Current voice "${voiceConfig.voiceName}" not in list, switching to "${firstVoice.name}"`);
+        setVoiceConfig(prev => ({...prev, voiceName: firstVoice.name}));
+        piperTTS.setConfig({ defaultVoice: firstVoice.name });
+      }
+    } catch (error) {
+      console.error('[SETTINGS] Failed to fetch Piper voices:', error);
+      setAvailablePiperVoices([]);
+    } finally {
+      setIsLoadingPiperVoices(false);
+    }
+  };
+
+  // Fetch voices when Piper status changes to RUNNING
+  useEffect(() => {
+    if (piperLauncherStatus === 'RUNNING') {
+      fetchPiperVoices();
+    } else {
+      setAvailablePiperVoices([]);
+    }
+  }, [piperLauncherStatus]);
 
   const refreshOllamaModels = async () => {
     setLoadingModels(true);
@@ -1079,28 +1117,107 @@ const neuralVoices = [
                           {piperLauncherStatus === 'NOT_RUNNING' && (
                             <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded text-[10px] text-yellow-400">
                               <strong>Piper is installed but not running.</strong><br/>
-                              Click <strong>"Start Piper"</strong> above to start the server automatically, or run <code className="bg-black px-1 rounded">start-jarvis-server.bat</code> manually.
+                              Close this window and run <code className="bg-black px-1 rounded">JARVIS.bat</code> to start all services including Piper.
                             </div>
                           )}
                           
-                          <div className="p-3 border border-green-500/50 bg-green-950/20 rounded">
-                            <div className="flex items-center justify-between">
-                              <div className="font-bold text-[11px] text-white flex items-center gap-2">
-                                <span>jarvis</span>
-                                <span className="text-[9px] text-green-400">✓ INSTALLED</span>
+                          {/* Error - Show error details */}
+                          {piperLauncherStatus === 'ERROR' && (
+                            <div className="p-3 bg-red-900/20 border border-red-500/30 rounded text-[10px] text-red-400">
+                              <strong>Cannot start Piper from browser.</strong><br/>
+                              For security reasons, browsers cannot launch local programs.<br/>
+                              Run <code className="bg-black px-1 rounded">JARVIS.bat</code> to start Piper automatically.
+                            </div>
+                          )}
+                          
+                          {/* Voice Selection Dropdown */}
+                          {availablePiperVoices.length > 0 ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] text-gray-400 uppercase">Select Voice</label>
+                                <button
+                                  onClick={fetchPiperVoices}
+                                  disabled={isLoadingPiperVoices}
+                                  className="text-[9px] text-cyan-500 hover:text-cyan-400 flex items-center gap-1 disabled:opacity-50"
+                                >
+                                  {isLoadingPiperVoices ? (
+                                    <><Loader2 size={10} className="animate-spin" /> Refreshing...</>
+                                  ) : (
+                                    <><RefreshCw size={10} /> Refresh</>
+                                  )}
+                                </button>
                               </div>
-                              <span className="text-[9px] text-green-500">⭐ ACTIVE</span>
+                              <select 
+                                value={voiceConfig.voiceName}
+                                onChange={(e) => {
+                                  const newVoiceName = e.target.value;
+                                  setVoiceConfig({...voiceConfig, voiceName: newVoiceName});
+                                  // Also update piperTTS config
+                                  piperTTS.setConfig({ defaultVoice: newVoiceName });
+                                }}
+                                className="w-full p-2 bg-black border border-[#333] rounded text-[11px] text-white focus:border-cyan-500 outline-none"
+                              >
+                                {availablePiperVoices.map((v) => (
+                                  <option key={v.name} value={v.name}>
+                                    {v.name} {v.language === 'en_GB' ? '(British)' : v.language === 'en_US' ? '(American)' : `(${v.language})`} {v.quality === 'high' ? '⭐' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                              
+                              {/* Voice Details */}
+                              {availablePiperVoices.find(v => v.name === voiceConfig.voiceName) && (
+                                <div className="text-[9px] text-gray-400 p-2 bg-black/50 rounded">
+                                  {(() => {
+                                    const v = availablePiperVoices.find(v => v.name === voiceConfig.voiceName)!;
+                                    const isBritish = v.language === 'en_GB' || v.name === 'alan' || v.name === 'joe' || v.name === 'amy';
+                                    const isMovieJarvis = v.name.toLowerCase() === 'jarvis' && v.language === 'en_US';
+                                    return (
+                                      <>
+                                        <div className="flex items-center gap-2">
+                                          <span className={isBritish ? 'text-green-400' : 'text-yellow-400'}>
+                                            {isBritish ? '🇬🇧' : '🇺🇸'}
+                                          </span>
+                                          <span>{isBritish ? 'British English' : 'American English'}</span>
+                                          {v.quality === 'high' && <span className="text-green-500">⭐ High Quality</span>}
+                                        </div>
+                                        {isMovieJarvis && (
+                                          <div className="text-yellow-500 mt-1">
+                                            ⚠️ Note: This is an American voice, not the British JARVIS from the movies.
+                                          </div>
+                                        )}
+                                        {v.name === 'alan' && (
+                                          <div className="text-green-500 mt-1">
+                                            ✓ Closest to movie JARVIS - Scottish, professional
+                                          </div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              )}
                             </div>
-                            <div className="text-[9px] text-gray-400 mt-1">JARVIS from Iron Man - British, professional, calm</div>
-                            <div className="text-[9px] text-gray-500 mt-2">
-                              This voice is ready to use. Click "🎙️ Test Voice" above to hear it!
+                          ) : isLoadingPiperVoices ? (
+                            <div className="p-3 bg-black/50 rounded text-[10px] text-gray-400 flex items-center gap-2">
+                              <Loader2 size={12} className="animate-spin" />
+                              Loading available voices...
                             </div>
-                          </div>
+                          ) : (
+                            <div className="p-3 bg-yellow-900/20 border border-yellow-500/30 rounded text-[10px] text-yellow-400">
+                              <strong>No voices detected.</strong><br/>
+                              Make sure voice .onnx files are in the Piper/voices/ folder.
+                            </div>
+                          )}
                           
                           <div className="text-[10px] text-gray-500 border-t border-[#222] pt-3">
-                            <strong>More voices available:</strong> alan, joe, kristin
-                            <div className="text-[9px] text-gray-600 mt-1">
-                              Download from <a href="https://huggingface.co/rhasspy/piper-voices" target="_blank" rel="noopener" className="text-cyan-500 hover:underline">huggingface.co/rhasspy/piper-voices</a> and place .onnx files in the Piper/voices/ folder
+                            <strong>Recommended voices:</strong>
+                            <div className="grid grid-cols-2 gap-1 mt-1 text-[9px]">
+                              <span className={voiceConfig.voiceName === 'alan' ? 'text-green-400' : ''}>• alan (British ⭐)</span>
+                              <span className={voiceConfig.voiceName === 'joe' ? 'text-green-400' : ''}>• joe (British)</span>
+                              <span className={voiceConfig.voiceName === 'jarvis' ? 'text-green-400' : ''}>• jarvis (American)</span>
+                              <span className={voiceConfig.voiceName === 'amy' ? 'text-green-400' : ''}>• amy (British)</span>
+                            </div>
+                            <div className="text-[9px] text-gray-600 mt-2">
+                              Download more from <a href="https://huggingface.co/rhasspy/piper-voices" target="_blank" rel="noopener" className="text-cyan-500 hover:underline">huggingface.co/rhasspy/piper-voices</a>
                             </div>
                           </div>
                           <details className="text-[10px]">

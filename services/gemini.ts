@@ -206,15 +206,15 @@ async function analyzeIntentInternal(input: string): Promise<ParsedIntent> {
   const localResult = localIntentClassifier.classify(input);
   
   // If local classifier has high confidence, use it directly
-  if (localResult.confidence >= 0.85) {
+  if (localResult.confidence >= 0.80) {
     console.log('[INTENT] Local classification (free):', localResult.type, '- confidence:', localResult.confidence.toFixed(2));
     intentCache.set(input, localResult);
     return localResult;
   }
   
-  // If local suggests simple command/memory, still use local (no need for API)
-  if ((localResult.type === 'COMMAND' || localResult.type === 'MEMORY_READ' || localResult.type === 'MEMORY_WRITE') 
-      && localResult.confidence >= 0.75) {
+  // If local suggests simple command/memory/query, still use local (no need for API)
+  if ((localResult.type === 'COMMAND' || localResult.type === 'MEMORY_READ' || localResult.type === 'MEMORY_WRITE' || localResult.type === 'QUERY') 
+      && localResult.confidence >= 0.70) {
     console.log('[INTENT] Local classification (free) - simple operation:', localResult.type);
     intentCache.set(input, localResult);
     return localResult;

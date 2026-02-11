@@ -499,6 +499,115 @@ export class SemanticMemorySystem {
 
     return { nodes, edges };
   }
+
+  /**
+   * Phase 4, Task 1: Get relevant memories for prompt context
+   * Retrieves semantically similar memories to enhance AI context
+   */
+  async getRelevantMemories(
+    query: string,
+    options: {
+      maxResults?: number;
+      minScore?: number;
+      includeRelated?: boolean;
+    } = {}
+  ): Promise<{
+    hasMemories: boolean;
+    memories: Array<{
+      content: string;
+      type: MemoryType;
+      relevance: number;
+      whyRelevant: string;
+    }>;
+    contextText: string;
+  }> {
+    const { maxResults = 3, minScore = 0.3, includeRelated = true } = options;
+
+    const results = await this.search(query, {}, maxResults * 2);
+    
+    // Filter by minimum score
+    const filtered = results.filter(r => r.finalScore >= minScore).slice(0, maxResults);
+
+    if (filtered.length === 0) {
+      return { hasMemories: false, memories: [], contextText: '' };
+    }
+
+    const memories = filtered.map(r => ({
+      content: r.memory.content,
+      type: r.memory.type,
+      relevance: r.finalScore,
+      whyRelevant: r.whyRelevant
+    }));
+
+    // Build context text
+    const contextParts: string[] = [];
+    
+    // Group by type for better organization
+    const byType = memories.reduce((acc, m) => {
+      if (!acc[m.type]) acc[m.type] = [];
+      acc[m.type].push(m);
+      return acc;
+    }, {} as Record<MemoryType, typeof memories>);
+
+    // Add facts first
+    if (byType['FACT']?.length) {
+      contextParts.push('Known facts:');
+      byType['FACT'].forEach(m => contextParts.push(`- ${m.content}`));
+    }
+
+    // Add preferences
+    if (byType['PREFERENCE']?.length) {
+      contextParts.push('User preferences:');
+      byType['PREFERENCE'].forEach(m => contextParts.push(`- ${m.content}`));
+    }
+
+    // Add episodes (recent experiences)
+    if (byType['EPISODE']?.length) {
+      contextParts.push('Recent interactions:');
+      byType['EPISODE'].forEach(m => contextParts.push(`- ${m.content}`));
+    }
+
+    // Add summaries
+    if (byType['SUMMARY']?.length) {
+      contextParts.push('Context:');
+      byType['SUMMARY'].forEach(m => contextParts.push(`- ${m.content}`));
+    }
+
+    // Include related memories if requested
+    if (includeRelated && filtered.length > 0) {
+      const relatedMemories = new Set<EmbeddedMemory>();
+      
+      for (const result of filtered) {
+        for (const relatedId of result.memory.relatedMemories) {
+          const related = this.memories.get(relatedId);
+          if (related && !filtered.some(f => f.memory.id === related.id)) {
+            relatedMemories.add(related);
+          }
+        }
+      }
+
+      if (relatedMemories.size > 0) {
+        contextParts.push('Related information:');
+        Array.from(relatedMemories)
+          .slice(0, 2)
+          .forEach(m => contextParts.push(`- ${m.content}`));
+      }
+    }
+
+    return {
+      hasMemories: true,
+      memories,
+      contextText: contextParts.join('\n')
+    };
+  }
+
+  /**
+   * Quick memory recall for a specific topic
+   */
+  async recall(topic: string, limit: number = 3): Promise<string[]> {
+    const results = await this.search(topic, {}, limit);
+    return results.map(r => r.memory.content);
+  }
 }
 
 export const semanticMemory = new SemanticMemorySystem();

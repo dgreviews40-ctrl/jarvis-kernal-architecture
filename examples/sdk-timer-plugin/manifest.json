@@ -1,0 +1,41 @@
+{
+  "id": "timer.sdk",
+  "name": "SDK Timer Example",
+  "version": "1.0.0",
+  "description": "Example timer plugin using the JARVIS SDK",
+  "author": "JARVIS",
+  "license": "MIT",
+  "engineVersion": "1.0.0",
+  "permissions": [
+    "system:notification",
+    "audio:output",
+    "memory:write"
+  ],
+  "capabilities": [
+    {
+      "name": "timer",
+      "version": "1.0.0",
+      "description": "Set and manage timers"
+    }
+  ],
+  "entry": {
+    "background": "plugin.ts"
+  },
+  "tags": ["timer", "utility", "example"],
+  "configSchema": {
+    "defaultDuration": {
+      "type": "number",
+      "label": "Default Timer Duration",
+      "description": "Default timer duration in minutes",
+      "default": 5,
+      "required": false
+    },
+    "soundEnabled": {
+      "type": "boolean",
+      "label": "Play Sound",
+      "description": "Play sound when timer completes",
+      "default": true,
+      "required": false
+    }
+  }
+}

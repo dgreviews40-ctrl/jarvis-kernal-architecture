@@ -2,9 +2,16 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
     "./App.tsx",
-    "./**/*.{js,ts,jsx,tsx}"
+    "./index.tsx",
+    "./loading.html",
+    "./components/**/*.{js,ts,jsx,tsx}",
+    "./hooks/**/*.{js,ts,jsx,tsx}",
+    "./stores/**/*.{js,ts,jsx,tsx}",
+    "./services/**/*.{js,ts,jsx,tsx}",
+    "./constants/**/*.{js,ts,jsx,tsx}",
+    "./types/**/*.{js,ts,jsx,tsx}",
+    "./workers/**/*.{js,ts,jsx,tsx}"
   ],
   theme: {
     extend: {

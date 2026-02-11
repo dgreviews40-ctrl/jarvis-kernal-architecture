@@ -102,7 +102,7 @@ export class MemoryCoreOptimized {
             this.nodes.set(node.id, node);
           });
         } catch (e) {
-          console.warn('[MEMORY] Failed to parse saved memories, using defaults');
+          console.warn('[MEMORY] Failed to parse saved memories:', e);
           this.loadDefaults();
         }
       } else {
@@ -462,18 +462,62 @@ export class MemoryCoreOptimized {
    * Retrieve user identity information
    */
   public async getUserIdentity(): Promise<MemoryNode | null> {
-    const results = await this.recall('user identity');
+    await this.ensureLoaded();
+    
+    // First: direct lookup by tags (most reliable)
+    for (const node of this.nodes.values()) {
+      if (node.tags.includes('user_identity') || node.tags.includes('identity')) {
+        return node;
+      }
+    }
+    
+    // Second: try semantic search
+    const results = await this.recall('my name is user identity');
     if (results.length > 0) {
+      // Filter for identity-related results
+      for (const result of results) {
+        if (result.node.tags.some(t => t.includes('identity') || t.includes('name') || t.includes('user'))) {
+          return result.node;
+        }
+      }
       return results[0].node;
     }
 
-    // Also try to find by name tag
-    const nameResults = await this.recall('name');
-    if (nameResults.length > 0) {
-      return nameResults[0].node;
-    }
-
     return null;
+  }
+
+  /**
+   * Retrieve user hobbies
+   */
+  public async getUserHobbies(): Promise<MemoryNode[]> {
+    await this.ensureLoaded();
+    
+    const hobbies: MemoryNode[] = [];
+    
+    // First: direct lookup by tags
+    for (const node of this.nodes.values()) {
+      const tags = node.tags.map(t => t.toLowerCase());
+      const content = node.content.toLowerCase();
+      
+      if (tags.includes('hobby') || tags.includes('hobbies') ||
+          content.includes('user hobby') || content.includes('hobby:')) {
+        hobbies.push(node);
+      }
+    }
+    
+    // Second: try searching for hobby-related content
+    if (hobbies.length === 0) {
+      const results = await this.recall('my hobbies interests activities');
+      for (const result of results) {
+        const content = result.node.content.toLowerCase();
+        if (content.includes('like') || content.includes('enjoy') || 
+            content.includes('hobby') || content.includes('interest')) {
+          hobbies.push(result.node);
+        }
+      }
+    }
+    
+    return hobbies;
   }
 
   public async forget(id: string): Promise<boolean> {

@@ -1,0 +1,42 @@
+{
+  "id": "__PLUGIN_ID__",
+  "name": "__PLUGIN_NAME__",
+  "version": "1.0.0",
+  "description": "__PLUGIN_DESCRIPTION__",
+  "author": "Anonymous",
+  "license": "MIT",
+  "engineVersion": "1.0.0",
+  "permissions": [
+    "memory:read",
+    "memory:write",
+    "system:notification",
+    "network:fetch"
+  ],
+  "capabilities": [
+    {
+      "name": "background_service",
+      "version": "1.0.0",
+      "description": "Background service that runs periodically"
+    }
+  ],
+  "entry": {
+    "background": "plugin.ts"
+  },
+  "tags": ["service", "background", "automation"],
+  "configSchema": {
+    "intervalMinutes": {
+      "type": "number",
+      "label": "Check Interval",
+      "description": "How often to run the service (in minutes)",
+      "default": 5,
+      "required": false
+    },
+    "apiEndpoint": {
+      "type": "string",
+      "label": "API Endpoint",
+      "description": "URL to fetch data from",
+      "default": "https://api.example.com/data",
+      "required": false
+    }
+  }
+}

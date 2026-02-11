@@ -10,6 +10,7 @@
  */
 
 import { ConversationTurn, Topic } from '../../types';
+import { naturalResponse } from './naturalResponse';
 
 // ==================== TYPES ====================
 
@@ -289,98 +290,27 @@ class ConversationService {
   } = {}): string {
     const { addOpening = false, addClosing = false, tone = 'neutral' } = options;
     
-    let response = rawResponse;
+    // Phase 1, Task 2: Use naturalResponse for sophisticated response generation
+    const naturalTone = this.mapToneToNatural(tone);
     
-    // Add opening if requested
-    if (addOpening) {
-      const openings = this.getOpenings(tone);
-      response = `${openings[Math.floor(Math.random() * openings.length)]} ${response}`;
-    }
-    
-    // Add closing if requested
-    if (addClosing) {
-      const closings = this.getClosings(tone);
-      response = `${response} ${closings[Math.floor(Math.random() * closings.length)]}`;
-    }
-    
-    return response;
+    return naturalResponse.generate(rawResponse, {
+      addOpening,
+      addClosing,
+      tone: naturalTone,
+      avoidRepetition: true
+    });
   }
 
-  private getOpenings(tone: string): string[] {
-    const openings: Record<string, string[]> = {
-      positive: [
-        "That's interesting!",
-        "Great to hear!",
-        "Absolutely!",
-        "Sure thing!",
-        "You bet!",
-        "I'd be happy to help!",
-        "Nice! ",
-        "Cool! ",
-        "Awesome! ",
-        "Fantastic! ",
-        "Sounds good! "
-      ],
-      negative: [
-        "I understand.",
-        "I see what you mean.",
-        "Hmm, I'll look into that.",
-        "That's a tough one.",
-        "Interesting perspective.",
-        "I appreciate you sharing that.",
-        "Thanks for letting me know."
-      ],
-      neutral: [
-        "Sure,",
-        "Okay,",
-        "Right,",
-        "Got it,",
-        "Alright,",
-        "I understand,",
-        "Thanks for letting me know,",
-        "Noted,",
-        "I see,",
-        "Interesting,",
-        "Ah,",
-        "Yes,",
-        "Indeed,",
-        "Certainly,"
-      ]
+  /**
+   * Map conversationService tone to naturalResponse tone
+   */
+  private mapToneToNatural(tone: string): 'neutral' | 'friendly' | 'professional' | 'enthusiastic' | 'empathetic' {
+    const toneMap: Record<string, 'neutral' | 'friendly' | 'professional' | 'enthusiastic' | 'empathetic'> = {
+      neutral: 'neutral',
+      positive: 'friendly',
+      negative: 'empathetic'
     };
-    return openings[tone] || openings.neutral;
-  }
-
-  private getClosings(tone: string): string[] {
-    const closings: Record<string, string[]> = {
-      positive: [
-        "Let me know if you need anything else!",
-        "Happy to help!",
-        "Always here if you need me!",
-        "Feel free to ask anytime!",
-        "Hope that helps!",
-        "Just let me know if there's more I can do!",
-        "Looking forward to helping with more!",
-        "Just say the word if you need anything else!"
-      ],
-      negative: [
-        "Is there anything else I can assist with?",
-        "Let me know if the issue persists.",
-        "I hope I was somewhat helpful.",
-        "Maybe we can try something else?",
-        "Let me know if you'd like to explore other options."
-      ],
-      neutral: [
-        "Let me know if you need anything else.",
-        "Is there anything else I can help with?",
-        "Just let me know if you have other questions.",
-        "Feel free to ask if you need more assistance.",
-        "What else can I do for you?",
-        "How else can I assist you today?",
-        "Just say if there's more I can help with.",
-        "Let me know if you'd like to discuss something else."
-      ]
-    };
-    return closings[tone] || closings.neutral;
+    return toneMap[tone] || 'neutral';
   }
 
   // ==================== HELPERS ====================

@@ -11,6 +11,7 @@
 import { AIProvider, AIRequest } from '../types';
 import { providerManager } from './providers';
 import { voice } from './voice';
+import { voiceStreaming } from './voiceStreaming';
 import { logger } from './logger';
 
 export interface StreamChunk {
@@ -23,6 +24,7 @@ export interface StreamChunk {
 export interface StreamingOptions {
   enableTTS?: boolean;
   ttsDelayMs?: number;  // Delay before starting TTS to buffer tokens
+  useSmartTTS?: boolean; // Phase 2: Use voiceStreaming with sentence boundaries
   onChunk?: (chunk: StreamChunk) => void;
   onComplete?: (fullText: string) => void;
   onError?: (error: Error) => void;
@@ -34,6 +36,7 @@ export class StreamingResponseHandler {
   private ttsTimeout: ReturnType<typeof setTimeout> | null = null;
   private isStreaming: boolean = false;
   private fullResponse: string = '';
+  private useVoiceStreaming: boolean = false;
 
   /**
    * Check if currently streaming
@@ -54,6 +57,13 @@ export class StreamingResponseHandler {
       clearTimeout(this.ttsTimeout);
       this.ttsTimeout = null;
     }
+    
+    // Phase 2: Abort voice streaming if active
+    if (this.useVoiceStreaming) {
+      voiceStreaming.abort();
+      this.useVoiceStreaming = false;
+    }
+    
     this.isStreaming = false;
     this.ttsBuffer = '';
   }
@@ -69,6 +79,7 @@ export class StreamingResponseHandler {
     const { 
       enableTTS = true, 
       ttsDelayMs = 150,
+      useSmartTTS = true, // Phase 2: Default to smart TTS with sentence boundaries
       onChunk,
       onComplete,
       onError
@@ -80,7 +91,14 @@ export class StreamingResponseHandler {
     this.isStreaming = true;
     this.fullResponse = '';
     this.ttsBuffer = '';
+    this.useVoiceStreaming = enableTTS && useSmartTTS;
     this.abortController = new AbortController();
+
+    // Phase 2: Initialize voice streaming if enabled
+    if (this.useVoiceStreaming) {
+      voiceStreaming.startSession('PIPER');
+      logger.log('STREAMING', 'Using smart TTS with sentence boundary detection', 'info');
+    }
 
     try {
       const provider = providerManager.getProvider(preference);
@@ -128,6 +146,12 @@ export class StreamingResponseHandler {
     } finally {
       this.isStreaming = false;
       this.abortController = null;
+      
+      // Phase 2: End voice streaming session
+      if (this.useVoiceStreaming) {
+        await voiceStreaming.endSession();
+        this.useVoiceStreaming = false;
+      }
     }
   }
 
@@ -239,17 +263,23 @@ export class StreamingResponseHandler {
         model: config.model
       });
 
-      // Handle TTS streaming
+      // Phase 2: Handle TTS streaming with smart sentence boundaries
       if (options.enableTTS) {
-        this.bufferForTTS(text, options.ttsDelayMs);
+        if (this.useVoiceStreaming) {
+          // Use voiceStreaming for sentence boundary detection
+          voiceStreaming.onToken(text);
+        } else {
+          // Fall back to legacy buffer-based TTS
+          this.bufferForTTS(text, options.ttsDelayMs);
+        }
       }
     }
 
     const latency = Date.now() - startTime;
     logger.log('KERNEL', `Stream complete: ${tokenCount} chunks in ${latency}ms`, 'success');
 
-    // Flush remaining TTS buffer
-    if (options.enableTTS && this.ttsBuffer.trim()) {
+    // Flush remaining TTS buffer (legacy mode only)
+    if (options.enableTTS && !this.useVoiceStreaming && this.ttsBuffer.trim()) {
       this.speakBuffer();
     }
 

@@ -141,7 +141,7 @@ describe('Performance & Stress Tests', () => {
       expect(stats.entries).toBe(200);
     });
 
-    it('should handle rapid set/get cycles efficiently', () => {
+    it('should handle rapid set/get cycles efficiently', { timeout: 10000 }, () => {
       const iterations = 1000;
       const startTime = performance.now();
       

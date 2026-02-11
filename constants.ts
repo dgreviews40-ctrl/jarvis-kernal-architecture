@@ -15,13 +15,52 @@ Output strictly in this JSON format:
   "reasoning": "Short string explaining why"
 }
 
-Rules:
-- If the user asks for factual info or creative writing -> QUERY
-- If the user asks to change hardware state (lights, volume, launch app) -> COMMAND
-- If the user references past conversations or stored data -> MEMORY_READ
-- If the user asks to save something for later -> MEMORY_WRITE
-- If the user asks to "look at", "see", "describe this", "what is this", "scan this" -> VISION_ANALYSIS
-- Complex reasoning requires GEMINI. Simple commands can use OLLAMA.
+CLASSIFICATION RULES:
+
+1. QUERY - General questions that don't require stored personal data or device control:
+   - "What's the weather?"
+   - "Tell me about quantum physics"
+   - "Write a poem about stars"
+
+2. COMMAND - Actions that change hardware/device state:
+   - "Turn on the living room lights"
+   - "Set thermostat to 72 degrees"
+   - "Lock the front door"
+   - "Play music on Spotify"
+
+3. MEMORY_READ - Questions about PERSONAL information (CRITICAL: These require looking up stored user data):
+   - Identity: "What's my name?", "Who am I?", "What do you call me?"
+   - Preferences: "What's my favorite movie?", "What music do I like?", "What's my favorite color?"
+   - Hobbies: "What are my hobbies?", "What do I like to do for fun?", "What am I interested in?"
+   - Personal facts: "Where do I live?", "What do I do for work?", "Do I have pets?"
+   - History: "What did I do yesterday?", "What did we discuss earlier?", "Remind me what I said"
+   - Memories: "Remember when I told you about...", "What did I say about..."
+   
+   KEY INDICATORS for MEMORY_READ:
+   - Contains "my" + personal attribute (my name, my hobby, my favorite)
+   - Asks about user's preferences, tastes, or interests
+   - References past conversations or shared information
+   - Questions about user's personal life, family, work
+
+4. MEMORY_WRITE - Storing new information:
+   - "Remember that my favorite color is blue"
+   - "Save this: I like jazz music"
+   - "My name is John"
+   - "Remind me to call mom tomorrow"
+
+5. VISION_ANALYSIS - Visual requests:
+   - "Look at this", "What do you see?", "Describe this image"
+   - "Scan this document", "Read this text"
+
+PROVIDER SELECTION:
+- Use GEMINI for: complex reasoning, MEMORY_READ operations, ambiguous queries
+- Use OLLAMA for: simple commands, clear factual queries, low complexity tasks
+
+EXAMPLES:
+Input: "What's my name?" -> {"type": "MEMORY_READ", "reasoning": "Asking for stored personal identity information"}
+Input: "What are my hobbies?" -> {"type": "MEMORY_READ", "reasoning": "Querying stored personal preferences/hobbies"}
+Input: "What's the temperature?" -> {"type": "QUERY", "reasoning": "Asking for sensor data, not personal info"}
+Input: "Turn on the lights" -> {"type": "COMMAND", "reasoning": "Device control action"}
 `;
 
 export const MOCK_MEMORY = [

@@ -43,10 +43,21 @@ import { intelligence } from './intelligence';
 import { learningService } from './learning';
 import { engine } from './execution';
 import { isHomeAssistantQuery, searchEntities, generateEntityResponse } from './haEntitySearch';
+import { smartContextRouter, enrichQueryWithContext } from './smartContextRouter';
 import { weatherService } from './weather';
 import { taskAutomation } from './integrations/taskAutomation';
 import { haService, HAEntity } from './home_assistant';
 import { getKernelStoreState, setKernelDisplay } from '../stores';
+import { 
+  jarvisPersonality, 
+  conversationalFormatter,
+  emotionalMemory,
+  contextualGreeting,
+  proactiveCheckIn,
+  moodDetection,
+  naturalResponse
+} from './intelligence';
+import { proactiveEventHandler } from './proactiveEventHandler';
 
 interface ProcessorContext {
   forcedMode: AIProvider | null;
@@ -89,13 +100,13 @@ export class KernelProcessor {
     const intelligenceResult = await this.processIntelligence(input, context, now);
 
     // Module 5: Learning Integration
-    await this.processLearning(input, context);
+    const learnedInfo = await this.processLearning(input, context);
 
     // Module 6: Intent Analysis
     const analysis = await this.analyzeIntent(input, context);
 
     // Module 7: Execution Routing
-    await this.routeExecution(analysis, input, sanitizedInput, context, intelligenceResult);
+    await this.routeExecution(analysis, input, sanitizedInput, context, intelligenceResult, learnedInfo);
   }
 
   /**
@@ -218,9 +229,34 @@ export class KernelProcessor {
 
   /**
    * Module 4: Intelligence Processing with Context Window Management (v1.4.0)
+   * v2.1: Integrated Emotional Intelligence
    */
   private async processIntelligence(input: string, context: ProcessorContext, now: number): Promise<any> {
-    let intelligenceResult;
+    let intelligenceResult: IntelligenceResult | null = null;
+    
+    // v2.1: Record this interaction for emotional tracking
+    await emotionalMemory.recordInteraction();
+    
+    // v2.1: Detect mood from user input
+    try {
+      const moodAnalysis = await moodDetection.analyzeMood(
+        input, 
+        context.origin,
+        { messageCount: 1 } // Could track more metrics
+      );
+      
+      // Log significant mood shifts
+      const moodWithTrend = moodDetection.getMoodWithTrend();
+      if (moodWithTrend.trend === 'fluctuating') {
+        logger.log('INTELLIGENCE', `Mood fluctuation detected: ${moodAnalysis.primaryMood}`, 'warning');
+      }
+      
+      logger.log('INTELLIGENCE', `Mood detected: ${moodAnalysis.primaryMood} (${moodAnalysis.valence}, confidence: ${(moodAnalysis.confidence * 100).toFixed(0)}%)`, 'info');
+    } catch (e) {
+      // Mood detection is optional, don't fail on error
+      logger.log('INTELLIGENCE', `Mood detection failed: ${(e as Error).message}`, 'warning');
+    }
+    
     try {
       const session = conversation.getSession();
       const turns = session?.turns || [];
@@ -275,14 +311,28 @@ export class KernelProcessor {
 
   /**
    * Module 5: Learning Integration
+   * Returns learned preference info if something was learned, null otherwise
+   * v2.1: Records emotional moments for significant interactions
    */
-  private async processLearning(input: string, context: ProcessorContext): Promise<void> {
+  private async processLearning(input: string, context: ProcessorContext): Promise<{ type: string; content: string } | null> {
+    const lowerInput = input.toLowerCase();
+    
     // Check if this is a correction of previous response
     if (learningService.isCorrection(input)) {
       logger.log('KERNEL', 'Correction detected - learning from feedback', 'info');
       const learnedFact = await learningService.processCorrection(input);
       if (learnedFact) {
         logger.log('MEMORY', `Learned: ${learnedFact}`, 'success');
+        
+        // v2.1: Record frustration moment if user is correcting us
+        await emotionalMemory.recordMoment(
+          'frustration',
+          'User corrected my response',
+          { valence: 'negative', intensity: 0.4, primaryEmotion: 'frustrated' },
+          0.5
+        );
+        
+        return { type: 'correction', content: learnedFact };
       }
     }
 
@@ -290,6 +340,110 @@ export class KernelProcessor {
     const learnedPreference = await learningService.detectAndLearnPreference(input);
     if (learnedPreference) {
       logger.log('MEMORY', `Noted preference: ${learnedPreference.content}`, 'info');
+      
+      // v2.1: Record preference sharing as a positive moment
+      await emotionalMemory.recordMoment(
+        'preference_shared',
+        learnedPreference.content,
+        { valence: 'positive', intensity: 0.5, primaryEmotion: 'sharing' },
+        0.4
+      );
+      
+      return { type: learnedPreference.type, content: learnedPreference.content };
+    }
+    
+    // v2.1: Detect and record other significant emotional moments
+    await this.detectAndRecordEmotionalMoments(input, context);
+    
+    return null;
+  }
+
+  /**
+   * v2.1: Detect and record emotional moments from user input
+   */
+  private async detectAndRecordEmotionalMoments(input: string, context: ProcessorContext): Promise<void> {
+    const lower = input.toLowerCase();
+    const currentMood = emotionalMemory.getCurrentMood();
+    
+    try {
+      // Achievement celebration
+      if (/\b(accomplished|achieved|finished|completed|succeeded|won|got the job|promotion|graduated)\b/i.test(input)) {
+        await emotionalMemory.recordMoment(
+          'achievement',
+          input.substring(0, 200),
+          { valence: 'positive', intensity: 0.8, primaryEmotion: 'joy' },
+          0.8
+        );
+        logger.log('INTELLIGENCE', 'Recorded achievement moment', 'success');
+      }
+      
+      // User expressing concern or worry
+      else if (/\b(worried about|concerned about|anxious about|stressed about|afraid of|scared about)\b/i.test(input)) {
+        await emotionalMemory.recordMoment(
+          'concern',
+          input.substring(0, 200),
+          { valence: 'negative', intensity: currentMood.recentValence === 'negative' ? 0.7 : 0.5, primaryEmotion: 'worried' },
+          0.7
+        );
+        logger.log('INTELLIGENCE', 'Recorded concern moment - will follow up later', 'warning');
+      }
+      
+      // User expressing gratitude
+      else if (/\b(thank you|thanks|appreciate|grateful|you helped)\b/i.test(input) && 
+               (lower.includes('help') || lower.includes('thanks') || currentMood.recentValence === 'positive')) {
+        await emotionalMemory.recordMoment(
+          'gratitude_expressed',
+          'User expressed gratitude',
+          { valence: 'positive', intensity: 0.6, primaryEmotion: 'grateful' },
+          0.4
+        );
+      }
+      
+      // User asking for help (significant moment)
+      else if (/\b(help me|assist me|I need help|can you help|support me)\b/i.test(input)) {
+        await emotionalMemory.recordMoment(
+          'help_requested',
+          input.substring(0, 200),
+          { valence: 'neutral', intensity: 0.5, primaryEmotion: 'seeking_support' },
+          0.5
+        );
+      }
+      
+      // Frustration / anger
+      else if (/\b(so frustrating|really annoyed|angry|pissed|furious|this sucks|hate this)\b/i.test(input)) {
+        await emotionalMemory.recordMoment(
+          'frustration',
+          input.substring(0, 200),
+          { valence: 'negative', intensity: 0.8, primaryEmotion: 'frustrated' },
+          0.7
+        );
+        logger.log('INTELLIGENCE', 'Recorded frustration moment', 'warning');
+      }
+      
+      // Excitement / joy
+      else if (/\b(so excited|can't wait|thrilled|overjoyed|ecstatic|amazing news)\b/i.test(input)) {
+        await emotionalMemory.recordMoment(
+          'excitement',
+          input.substring(0, 200),
+          { valence: 'positive', intensity: 0.9, primaryEmotion: 'excited' },
+          0.6
+        );
+        logger.log('INTELLIGENCE', 'Recorded excitement moment', 'success');
+      }
+      
+      // First meeting detection
+      const timeContext = emotionalMemory.getTimeContext();
+      if (timeContext.totalInteractions <= 3 && timeContext.sessionCount === 1) {
+        await emotionalMemory.recordMoment(
+          'first_meeting',
+          'First interaction with user',
+          { valence: 'positive', intensity: 0.5, primaryEmotion: 'curious' },
+          1.0
+        );
+      }
+    } catch (error) {
+      // Emotional moment recording is optional
+      logger.log('INTELLIGENCE', `Failed to record emotional moment: ${(error as Error).message}`, 'warning');
     }
   }
 
@@ -309,7 +463,7 @@ export class KernelProcessor {
        lowerInput.includes('svg') || lowerInput.includes('diagram') || lowerInput.includes('schematic') ||
        lowerInput.includes('illustration') || lowerInput.includes('drawing'));
 
-    let analysis;
+    let analysis: { type: IntentType; entities: string[]; suggestedProvider: string } | null = null;
 
     if (isImageCreationRequest) {
       // Classify as QUERY to route to handleQuery which has our custom image generation
@@ -323,6 +477,11 @@ export class KernelProcessor {
       // Analyze intent with AI provider for other requests
       logger.log('KERNEL', `Analyzing intent with ${context.forcedMode === AIProvider.GEMINI ? 'Core Engine' : 'Local Ollama'}...`, 'info');
       analysis = await analyzeIntent(input);
+    }
+
+    // Ensure analysis is not null
+    if (!analysis) {
+      throw new Error('Intent analysis returned null');
     }
 
     logger.log('KERNEL', `Intent Identified: ${analysis.type}`, 'success', {
@@ -351,7 +510,8 @@ export class KernelProcessor {
     input: string, 
     sanitizedInput: string, 
     context: ProcessorContext, 
-    intelligenceResult: IntelligenceResult
+    intelligenceResult: IntelligenceResult,
+    learnedInfo: { type: string; content: string } | null = null
   ): Promise<void> {
     const { analysis, selectedProvider, relevantCorrection } = analysisResult;
     let outputText = "";
@@ -360,6 +520,22 @@ export class KernelProcessor {
     let correctionContext = '';
     if (relevantCorrection) {
       correctionContext = `\n\nIMPORTANT: A similar query was previously corrected. The user indicated: "${relevantCorrection.correctionText}". Please take this into account.`;
+    }
+    
+    // Track if we learned something for confirmation
+    let learningConfirmation = '';
+    if (learnedInfo) {
+      if (learnedInfo.type === 'identity') {
+        learningConfirmation = `I've noted that your name is ${learnedInfo.content}. `;
+      } else if (learnedInfo.type === 'preference') {
+        learningConfirmation = `I've noted your interest in ${learnedInfo.content}. `;
+      } else if (learnedInfo.type === 'location') {
+        learningConfirmation = `I've noted that you live in ${learnedInfo.content}. `;
+      } else if (learnedInfo.type === 'work') {
+        learningConfirmation = `I've noted that you work at ${learnedInfo.content}. `;
+      } else if (learnedInfo.type === 'correction') {
+        learningConfirmation = `Thank you for the correction. I've learned: ${learnedInfo.content}. `;
+      }
     }
 
     try {
@@ -403,6 +579,11 @@ export class KernelProcessor {
     } finally {
       // Always reset processing flag
       context.isProcessing.current = false;
+    }
+
+    // Prepend learning confirmation if we learned something
+    if (learningConfirmation && outputText && !outputText.startsWith('ERROR')) {
+      outputText = learningConfirmation + outputText;
     }
 
     await this.finalizeResponse(outputText, input, context, intelligenceResult);
@@ -460,28 +641,49 @@ export class KernelProcessor {
 
   private async handleMemoryRead(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, analysis: ParsedIntent): Promise<string> {
     context.setActiveModule('MEMORY');
+    const lowerInput = input.toLowerCase();
 
-    // v1.4.0: Try local vector DB first for semantic search
+    logger.log('MEMORY', `Processing memory read request: "${input}"`, 'info');
+
+    // v1.5.1: Use Smart Context Router for personal queries
     try {
-      const localResults = await localVectorDB.search(input, {
-        maxResults: 5,
-        minScore: 0.7
-      });
-
-      if (localResults.length > 0) {
-        const topResult = localResults[0];
-        const synthesis = await providerManager.route({
-          prompt: `IMPORTANT: Use ONLY the following context to answer the user's question. Do not make up information.\n\nContext: ${topResult.node.content}\n\nUser Question: ${input}\n\nAnswer:`
-        }, selectedProvider);
-        logger.log('VECTOR_DB', `Retrieved from local vector DB: ${topResult.node.id} (score: ${topResult.score.toFixed(3)})`, 'success');
-        return synthesis.text;
+      logger.log('KERNEL', `Fetching personal context for: "${input.substring(0, 50)}..."`, 'info');
+      const personalContext = await smartContextRouter.fetchPersonalContext(input);
+      
+      if (personalContext) {
+        logger.log('KERNEL', `Found personal context (${personalContext.length} chars)`, 'success');
+        
+        // Check if this is an identity query that needs special handling
+        const isIdentityQuery = /\b(my name|who am i|what is my name)\b/i.test(input);
+        
+        if (isIdentityQuery) {
+          logger.log('KERNEL', `Identity query detected, synthesizing response`, 'info');
+          const synthesis = await providerManager.route({
+            prompt: `The user is asking about their identity. Based on the following stored information, answer their question. If the information doesn't contain their name, say you don't have that information yet.\n\nStored Information: ${personalContext}\n\nUser Question: ${input}\n\nAnswer naturally using the stored information:`,
+            systemInstruction: "You are JARVIS. Answer using ONLY the provided stored information. Be concise and natural."
+          }, selectedProvider);
+          
+          logger.log('KERNEL', `Answered identity query using stored context`, 'success');
+          return synthesis.text;
+        } else {
+          // General personal query
+          logger.log('KERNEL', `General personal query, synthesizing response`, 'info');
+          const synthesis = await providerManager.route({
+            prompt: `The user is asking about personal information. Use ONLY the following stored context to answer. If the context doesn't contain the answer, say you don't have that information.\n\nStored Context: ${personalContext}\n\nUser Question: ${input}\n\nAnswer:`,
+            systemInstruction: "You are JARVIS. Answer based ONLY on the provided stored information."
+          }, selectedProvider);
+          
+          logger.log('KERNEL', `Answered personal query using stored context`, 'success');
+          return synthesis.text;
+        }
+      } else {
+        logger.log('KERNEL', `No personal context found for query`, 'warning');
       }
     } catch (error) {
-      logger.log('VECTOR_DB', `Local search failed, falling back: ${(error as Error).message}`, 'warning');
+      logger.log('KERNEL', `Error in handleMemoryRead: ${(error as Error).message}`, 'error');
     }
 
-    // Check if this is actually a Home Assistant sensor query misclassified as memory
-    const lowerInput = input.toLowerCase();
+    // Fallback: Check if this is actually a Home Assistant sensor query misclassified as memory
     if ((lowerInput.includes('solar') || lowerInput.includes('energy') || lowerInput.includes('power') ||
          lowerInput.includes('temperature') || lowerInput.includes('humidity') || lowerInput.includes('weather')) &&
          haService.initialized) {
@@ -544,41 +746,14 @@ export class KernelProcessor {
         logger.log('HOME_ASSISTANT', result, 'error');
         return result;
       }
-    } else {
-      // Check if this is an identity-related query
-      const isIdentityQuery = lowerInput.includes('my name') ||
-                             lowerInput.includes('what is my name') ||
-                             lowerInput.includes('who am i') ||
-                             lowerInput.includes('identify me') ||
-                             lowerInput.includes('remember me');
-
-      if (isIdentityQuery) {
-        // Use the dedicated identity method for identity queries
-        const identityNode = await vectorMemoryService.getUserIdentity();
-        if (identityNode) {
-          const synthesis = await providerManager.route({
-            prompt: `IMPORTANT: Use ONLY the following context to answer the user's question. Do not make up information.\n\nContext: ${identityNode.content}\n\nUser Question: ${input}\n\nAnswer:`
-          }, selectedProvider);
-          logger.log(synthesis.provider === AIProvider.GEMINI ? 'GEMINI' : 'OLLAMA', synthesis.text, 'success');
-          return synthesis.text;
-        } else {
-          return "I don't have any information about your name or identity.";
-        }
-      } else {
-        // Normal memory recall
-        const results = await vectorMemoryService.recall(input);
-        if (results.length > 0) {
-          const topResult = results[0];
-          const synthesis = await providerManager.route({
-            prompt: `IMPORTANT: Use ONLY the following context to answer the user's question. Do not make up information.\n\nContext: ${topResult.node.content}\n\nUser Question: ${input}\n\nAnswer:`
-          }, selectedProvider);
-          logger.log(synthesis.provider === AIProvider.GEMINI ? 'GEMINI' : 'OLLAMA', synthesis.text, 'success');
-          return synthesis.text;
-        } else {
-          return "Memory banks returned no relevant records.";
-        }
-      }
     }
+
+    // Final fallback: No data found - v2.0: More conversational
+    const name = jarvisPersonality.getUserName();
+    if (name) {
+      return `I don't have that information saved yet, ${name}. You can tell me things like "My name is John" or "I enjoy hiking" and I'll remember them for next time.`;
+    }
+    return `I don't have that information saved yet. You can tell me things like "My name is John" or "I enjoy hiking" and I'll remember them for next time.`;
   }
 
   private async handleMemoryWrite(input: string, analysis: ParsedIntent, context: ProcessorContext): Promise<string> {
@@ -695,36 +870,21 @@ export class KernelProcessor {
         // Use the proper method to complete the task
         taskAutomation.completeTask(task.id);
 
-        // Generate a more personalized and contextual timer completion message
-        let completionMessage = "";
-        const lowerReminder = reminderText.toLowerCase();
-
-        // Check if the reminder is related to a specific activity
-        if (lowerReminder.includes('work') || lowerReminder.includes('task') || lowerReminder.includes('focus')) {
-          completionMessage = `Sir, your focused work time has concluded. I recommend taking a brief moment to assess your progress.`;
-        } else if (lowerReminder.includes('break') || lowerReminder.includes('rest') || lowerReminder.includes('relax')) {
-          completionMessage = `Sir, your break time has concluded. I trust you found it restorative. How may I assist you now?`;
-        } else if (lowerReminder.includes('exercise') || lowerReminder.includes('workout') || lowerReminder.includes('stretch')) {
-          completionMessage = `Sir, your exercise period has ended. I hope your routine was beneficial to your wellbeing.`;
-        } else if (lowerReminder.includes('meeting') || lowerReminder.includes('call') || lowerReminder.includes('conference')) {
-          completionMessage = `Sir, your meeting time has concluded. I trust the discussion was productive.`;
-        } else if (lowerReminder.includes('meditate') || lowerReminder.includes('meditation') || lowerReminder.includes('mindfulness')) {
-          completionMessage = `Sir, your meditation session has concluded. I trust it brought clarity to your thoughts.`;
-        } else if (lowerReminder.includes('cook') || lowerReminder.includes('cooking') || lowerReminder.includes('food') || lowerReminder.includes('meal')) {
-          completionMessage = `Sir, your cooking timer has elapsed. Your meal should be ready now.`;
-        } else {
-          completionMessage = `Sir, your timer for "${reminderText}" has concluded. Time to attend to this matter.`;
-        }
-
+        // v2.0: Use conversational formatter for timer completion
+        const completionMessage = conversationalFormatter.formatTimerCompletion(reminderText);
         voice.speak(completionMessage);
         logger.log('TIMER', `Timer completed: ${reminderText}`, 'success');
       }, durationMs);
 
-      const durationText = durationMs < 60000 ? `${durationMs / 1000} seconds` :
+      const durationText = durationMs < 60000 ? `${Math.round(durationMs / 1000)} seconds` :
                           durationMs < 3600000 ? `${Math.round(durationMs / 60000)} minutes` :
                           `${Math.round(durationMs / 3600000)} hours`;
 
-      const result = `Timer set for ${durationText}: ${reminderText}`;
+      // v2.0: More conversational timer confirmation
+      const name = jarvisPersonality.getUserName();
+      const result = name 
+        ? `Got it, ${name}. I'll remind you about "${reminderText}" in ${durationText}.`
+        : `Got it. I'll remind you about "${reminderText}" in ${durationText}.`;
       logger.log('TIMER', `Created timer "${reminderText}" for ${durationText} (Task ID: ${task.id})`, 'success');
       return result;
     } else {
@@ -737,7 +897,8 @@ export class KernelProcessor {
         tags: ['reminder']
       });
 
-      const result = `Reminder created: ${reminderText}`;
+      // v2.0: More conversational reminder confirmation
+      const result = conversationalFormatter.formatSuccess(`I've noted: "${reminderText}"`);
       logger.log('TIMER', `Created reminder "${reminderText}" (Task ID: ${task.id})`, 'success');
       return result;
     }
@@ -811,6 +972,10 @@ export class KernelProcessor {
           logger.log('HOME_ASSISTANT', errorMessage, 'error');
           return errorMessage;
         }
+      } else if (isHomeAssistantCommand && !haService.initialized) {
+        // Home Assistant command detected but not connected - provide helpful message
+        logger.log('HOME_ASSISTANT', 'Command detected but HA not connected', 'warning');
+        return "I'd be happy to control your 3D printer, but Home Assistant is not connected. Please configure your Home Assistant connection in Settings to access your smart home devices.";
       } else {
         let requiredCapability = 'light_control';
         if (lower.includes('spotify') || lower.includes('play')) requiredCapability = 'music_playback';
@@ -1051,63 +1216,100 @@ export class KernelProcessor {
       }
     } else if (lowerInput.includes('weather') || lowerInput.includes('temperature') || lowerInput.includes('forecast') || lowerInput.includes('rain') || lowerInput.includes('sunny') || lowerInput.includes('cloudy')) {
       // Handle weather queries using the weather plugin FIRST, before Home Assistant
+      // v2.0: Use conversational formatter for human-like responses
       try {
         logger.log('WEATHER', `Processing weather request: "${input}"`, 'info');
 
-        // Check if weather data is available
-        const weatherData = weatherService.getData();
+        // Check if weather data is available and refresh if stale (older than 10 minutes)
+        let weatherData = weatherService.getData();
+        const isStale = weatherData && (Date.now() - weatherData.lastUpdated > 10 * 60 * 1000);
+        
+        if (isStale) {
+          logger.log('WEATHER', 'Weather data is stale, refreshing...', 'info');
+          weatherData = await weatherService.refresh();
+        }
+        
         if (weatherData) {
-          // Format a response based on the specific weather query
-          const current = weatherData.current;
-          const location = weatherData.location.name;
+          logger.log('WEATHER', `Using weather data: ${Math.round(weatherData.current.temperature)}°F, ${weatherData.current.condition.description} in ${weatherData.location.name} (updated ${Math.round((Date.now() - weatherData.lastUpdated) / 1000 / 60)} min ago)`, 'info');
+          // v2.0: Use conversational formatter for rich, human-like weather responses
+          const conversationalData = {
+            temperature: weatherData.current.temperature,
+            feelsLike: weatherData.current.feelsLike,
+            humidity: weatherData.current.humidity,
+            condition: weatherData.current.condition.description,
+            windSpeed: weatherData.current.windSpeed,
+            windDirection: weatherData.current.windDirection,
+            precipitation: weatherData.current.precipitation,
+            location: weatherData.location.name
+          };
 
-          if (lowerInput.includes('weather') || lowerInput.includes('condition')) {
-            return `Currently in ${location}, it's ${current.condition.description.toLowerCase()}. The temperature is ${weatherService.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity. Winds are blowing at ${(current.windSpeed * 0.621371).toFixed(1)} mph from the ${weatherService.getWindDirectionLabel(current.windDirection)}.`;
-          } else if (lowerInput.includes('temperature') || lowerInput.includes('temp')) {
-            return `The current temperature in ${location} is ${weatherService.formatTemperatureOnlyFahrenheit(current.temperature)}, which feels like ${weatherService.formatTemperatureOnlyFahrenheit(current.feelsLike)}.`;
-          } else if (lowerInput.includes('forecast') || lowerInput.includes('tomorrow')) {
-            const tomorrow = weatherData.daily[1]; // Next day
-            return `Tomorrow in ${location}, expect a high of ${weatherService.formatTemperatureOnlyFahrenheit(tomorrow.tempMax)} and a low of ${weatherService.formatTemperatureOnlyFahrenheit(tomorrow.tempMin)}. Conditions will be ${tomorrow.condition.description.toLowerCase()}.`;
-          } else if (lowerInput.includes('rain') || lowerInput.includes('precipitation')) {
-            return `Currently in ${location}, there's ${(current.precipitation * 0.03937).toFixed(2)} inches of precipitation. Today's forecast shows ${(weatherData.daily[0].precipitationSum * 0.03937).toFixed(2)} inches of total precipitation.`;
+          if (lowerInput.includes('forecast') || lowerInput.includes('tomorrow')) {
+            const tomorrow = weatherData.daily[1];
+            const name = jarvisPersonality.getUserName();
+            return `Tomorrow in ${weatherData.location.name}, expect a high of ${Math.round(tomorrow.tempMax)}° and a low of ${Math.round(tomorrow.tempMin)}°. Conditions will be ${tomorrow.condition.description.toLowerCase()}. ${tomorrow.tempMax > 80 ? `${name ? `${name}, ` : ''}That'll be a warm one!` : tomorrow.tempMax < 50 ? `Bundle up if you're heading out!` : `Should be pretty comfortable.`}`;
           } else {
-            // General weather query
-            return `Here's the weather in ${location}: ${current.condition.description.toLowerCase()}. The temperature is ${weatherService.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity.`;
+            // Use conversational formatter for current weather
+            return conversationalFormatter.formatWeather(conversationalData, true);
           }
         } else {
           // No weather data available, try to refresh
           const locationSet = weatherService.getLocation();
+          logger.log('WEATHER', `No cached data. Location set: ${!!locationSet}`, 'warning');
 
           if (!locationSet) {
             // Try to automatically get user's current location if no location is set
+            logger.log('WEATHER', 'Attempting to auto-detect location...', 'info');
             const locationFound = await weatherService.useCurrentLocation();
             if (locationFound) {
+              logger.log('WEATHER', 'Location detected, fetching weather...', 'info');
               // Location was successfully set, now try to refresh
               await weatherService.refresh();
               const newData = weatherService.getData();
               if (newData) {
-                const current = newData.current;
-                const location = newData.location.name;
-                return `Currently in ${location}, it's ${current.condition.description.toLowerCase()}. The temperature is ${weatherService.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity. Winds are blowing at ${(current.windSpeed * 0.621371).toFixed(1)} mph from the ${weatherService.getWindDirectionLabel(current.windDirection)}.`;
+                const conversationalData = {
+                  temperature: newData.current.temperature,
+                  feelsLike: newData.current.feelsLike,
+                  humidity: newData.current.humidity,
+                  condition: newData.current.condition.description,
+                  windSpeed: newData.current.windSpeed,
+                  windDirection: newData.current.windDirection,
+                  precipitation: newData.current.precipitation,
+                  location: newData.location.name
+                };
+                return conversationalFormatter.formatWeather(conversationalData, true);
               }
+            } else {
+              logger.log('WEATHER', 'Auto-location failed - user may need to set location manually', 'warning');
             }
           } else {
             // Location was already set, try to refresh
+            logger.log('WEATHER', `Refreshing weather for: ${locationSet.name}`, 'info');
             await weatherService.refresh();
             const newData = weatherService.getData();
             if (newData) {
-              const current = newData.current;
-              const location = newData.location.name;
-              return `Currently in ${location}, it's ${current.condition.description.toLowerCase()}. The temperature is ${weatherService.formatTemperatureOnlyFahrenheit(current.temperature)} with ${current.humidity}% humidity. Winds are blowing at ${(current.windSpeed * 0.621371).toFixed(1)} mph from the ${weatherService.getWindDirectionLabel(current.windDirection)}.`;
+              logger.log('WEATHER', `Fresh data received: ${Math.round(newData.current.temperature)}°F in ${newData.location.name}`, 'success');
+              const conversationalData = {
+                temperature: newData.current.temperature,
+                feelsLike: newData.current.feelsLike,
+                humidity: newData.current.humidity,
+                condition: newData.current.condition.description,
+                windSpeed: newData.current.windSpeed,
+                windDirection: newData.current.windDirection,
+                precipitation: newData.current.precipitation,
+                location: newData.location.name
+              };
+              return conversationalFormatter.formatWeather(conversationalData, true);
+            } else {
+              logger.log('WEATHER', 'Refresh returned null data', 'error');
             }
           }
 
-          return "I couldn't retrieve weather data. The weather service may be temporarily unavailable or location access was denied.";
+          return "I'm having trouble getting the weather data right now. The service might be temporarily unavailable, or I may need you to set your location in Settings.";
         }
       } catch (error: unknown) {
         const result = `Error retrieving weather information: ${error instanceof Error ? error.message : 'Unknown error'}`;
         logger.log('WEATHER', result, 'error');
-        return result;
+        return `I'm having trouble getting the weather data right now. ${error instanceof Error ? error.message : 'Please try again in a moment.'}`;
       }
     } else if (lowerInput.includes('home assistant') || lowerInput.includes('smart home') || lowerInput.includes('connected') || lowerInput.includes('integration')) {
       // Handle queries about Home Assistant integration
@@ -1122,21 +1324,40 @@ export class KernelProcessor {
         return result;
       }
     } else if (lowerInput.includes('time') || lowerInput.includes('date') || lowerInput.includes('clock') || lowerInput.includes('day')) {
-      // Handle date and time queries
+      // Handle date and time queries - v2.0: More conversational
       const now = new Date();
-      const options: Intl.DateTimeFormatOptions = {
+      const name = jarvisPersonality.getUserName();
+      
+      const timeString = now.toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit'
+      });
+      const dateString = now.toLocaleDateString('en-US', {
         weekday: 'long',
-        year: 'numeric',
         month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short'
-      };
-      const dateTimeString = now.toLocaleString('en-US', options);
-
-      const result = `The current date and time is ${dateTimeString}.`;
+        day: 'numeric'
+      });
+      
+      const hour = now.getHours();
+      let timeOfDay = '';
+      if (hour < 12) timeOfDay = 'morning';
+      else if (hour < 17) timeOfDay = 'afternoon';
+      else if (hour < 21) timeOfDay = 'evening';
+      else timeOfDay = 'night';
+      
+      let result = '';
+      if (lowerInput.includes('time') && !lowerInput.includes('date')) {
+        result = name 
+          ? `It's ${timeString}, ${name}. Good ${timeOfDay}!`
+          : `It's ${timeString}. Good ${timeOfDay}!`;
+      } else if (lowerInput.includes('date') && !lowerInput.includes('time')) {
+        result = `Today is ${dateString}.`;
+      } else {
+        result = name
+          ? `It's ${timeString} on ${dateString}, ${name}.`
+          : `It's ${timeString} on ${dateString}.`;
+      }
+      
       logger.log('SYSTEM', result, 'info');
       return result;
     } else if (isHomeAssistantQuery(lowerInput)) {
@@ -1166,9 +1387,52 @@ export class KernelProcessor {
         return result;
       }
     } else {
-      // General Query - Use intelligence-enhanced context
+      // General Query - Use intelligence-enhanced context with memory retrieval
+      // v2.0: Add thinking indicator for complex queries
+      const isComplexQuery = this.isComplexQuery(input);
+      
+      // v2.0: Speak thinking indicator for voice-originated complex queries
+      if (isComplexQuery && context.origin === 'USER_VOICE' && voice.getState() !== 'MUTED') {
+        const thinkingIndicator = jarvisPersonality.getThinkingIndicator();
+        try {
+          await voice.speak(thinkingIndicator);
+        } catch (e) {
+          // Silent fail - thinking indicator is optional
+        }
+      }
+      
       let prompt = input + correctionContext;
       let systemInstruction = intelligenceResult?.systemPrompt || "You are JARVIS, an advanced AI assistant. Be concise and helpful.";
+
+      // v1.5.1: Smart Context Routing - automatically detect and fetch relevant context
+      try {
+        const { enrichedPrompt, systemContext, enrichedContext } = await enrichQueryWithContext(input);
+        
+        if (enrichedContext.hasRelevantData) {
+          // Use enriched prompt and add system context
+          prompt = enrichedPrompt + correctionContext;
+          systemInstruction += systemContext;
+          
+          logger.log('KERNEL', 
+            `Enriched query with ${enrichedContext.source} data`, 
+            'success'
+          );
+        } else {
+          // Fallback: Try basic memory recall for personal queries that might have been missed
+          const isLikelyPersonal = /\b(my name|who am i|my hobby|my favorite|what do i like|what did i)\b/i.test(input);
+          if (isLikelyPersonal) {
+            const memoryResults = await vectorMemoryService.recall(input, 3);
+            if (memoryResults.length > 0) {
+              const memoryContext = '\n\nRELEVANT MEMORIES:\n' + 
+                memoryResults.map(r => `- ${r.node.content}`).join('\n');
+              systemInstruction += memoryContext;
+              logger.log('MEMORY', `Fallback: Retrieved ${memoryResults.length} memories for personal query`, 'info');
+            }
+          }
+        }
+      } catch (error) {
+        logger.log('KERNEL', `Context enrichment failed: ${error}`, 'warning');
+      }
 
       // Use intelligence-enhanced user prompt if available
       if (intelligenceResult?.userPrompt && intelligenceResult.userPrompt !== input) {
@@ -1188,15 +1452,47 @@ export class KernelProcessor {
         systemInstruction
       }, selectedProvider);
 
-      // Post-process with intelligence system for naturalness
+      // v2.0: Post-process with intelligence system for naturalness and name insertion
+      let finalResponse = response.text;
       if (intelligenceResult) {
-        const result = intelligence.postProcessResponse(response.text, intelligenceResult.responseModifiers);
+        finalResponse = intelligence.postProcessResponse(response.text, intelligenceResult.responseModifiers);
         logger.log('INTELLIGENCE', `Response naturalized: ${intelligenceResult.responseModifiers.tone} tone`, 'info');
-        return result;
-      } else {
-        return response.text;
       }
+      
+      // v2.0: Naturally insert user's name if appropriate
+      if (jarvisPersonality.knowsUserName() && Math.random() > 0.6) {
+        finalResponse = jarvisPersonality.naturallyInsertName(finalResponse);
+      }
+      
+      return finalResponse;
     }
+  }
+
+  /**
+   * v2.0: Determine if a query is complex enough to warrant a thinking indicator
+   */
+  private isComplexQuery(input: string): boolean {
+    const lower = input.toLowerCase();
+    
+    // Indicators of complexity
+    const complexIndicators = [
+      // Multiple questions
+      (text: string) => (text.match(/\?/g) || []).length > 1,
+      // Long queries
+      (text: string) => text.length > 100,
+      // Research/analysis keywords
+      (text: string) => /\b(explain|analyze|compare|research|why|how does|what if)\b/i.test(text),
+      // Calculation or reasoning
+      (text: string) => /\b(calculate|compute|determine|figure out|solve)\b/i.test(text),
+      // Multiple parts (commas, and, or)
+      (text: string) => text.split(',').length > 2 || text.split(/\s+and\s+/).length > 2,
+      // Creative writing
+      (text: string) => /\b(write|create|generate|story|poem|essay)\b/i.test(text),
+      // Technical depth
+      (text: string) => /\b(detailed|comprehensive|in-depth|thorough)\b/i.test(text)
+    ];
+    
+    return complexIndicators.some(check => check(input));
   }
 
   private async finalizeResponse(outputText: string, input: string, context: ProcessorContext, intelligenceResult: IntelligenceResult): Promise<void> {
@@ -1205,6 +1501,23 @@ export class KernelProcessor {
       conversation.addTurn('USER', input);
       if (outputText) {
         conversation.addTurn('JARVIS', outputText);
+      }
+      
+      // v2.1: Check for proactive check-in opportunities (before finalizing response)
+      try {
+        const checkInOpportunity = await proactiveCheckIn.getPriorityCheckIn();
+        if (checkInOpportunity && !outputText.includes(checkInOpportunity.message)) {
+          // Append check-in to response if appropriate
+          const timeContext = emotionalMemory.getTimeContext();
+          if (timeContext.isReturningAfterGap && checkInOpportunity.suggestedTiming === 'after_greeting') {
+            outputText = checkInOpportunity.message + '\n\n' + outputText;
+            proactiveCheckIn.markCheckInCompleted(checkInOpportunity.moment.id);
+            logger.log('INTELLIGENCE', `Added proactive check-in: ${checkInOpportunity.type}`, 'info');
+          }
+        }
+      } catch (e) {
+        // Check-ins are optional, don't fail on error
+        logger.log('INTELLIGENCE', `Check-in check failed: ${(e as Error).message}`, 'warning');
       }
 
       context.setState(ProcessorState.IDLE);
@@ -1365,6 +1678,119 @@ export class KernelProcessor {
     }
     
     return `I've completed ${completedCount} out of ${taskCount} tasks. The main objectives have been achieved.`;
+  }
+
+  // ==================== v2.1 EMOTIONAL INTELLIGENCE METHODS ====================
+
+  /**
+   * Generate a contextual, emotionally intelligent greeting
+   */
+  async generateContextualGreeting(origin: 'voice' | 'text' = 'text'): Promise<string> {
+    try {
+      const greeting = await contextualGreeting.generateGreeting(origin);
+      return greeting.greeting;
+    } catch (error) {
+      logger.log('INTELLIGENCE', `Greeting generation failed: ${(error as Error).message}`, 'error');
+      // Fallback to basic greeting
+      return jarvisPersonality.generateGreeting();
+    }
+  }
+
+  /**
+   * Get current mood state
+   */
+  getCurrentMood() {
+    return emotionalMemory.getCurrentMood();
+  }
+
+  /**
+   * Get suggested response style based on user's mood
+   */
+  getResponseStyleSuggestion() {
+    return contextualGreeting.getResponseStyleSuggestion();
+  }
+
+  /**
+   * Get time context (for external use)
+   */
+  getTimeContext() {
+    return emotionalMemory.getTimeContext();
+  }
+
+  /**
+   * Initialize emotional intelligence services
+   */
+  async initializeEmotionalIntelligence(): Promise<void> {
+    try {
+      await emotionalMemory.initialize();
+      await contextualGreeting.initialize();
+      await proactiveCheckIn.initialize();
+      
+      // Phase 1, Task 1: Initialize proactive event handler
+      proactiveEventHandler.initialize();
+      
+      logger.log('INTELLIGENCE', 'Emotional intelligence services initialized', 'success');
+    } catch (error) {
+      logger.log('INTELLIGENCE', `Failed to initialize emotional intelligence: ${(error as Error).message}`, 'error');
+    }
+  }
+
+  /**
+   * Check if there are proactive check-ins available
+   */
+  async getProactiveCheckIns(): Promise<import('./intelligence').CheckInOpportunity[]> {
+    return proactiveCheckIn.checkForOpportunities();
+  }
+
+  /**
+   * Mark a concern as resolved
+   */
+  async resolveConcern(momentId: string, resolution?: string): Promise<void> {
+    await proactiveCheckIn.resolveConcern(momentId, resolution);
+  }
+
+  // ==================== Phase 1, Task 2: Natural Response Utilities ====================
+
+  /**
+   * Generate a natural acknowledgment response
+   */
+  generateAcknowledgment(): string {
+    return naturalResponse.generateAcknowledgment();
+  }
+
+  /**
+   * Generate a thinking/processing indicator
+   */
+  generateThinkingIndicator(): string {
+    return naturalResponse.generateThinkingIndicator();
+  }
+
+  /**
+   * Generate a success response
+   */
+  generateSuccessResponse(): string {
+    return naturalResponse.generateSuccessResponse();
+  }
+
+  /**
+   * Generate an error response with empathy
+   */
+  generateErrorResponse(includeRetry: boolean = true): string {
+    return naturalResponse.generateErrorResponse(includeRetry);
+  }
+
+  /**
+   * Format a list naturally
+   */
+  formatListNaturally(items: string[], intro?: string): string {
+    return naturalResponse.formatList(items, intro);
+  }
+
+  /**
+   * Generate uncertainty response
+   */
+  generateUncertaintyResponse(offerHelp: boolean = true): string {
+    return naturalResponse.generateUncertaintyResponse(offerHelp);
   }
 }
 

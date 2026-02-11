@@ -35,15 +35,10 @@ class HomeAssistantService {
   }
 
   private async updateProxyConfig(url: string, token: string): Promise<void> {
-    let timeoutId: NodeJS.Timeout | null = null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
     try {
-      // Wait a bit to ensure proxy is running
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Create an AbortController for timeout
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-
       const response = await fetch(`${this.proxyUrl}/config`, {
         method: 'POST',
         headers: {
@@ -54,21 +49,21 @@ class HomeAssistantService {
       });
 
       clearTimeout(timeoutId);
-      timeoutId = null;
 
       if (!response.ok) {
-        console.error('Failed to update proxy configuration:', response.statusText);
-      } else {
-        console.log('[HOME_ASSISTANT] Proxy configuration updated successfully');
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Proxy config failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
+      
+      console.log('[HOME_ASSISTANT] Proxy configuration updated successfully');
     } catch (error) {
-      // Clear timeout if fetch completes before timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+      clearTimeout(timeoutId);
+      
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Proxy configuration timed out - proxy may not be running');
       }
-
-      console.error('Error updating proxy configuration:', error);
-      console.log('[HOME_ASSISTANT] Proxy server may not be running. Please ensure "npm run proxy" is started.');
+      
+      throw error;
     }
   }
 
@@ -84,17 +79,42 @@ class HomeAssistantService {
     }
 
     try {
-      // First ensure proxy is configured
-      await this.updateProxyConfig(this.baseUrl, this.token);
-      // Wait a moment for configuration to propagate
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // First ensure proxy is configured with retry
+      await this.updateProxyConfigWithRetry(this.baseUrl, this.token, 3);
+      
+      // Wait for configuration to propagate
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Fetch entities to verify connection
       await this.fetchEntities();
+      
       this._initialized = true;
       console.log("[HOME_ASSISTANT] Service initialized successfully");
     } catch (error) {
       console.error("Failed to initialize Home Assistant service:", error);
+      this._initialized = false;
       throw error;
     }
+  }
+
+  private async updateProxyConfigWithRetry(url: string, token: string, maxRetries: number = 3): Promise<void> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.updateProxyConfig(url, token);
+        return; // Success
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`[HOME_ASSISTANT] Proxy config attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+        
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+        }
+      }
+    }
+    
+    throw new Error(`Failed to configure proxy after ${maxRetries} attempts: ${lastError?.message}`);
   }
 
   public async fetchEntities(): Promise<void> {
@@ -103,31 +123,29 @@ class HomeAssistantService {
     }
 
     try {
-      // First, ensure proxy is configured
-      await this.updateProxyConfig(this.baseUrl, this.token);
-
-      // Check if proxy is available first
-      try {
-        const statusResponse = await fetch(`${this.proxyUrl}/status`);
-        if (!statusResponse.ok) {
-          console.warn("[HOME_ASSISTANT] Proxy server not responding, attempting to fetch entities anyway...");
-        }
-      } catch (statusError) {
-        console.warn("[HOME_ASSISTANT] Could not reach proxy server, attempting to fetch entities anyway...");
+      // Only update proxy config if not already initialized
+      // (during initialization, it's already configured)
+      if (!this._initialized) {
+        await this.updateProxyConfig(this.baseUrl, this.token);
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Wait a moment for the configuration to propagate
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
       const response = await fetch(`${this.proxyUrl}/ha-api/states`, {
         headers: {
           'Authorization': `Bearer ${this.token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch entities: ${response.status} ${response.statusText}`);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`Failed to fetch entities: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const entities: HAEntity[] = await response.json();
@@ -137,7 +155,12 @@ class HomeAssistantService {
       entities.forEach(entity => {
         this.entities.set(entity.entity_id, entity);
       });
+      
+      console.log(`[HOME_ASSISTANT] Fetched ${entities.length} entities`);
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Fetch entities timed out - check proxy and Home Assistant connectivity');
+      }
       console.error("Error fetching entities from Home Assistant:", error);
       throw error;
     }
@@ -345,9 +368,41 @@ class HomeAssistantService {
       return { connected: false, entitiesCount: 0, error: "Not configured" };
     }
 
+    // Quick check: verify proxy is reachable first
     try {
-      // First ensure proxy is configured
-      await this.updateProxyConfig(this.baseUrl, this.token);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const proxyHealth = await fetch(`${this.proxyUrl}/health`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!proxyHealth.ok) {
+        return { 
+          connected: false, 
+          entitiesCount: 0, 
+          error: "Proxy server not responding",
+          initialized: false 
+        };
+      }
+    } catch (error) {
+      return { 
+        connected: false, 
+        entitiesCount: 0, 
+        error: "Proxy server not running - start with: npm run proxy",
+        initialized: false 
+      };
+    }
+
+    try {
+      // Only update proxy config if not initialized
+      if (!this._initialized) {
+        await this.updateProxyConfig(this.baseUrl, this.token);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
       await this.fetchEntities();
       return {
         connected: true,

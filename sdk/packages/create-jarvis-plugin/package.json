@@ -1,0 +1,25 @@
+{
+  "name": "create-jarvis-plugin",
+  "version": "1.0.0",
+  "description": "CLI tool to scaffold JARVIS plugins",
+  "type": "module",
+  "bin": {
+    "create-jarvis-plugin": "./bin/create-jarvis-plugin.js",
+    "jarvis-plugin": "./bin/jarvis-plugin.js"
+  },
+  "scripts": {
+    "dev": "node bin/jarvis-plugin.js dev",
+    "validate": "node bin/jarvis-plugin.js validate"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "inquirer": "^9.2.0",
+    "fs-extra": "^11.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["jarvis", "plugin", "cli", "scaffold"],
+  "license": "MIT"
+}

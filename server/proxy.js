@@ -244,6 +244,62 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Home Assistant Proxy', timestamp: new Date().toISOString() });
 });
 
+// Shutdown endpoint - gracefully shuts down all JARVIS services
+app.options('/api/shutdown', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(200);
+});
+
+app.post('/api/shutdown', async (req, res) => {
+  console.log('[PROXY] Shutdown requested from client');
+  
+  // Set CORS headers explicitly for this endpoint
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  
+  res.json({ 
+    success: true, 
+    message: 'Shutdown initiated',
+    timestamp: new Date().toISOString()
+  });
+  
+  // Give the response time to send before shutting down
+  setTimeout(() => {
+    console.log('[PROXY] Executing shutdown sequence...');
+    
+    // On Windows, we need to kill the Node.js processes
+    if (process.platform === 'win32') {
+      // Kill by window title patterns
+      const { spawn } = require('child_process');
+      
+      // Kill Vite dev server
+      spawn('taskkill', ['/F', '/FI', 'WINDOWTITLE eq *Vite*', '/T'], { 
+        windowsHide: true, 
+        stdio: 'ignore' 
+      });
+      
+      // Kill Node.js processes related to JARVIS
+      spawn('taskkill', ['/F', '/FI', 'IMAGENAME eq node.exe', '/FI', "COMMANDLINE eq *jarvis*", '/T'], { 
+        windowsHide: true, 
+        stdio: 'ignore' 
+      });
+      
+      // Kill Python services
+      spawn('taskkill', ['/F', '/FI', 'IMAGENAME eq python.exe', '/FI', "COMMANDLINE eq *jarvis*", '/T'], { 
+        windowsHide: true, 
+        stdio: 'ignore' 
+      });
+    }
+    
+    // Exit the proxy server itself
+    console.log('[PROXY] Exiting...');
+    process.exit(0);
+  }, 500);
+});
+
 // Helper function to sanitize path
 function sanitizePath(path) {
   // Remove any directory traversal attempts - multiple iterations to handle cases like ....//
@@ -449,6 +505,7 @@ app.listen(PORT, () => {
   console.log('Routes:');
   console.log('  POST /config - Set Home Assistant URL and token');
   console.log('  POST /save-api-key - Save API key to .env.local file');
+  console.log('  POST /api/shutdown - Shutdown JARVIS services');
   console.log('  GET  /status - Get configuration status');
   console.log('  GET  /health - Health check');
   console.log('  ALL  /ha-api/* - Proxy to Home Assistant API');

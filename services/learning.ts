@@ -29,6 +29,14 @@ const PREFERENCE_PATTERNS = [
   { pattern: /i\s+live\s+in\s+(.+)/i, type: 'location' },
   { pattern: /i\s+work\s+(at|for)\s+(.+)/i, type: 'work' },
   { pattern: /call\s+me\s+(.+)/i, type: 'identity' },
+  // Hobby patterns
+  { pattern: /my\s+hobbies\s+(?:are|include)\s+(.+)/i, type: 'hobby' },
+  { pattern: /my\s+hobby\s+is\s+(.+)/i, type: 'hobby' },
+  { pattern: /i\s+(?:enjoy|love|like)\s+(.+?)\s+(?:as\s+(?:a\s+)?hobby|for\s+fun)/i, type: 'hobby' },
+  { pattern: /i'?m?\s+into\s+(.+)/i, type: 'hobby' },
+  { pattern: /i\s+do\s+(.+?)\s+(?:as\s+(?:a\s+)?hobby|for\s+fun|in\s+my\s+(?:free\s+)?time)/i, type: 'hobby' },
+  { pattern: /(?:i\s+)?(?:like|love|enjoy)\s+(hydroponics|coding|electronics|gaming|cooking|reading|hiking|photography|music|art|sports)/i, type: 'hobby' },
+  { pattern: /i\s+like\s+to\s+(.+)/i, type: 'hobby' },
 ];
 
 export interface Correction {
@@ -148,12 +156,37 @@ class LearningService {
             case 'work':
               memoryContent = `User works at: ${content}`;
               break;
+            case 'hobby':
+              memoryContent = `User hobby: ${content}`;
+              break;
             default:
               memoryContent = content;
           }
 
-          // Store in memory
+          // Store in legacy memory (will be synced to VectorDB)
           await memory.store(memoryContent, 'PREFERENCE', ['auto_learned', type]);
+          
+          // v1.5.1: Also store directly in VectorDB for immediate availability
+          // This ensures identity is searchable right away without waiting for sync
+          try {
+            const { vectorMemoryService } = await import('./vectorMemoryService');
+            if (type === 'identity') {
+              await vectorMemoryService.storeIdentity(content);
+            } else {
+              await vectorMemoryService.store({
+                id: `learned_${Date.now()}`,
+                content: memoryContent,
+                type: 'PREFERENCE',
+                tags: ['auto_learned', type],
+                created: Date.now(),
+                lastAccessed: Date.now(),
+              });
+            }
+          } catch (vectorError) {
+            // Non-critical: sync service will eventually sync from legacy memory
+            console.log('[LEARNING] Direct VectorDB store failed, will rely on sync:', vectorError);
+          }
+          
           console.log('[LEARNING] Learned preference:', memoryContent);
 
           return preference;

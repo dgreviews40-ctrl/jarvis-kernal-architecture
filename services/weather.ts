@@ -309,11 +309,14 @@ class WeatherService {
     try {
       const { latitude, longitude, timezone, name, country, admin1 } = this.currentLocation;
 
-      // Fetch weather data
+      // Fetch weather data (using Fahrenheit for US users)
       const weatherUrl = new URL('https://api.open-meteo.com/v1/forecast');
       weatherUrl.searchParams.set('latitude', latitude.toString());
       weatherUrl.searchParams.set('longitude', longitude.toString());
       weatherUrl.searchParams.set('timezone', timezone);
+      weatherUrl.searchParams.set('temperature_unit', 'fahrenheit');
+      weatherUrl.searchParams.set('wind_speed_unit', 'mph');
+      weatherUrl.searchParams.set('precipitation_unit', 'inch');
       weatherUrl.searchParams.set('current', [
         'temperature_2m', 'relative_humidity_2m', 'apparent_temperature',
         'is_day', 'precipitation', 'weather_code', 'cloud_cover',

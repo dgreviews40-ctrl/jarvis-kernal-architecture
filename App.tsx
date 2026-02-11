@@ -5,6 +5,7 @@ import { PluginManager } from './components/PluginManager';
 import { MemoryBank } from './components/MemoryBank';
 import { NetworkControl } from './components/NetworkControl';
 import { VoiceHUD } from './components/VoiceHUD';
+import { ProactiveSuggestions } from './components/ProactiveSuggestions';
 import { SystemMonitor } from './components/SystemMonitor';
 import { BootSequence } from './components/BootSequence';
 import { BootSequenceFast } from './components/BootSequenceFast';
@@ -140,6 +141,7 @@ const NotificationBell: React.FC = () => {
         )}
       </button>
       <NotificationCenter isOpen={showCenter} onClose={() => setShowCenter(false)} />
+      <ProactiveSuggestions />
     </>
   );
 };
@@ -446,78 +448,108 @@ const App: React.FC = () => {
 
   // Initialize Home Assistant once when component mounts
   useEffect(() => {
-    let initTimeout: NodeJS.Timeout;
+    let isCancelled = false;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 2000;
 
     const initializeHomeAssistant = async () => {
       const haUrl = localStorage.getItem('HA_URL');
       const haToken = localStorage.getItem('HA_TOKEN');
 
-      if (haUrl && haToken && !haService.initialized) { // Only initialize if not already initialized
-        try {
-          // Check proxy server health first
+      if (!haUrl || !haToken) {
+        addLog('HOME_ASSISTANT', 'Not configured - skipping initialization', 'info');
+        return;
+      }
+
+      if (haService.initialized) {
+        addLog('HOME_ASSISTANT', 'Already connected', 'info');
+        return;
+      }
+
+      // Wait for proxy to be ready with retries
+      const waitForProxy = async (): Promise<boolean> => {
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          if (isCancelled) return false;
+          
           try {
             const healthResponse = await fetch('http://localhost:3101/health', {
               method: 'GET',
-              signal: AbortSignal.timeout(2000) // 2 second timeout
+              signal: AbortSignal.timeout(3000)
             });
 
-            if (!healthResponse.ok) {
-              throw new Error('Proxy server is not responding');
+            if (healthResponse.ok) {
+              addLog('HOME_ASSISTANT', `Proxy server ready (attempt ${attempt}/${MAX_RETRIES})`, 'success');
+              return true;
             }
-
-            addLog('HOME_ASSISTANT', 'Proxy server health check passed', 'success');
-          } catch (healthError) {
-            addLog('HOME_ASSISTANT', `Proxy server health check failed: ${(healthError as Error).message}`, 'error');
-            return; // Don't proceed if proxy isn't healthy
+          } catch (error) {
+            addLog('HOME_ASSISTANT', `Proxy not ready (attempt ${attempt}/${MAX_RETRIES})`, 'warning');
+            if (attempt < MAX_RETRIES) {
+              await new Promise(r => setTimeout(r, RETRY_DELAY));
+            }
           }
-
-          // Add a delay to ensure proxy server is running
-          initTimeout = setTimeout(async () => {
-            haService.configure(haUrl, haToken);
-            addLog('HOME_ASSISTANT', 'Configuration loaded. Initializing connection...', 'info');
-
-            // First update the proxy server configuration
-            try {
-              const configResponse = await fetch('http://localhost:3101/config', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ url: haUrl, token: haToken })
-              });
-
-              if (!configResponse.ok) {
-                throw new Error(`Failed to configure proxy: ${configResponse.status} ${configResponse.statusText}`);
-              }
-
-              addLog('HOME_ASSISTANT', 'Proxy server configured successfully', 'success');
-            } catch (configError) {
-              addLog('HOME_ASSISTANT', `Failed to configure proxy server: ${(configError as Error).message}`, 'error');
-              return; // Don't proceed if proxy isn't configured
-            }
-
-            // Attempt to initialize the connection
-            await haService.initialize();
-            addLog('HOME_ASSISTANT', 'Connected to Home Assistant successfully!', 'success');
-          }, 2000); // Reduced delay since we already verified proxy health
-        } catch (error) {
-          addLog('HOME_ASSISTANT', `Failed to configure Home Assistant: ${(error as Error).message}`, 'error');
         }
-      } else if (haUrl && haToken && haService.initialized) {
-        // Already initialized, just log the status
-        addLog('HOME_ASSISTANT', 'Home Assistant already connected', 'info');
+        return false;
+      };
+
+      try {
+        // Wait for proxy to be ready
+        const proxyReady = await waitForProxy();
+        if (!proxyReady || isCancelled) {
+          addLog('HOME_ASSISTANT', 'Proxy server not available after retries. Start the proxy with: npm run proxy', 'error');
+          return;
+        }
+
+        // Configure the HA service
+        haService.configure(haUrl, haToken);
+        addLog('HOME_ASSISTANT', 'Configuring proxy server...', 'info');
+
+        // Configure the proxy server
+        const configResponse = await fetch('http://localhost:3101/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: haUrl, token: haToken })
+        });
+
+        if (!configResponse.ok) {
+          const errorText = await configResponse.text().catch(() => 'Unknown error');
+          throw new Error(`Proxy config failed: ${configResponse.status} - ${errorText}`);
+        }
+
+        addLog('HOME_ASSISTANT', 'Proxy configured. Connecting to Home Assistant...', 'success');
+
+        // Wait a moment for config to propagate
+        await new Promise(r => setTimeout(r, 500));
+
+        if (isCancelled) return;
+
+        // Initialize the connection
+        await haService.initialize();
+        addLog('HOME_ASSISTANT', 'Connected successfully!', 'success');
+        
+        // Fetch and log entity count
+        const status = await haService.getStatus();
+        if (status.connected) {
+          addLog('HOME_ASSISTANT', `Found ${status.entitiesCount} entities`, 'info');
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          addLog('HOME_ASSISTANT', `Connection failed: ${errorMsg}`, 'error');
+          console.error('[HOME_ASSISTANT] Initialization error:', error);
+        }
       }
     };
 
-    initializeHomeAssistant();
+    // Delay initial check to allow system to settle
+    const initTimeout = setTimeout(() => {
+      initializeHomeAssistant();
+    }, 1000);
 
-    // Cleanup function to clear timeout if component unmounts
     return () => {
-      if (initTimeout) {
-        clearTimeout(initTimeout);
-      }
+      isCancelled = true;
+      clearTimeout(initTimeout);
     };
-  }, []); // Empty dependency array - initTimeout is local, not from closure
+  }, []); // Empty dependency array - runs once on mount
   
   // Sync hardware state separately when processor state changes
   useEffect(() => {
@@ -589,13 +621,40 @@ if (view === 'MODEL_MANAGER') return <div className="h-screen w-screen"><LazyVie
 
   const isMainDashboard = activeTab === 'DASHBOARD';
 
-  // Shutdown JARVIS - calls launcher API to stop all services
+  // Shutdown JARVIS - calls dedicated shutdown server
   const handleExit = async () => {
     if (confirm('Shutdown JARVIS? This will close all services and the browser.')) {
       try {
-        await fetch('http://localhost:9999/api/shutdown', { method: 'POST' });
+        console.log('[SHUTDOWN] Sending shutdown request to port 9999...');
+        
+        // Call the dedicated shutdown server (port 9999)
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        
+        const response = await fetch('http://localhost:9999/api/shutdown', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          mode: 'cors',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeout);
+        
+        if (response.ok) {
+          console.log('[SHUTDOWN] Shutdown command accepted by server');
+        } else {
+          console.warn('[SHUTDOWN] Server returned error:', response.status);
+        }
       } catch (e) {
-        console.log('Shutdown requested');
+        console.log('[SHUTDOWN] Server request failed (may already be shutting down or server not running):', e);
+      } finally {
+        // Show feedback to user
+        alert('JARVIS shutdown initiated. All services will stop momentarily.');
+        
+        // Try to close the window (may not work for manually opened windows)
+        setTimeout(() => {
+          window.close();
+        }, 500);
       }
     }
   };

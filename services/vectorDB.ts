@@ -528,6 +528,12 @@ export class VectorDB {
   public async generateEmbeddingsBatch(texts: string[]): Promise<Float32Array[]> {
     await this.ensureInitialized();
     
+    // Validate input
+    if (!texts || !Array.isArray(texts) || texts.length === 0) {
+      logger.log('VECTOR_DB', 'Invalid input to generateEmbeddingsBatch, returning empty array', 'warning');
+      return [];
+    }
+    
     if (this.embeddingBackend === 'embedding_server' && texts.length > 1) {
       try {
         const controller = new AbortController();
@@ -665,7 +671,7 @@ export class VectorDB {
         metadata: {
           content: node.content,
           type: node.type,
-          tags: node.tags,
+          tags: node.tags || [],
           created: node.created,
           lastAccessed: node.lastAccessed || Date.now(),
           accessCount: 0,
@@ -734,7 +740,7 @@ export class VectorDB {
             metadata: {
               content: node.content,
               type: node.type,
-              tags: node.tags,
+              tags: node.tags || [],
               created: node.created,
               lastAccessed: node.lastAccessed || Date.now(),
               accessCount: 0,

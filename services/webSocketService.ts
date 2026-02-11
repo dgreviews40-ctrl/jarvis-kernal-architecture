@@ -81,7 +81,8 @@ export class WebSocketService {
       };
 
       socket.onerror = (error) => {
-        logger.log('SYSTEM', `WebSocket error: ${String(error)}`, 'error');
+        // Log as info only - WebSocket server is optional
+        logger.log('SYSTEM', `WebSocket connection failed (server may not be running)`, 'info');
       };
 
       logger.log('SYSTEM', `Connecting to WebSocket server: ${serverUrl}`, 'info');

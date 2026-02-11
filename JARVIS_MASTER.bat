@@ -67,7 +67,20 @@ call :CheckPort 3101 PROXY
 :: 3. Piper TTS (Python) - Optional but attempted
 echo [3/7] Starting Piper TTS (Python)...
 if %PYTHON_AVAILABLE% == 1 (
-    start "JARVIS-PIPER[Python]" /MIN cmd /c "python whisper_server.py ^> temp/piper.log 2^>^&1"
+    :: Check for ANY .onnx voice file (not just jarvis)
+    set "VOICE_FOUND=0"
+    for %%f in ("Piper\voices\*.onnx") do (
+        set "VOICE_FOUND=1"
+        set "VOICE_FILE=%%~nxf"
+    )
+    
+    if !VOICE_FOUND!==1 (
+        echo [OK] Piper voice found: !VOICE_FILE!
+        start "JARVIS-PIPER[Python]" /MIN cmd /c "python Piper\piper_server.py ^> temp/piper.log 2^>^&1"
+    ) else (
+        echo [INFO] No Piper voices found - install voices to enable TTS
+        echo       Voices can be selected in Settings once installed
+    )
     timeout /t 3 /nobreak >nul
     call :CheckPortSilent 5000 PIPER
 echo [7/8] Starting Whisper STT (Python)...

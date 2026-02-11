@@ -25,7 +25,11 @@ from functools import lru_cache
 PORT = 5000
 PIPER_DIR = os.path.dirname(os.path.abspath(__file__))
 PIPER_EXE = os.path.join(PIPER_DIR, "piper.exe")
-DEFAULT_VOICE = os.path.join(PIPER_DIR, "voices", "jarvis.onnx")
+
+# Voice selection - use environment variable or default to jarvis
+# Set PIPER_VOICE=alan to use the British voice
+VOICE_NAME = os.environ.get('PIPER_VOICE', 'jarvis')
+DEFAULT_VOICE = os.path.join(PIPER_DIR, "voices", f"{VOICE_NAME}.onnx")
 
 # NEW: Simple in-memory cache for repeated phrases
 # Format: {text_hash: (audio_data, timestamp)}
@@ -55,12 +59,32 @@ class PiperHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            voices = [{
-                'name': 'jarvis',
-                'language': 'en_GB',
-                'quality': 'high',
-                'description': 'JARVIS voice model (optimized)'
-            }]
+            
+            # Scan for available voices
+            voices_dir = os.path.join(PIPER_DIR, "voices")
+            voices = []
+            
+            if os.path.exists(voices_dir):
+                for file in os.listdir(voices_dir):
+                    if file.endswith('.onnx') and not file.endswith('.json'):
+                        voice_name = file.replace('.onnx', '')
+                        voice_info = {
+                            'name': voice_name,
+                            'language': 'en_GB' if voice_name in ['alan', 'joe', 'amy'] else 'en_US',
+                            'quality': 'high',
+                            'description': f'{voice_name} voice model'
+                        }
+                        voices.append(voice_info)
+            
+            # Fallback if no voices found
+            if not voices:
+                voices = [{
+                    'name': VOICE_NAME,
+                    'language': 'en_GB' if VOICE_NAME in ['alan', 'joe', 'amy'] else 'en_US',
+                    'quality': 'high',
+                    'description': f'{VOICE_NAME} voice model (currently active)'
+                }]
+            
             self.wfile.write(json.dumps(voices).encode())
             return
             
@@ -81,14 +105,16 @@ class PiperHandler(http.server.BaseHTTPRequestHandler):
                 length_scale = data.get('length_scale', 0.75)  # OPTIMIZED: Default to faster
                 noise_scale = data.get('noise_scale', 0.667)
                 noise_w = data.get('noise_w', 0.8)
+                voice_name = data.get('voice', VOICE_NAME)  # NEW: Support voice selection
                 
                 if not text:
                     self.send_response(400)
+                    self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     return
                 
                 # NEW: Check cache for repeated phrases
-                cache_key = f"{text}_{speaker_id}_{length_scale}_{noise_scale}_{noise_w}"
+                cache_key = f"{text}_{voice_name}_{speaker_id}_{length_scale}_{noise_scale}_{noise_w}"
                 cached_result = self._get_from_cache(cache_key)
                 
                 if cached_result:
@@ -98,11 +124,12 @@ class PiperHandler(http.server.BaseHTTPRequestHandler):
                 
                 # Generate audio using Piper
                 audio_data = self._synthesize_audio(
-                    text, speaker_id, length_scale, noise_scale, noise_w
+                    text, voice_name, speaker_id, length_scale, noise_scale, noise_w
                 )
                 
                 if audio_data is None:
                     self.send_response(500)
+                    self.send_header('Access-Control-Allow-Origin', '*')
                     self.end_headers()
                     return
                 
@@ -113,23 +140,37 @@ class PiperHandler(http.server.BaseHTTPRequestHandler):
                 self._send_audio(audio_data)
                 
             except Exception as e:
-                print(f"Server error: {e}", file=sys.stderr)
+                import traceback
+                print(f"[PIPER] Server error: {e}", file=sys.stderr)
+                print(f"[PIPER] Traceback: {traceback.format_exc()}", file=sys.stderr)
                 self.send_response(500)
+                self.send_header('Access-Control-Allow-Origin', '*')
                 self.end_headers()
             return
             
         self.send_response(404)
+        self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
     
-    def _synthesize_audio(self, text, speaker_id, length_scale, noise_scale, noise_w):
+    def _synthesize_audio(self, text, voice_name, speaker_id, length_scale, noise_scale, noise_w):
         """Synthesize audio using Piper CLI"""
+        # Determine voice model to use
+        voice_path = os.path.join(PIPER_DIR, "voices", f"{voice_name}.onnx")
+        if not os.path.exists(voice_path):
+            # Fall back to default voice if requested voice doesn't exist
+            print(f"[PIPER] Voice '{voice_name}' not found, using default: {VOICE_NAME}", file=sys.stderr)
+            voice_path = DEFAULT_VOICE
+        else:
+            if voice_name != VOICE_NAME:
+                print(f"[PIPER] Using requested voice: {voice_name}", file=sys.stderr)
+        
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             tmp_path = tmp.name
         
         try:
             cmd = [
                 PIPER_EXE,
-                '--model', DEFAULT_VOICE,
+                '--model', voice_path,
                 '--output_file', tmp_path,
                 '--length_scale', str(length_scale),
                 '--noise_scale', str(noise_scale),
@@ -210,8 +251,10 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 def run_server():
     with ThreadedTCPServer(("", PORT), PiperHandler) as httpd:
         print(f"[PIPER] HTTP server running on port {PORT}")
-        print(f"[PIPER] Voice model: {DEFAULT_VOICE}")
+        print(f"[PIPER] Voice model: {VOICE_NAME} ({DEFAULT_VOICE})")
+        print(f"[PIPER] Language: {'British English (en-GB)' if VOICE_NAME in ['alan', 'joe', 'amy'] else 'American English (en-US)'}")
         print(f"[PIPER] Optimizations: threaded, cached")
+        print(f"[PIPER] To change voice, set PIPER_VOICE environment variable (e.g., PIPER_VOICE=alan)")
         httpd.serve_forever()
 
 if __name__ == '__main__':

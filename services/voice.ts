@@ -591,6 +591,19 @@ class VoiceCoreOptimized {
     return this.config;
   }
 
+  /**
+   * Configure natural speech flow settings
+   * Use this to make JARVIS speak more fluidly without word-by-word pauses
+   */
+  public setNaturalSpeechConfig(config: Partial<typeof this.naturalSpeechConfig>) {
+    this.naturalSpeechConfig = { ...this.naturalSpeechConfig, ...config };
+    console.log('[VOICE] Natural speech config updated:', this.naturalSpeechConfig);
+  }
+
+  public getNaturalSpeechConfig() {
+    return { ...this.naturalSpeechConfig };
+  }
+
   public toggleMute(): void {
     console.log('[VOICE] toggleMute called, current state:', this.state);
     
@@ -636,12 +649,16 @@ class VoiceCoreOptimized {
       return;
     }
     
-    const sttProvider = this.config.sttProvider || 'AUTO';
+    const sttProvider = this.config.sttProvider || 'WHISPER';
     console.log(`[VOICE] STT Provider setting: ${sttProvider}`);
+    
+    // Reset error counts when initializing
+    this.networkErrorCount = 0;
+    this.errorCount = 0;
     
     // Handle based on STT provider preference
     if (sttProvider === 'BROWSER') {
-      // Force browser STT
+      // Force browser STT - but try Whisper first if network errors occur
       console.log('[VOICE] Using browser STT (forced by settings)');
       this.startListening();
     } else if (sttProvider === 'WHISPER') {
@@ -649,8 +666,8 @@ class VoiceCoreOptimized {
       console.log('[VOICE] Using Whisper STT (forced by settings)');
       const whisperAvailable = await this.tryWhisperFallback();
       if (!whisperAvailable) {
-        console.error('[VOICE] Whisper not available but forced by settings');
-        this.setState(VoiceState.ERROR);
+        console.error('[VOICE] Whisper not available but forced by settings - trying browser fallback');
+        this.startListening(); // Fallback to browser rather than error
       }
     } else {
       // AUTO: Try Whisper first (preferred), fallback to browser STT
@@ -659,6 +676,8 @@ class VoiceCoreOptimized {
       if (!whisperAvailable) {
         console.log('[VOICE] Whisper not available, falling back to browser STT');
         this.startListening();
+      } else {
+        console.log('[VOICE] Whisper is now active');
       }
     }
   }
@@ -899,8 +918,9 @@ class VoiceCoreOptimized {
     this.lastSpokenTimestamp = now;
 
     try {
-      // OPTIMIZED: Start speaking faster with shorter initial chunks
-      const chunks = this.splitTextIntoChunks(text, 150); // Reduced from 200
+      // OPTIMIZED: Use larger chunks for more natural, flowing speech
+      // Larger chunks = fewer pauses between utterances = more natural
+      const chunks = this.splitTextIntoChunks(text, this.naturalSpeechConfig.maxChunkSize);
 
       if (this.config.voiceType === 'SYSTEM') {
         await this.speakWithSystemVoice(chunks);
@@ -944,6 +964,14 @@ class VoiceCoreOptimized {
     }
   }
 
+  // Configuration for natural speech flow
+  private naturalSpeechConfig = {
+    maxChunkSize: 250,      // Larger chunks for better flow
+    minChunkSize: 40,       // Avoid tiny chunks that sound staccato
+    sentenceBreakMs: 350,   // Pause between sentences (ms)
+    commaBreakMs: 150       // Pause at commas (ms)
+  };
+
   /**
    * NEW v1.1: Start streaming TTS session
    * Allows TTS to begin speaking while AI is still generating
@@ -985,14 +1013,55 @@ class VoiceCoreOptimized {
   }
 
   private splitTextIntoChunks(text: string, maxLength: number): string[] {
+    // Use natural speech config for better defaults
+    const config = this.naturalSpeechConfig;
+    
     if (text.length <= maxLength) return [text];
     
     const chunks: string[] = [];
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    // Match sentences but keep the delimiter and trailing space
+    const sentences = text.match(/[^.!?]+[.!?]+\s*/g) || [text];
     
     let currentChunk = '';
+    
     for (const sentence of sentences) {
-      if ((currentChunk + sentence).length > maxLength && currentChunk) {
+      // If a single sentence is too long, split on natural pause points
+      if (sentence.length > maxLength) {
+        // Save current accumulated chunk first
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+          currentChunk = '';
+        }
+        
+        // Split long sentence on commas, semicolons, and conjunctions
+        const naturalBreaks = sentence.split(/(,\s+|;\s+|\s+\b(and|but|or|so|yet|for|because|although|while)\b\s+)/gi);
+        
+        let phraseBuffer = '';
+        for (let i = 0; i < naturalBreaks.length; i++) {
+          const segment = naturalBreaks[i];
+          if (!segment) continue;
+          
+          // Skip standalone conjunctions/break markers
+          if (/^(,\s+|;\s+|and|but|or|so|yet|for|because|although|while)$/i.test(segment.trim())) {
+            phraseBuffer += segment;
+            continue;
+          }
+          
+          // Try to add this segment to the buffer
+          if ((phraseBuffer + segment).length > maxLength && phraseBuffer.trim()) {
+            chunks.push(phraseBuffer.trim());
+            phraseBuffer = segment;
+          } else {
+            phraseBuffer += segment;
+          }
+        }
+        
+        if (phraseBuffer.trim()) {
+          currentChunk = phraseBuffer;
+        }
+      }
+      // Normal case: sentence fits within chunk limit
+      else if ((currentChunk + sentence).length > maxLength && currentChunk.trim()) {
         chunks.push(currentChunk.trim());
         currentChunk = sentence;
       } else {
@@ -1000,49 +1069,89 @@ class VoiceCoreOptimized {
       }
     }
     
-    if (currentChunk) {
+    // Don't forget the last chunk
+    if (currentChunk.trim()) {
       chunks.push(currentChunk.trim());
     }
     
-    return chunks;
+    // POST-PROCESS: Merge very small chunks to avoid staccato effect
+    // This is the KEY fix for natural-sounding speech
+    const mergedChunks: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const prevChunk = mergedChunks[mergedChunks.length - 1];
+      
+      // If this chunk is too small, try to merge with previous
+      if (chunk.length < config.minChunkSize && prevChunk && 
+          (prevChunk.length + chunk.length + 1) <= config.maxChunkSize) {
+        mergedChunks[mergedChunks.length - 1] = prevChunk + ' ' + chunk;
+      } else {
+        mergedChunks.push(chunk);
+      }
+    }
+    
+    return mergedChunks;
   }
 
   private async speakWithSystemVoice(chunks: string[]): Promise<void> {
-    for (const chunk of chunks) {
-      // Enhance the text for more natural speech
-      const enhancedText = enhancedTTS.enhanceTextForNaturalSpeech(chunk);
-
-      // Clean SSML tags to prevent them from being read literally
-      const cleanText = enhancedTTS.cleanSSML(enhancedText);
-
-      await new Promise<void>((resolve) => {
-        const utterance = new SpeechSynthesisUtterance(cleanText);
-
-        // Apply enhanced parameters
-        const params = enhancedTTS.generateSpeechParameters();
-        utterance.rate = params.rate;
-        utterance.pitch = params.pitch;
-        utterance.volume = params.volume;
-
-        // Ensure the rate is appropriately slowed down for natural speech
-        utterance.rate = Math.min(0.9, params.rate); // Cap at 0.9 for natural flow
-
-        const voices = this.synthesis.getVoices();
-        const preferredVoice = voices.find(v => v.name === this.config.voiceName) || voices[0];
-        if (preferredVoice) utterance.voice = preferredVoice;
-
-        utterance.onend = () => {
-          resolve();
-        };
-        utterance.onerror = () => {
-          // Clear the speaking flag even if there's an error
-          this.isCurrentlySpeaking = false;
-          resolve();
-        };
-
-        this.synthesis.speak(utterance);
-      });
+    // KEY FIX: Join chunks with natural pause markers instead of speaking separately
+    // This eliminates the staccato "word... pause... word" effect
+    if (chunks.length === 0) return;
+    
+    // Join chunks with appropriate pause markers:
+    // - If chunk ends with sentence terminator (.!?), add a comma for a brief pause
+    // - Otherwise just space them
+    let combinedText = chunks[0];
+    for (let i = 1; i < chunks.length; i++) {
+      const prevChunk = chunks[i - 1].trim();
+      const currentChunk = chunks[i].trim();
+      
+      // Check if previous chunk ends with a sentence terminator
+      if (/[.!?]$/.test(prevChunk)) {
+        // Already has natural pause from the period, just add space
+        combinedText += ' ' + currentChunk;
+      } else if (/[,;:]$/.test(prevChunk)) {
+        // Has a comma/semicolon pause, just add space
+        combinedText += ' ' + currentChunk;
+      } else {
+        // No natural pause - add a comma for a brief pause between chunks
+        combinedText += ', ' + currentChunk;
+      }
     }
+    
+    // Enhance the text for more natural speech
+    const enhancedText = enhancedTTS.enhanceTextForNaturalSpeech(combinedText);
+
+    // Clean SSML tags to prevent them from being read literally
+    const cleanText = enhancedTTS.cleanSSML(enhancedText);
+
+    await new Promise<void>((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+
+      // Apply enhanced parameters
+      const params = enhancedTTS.generateSpeechParameters();
+      utterance.rate = params.rate;
+      utterance.pitch = params.pitch;
+      utterance.volume = params.volume;
+
+      // Ensure the rate is appropriately slowed down for natural speech
+      utterance.rate = Math.min(0.9, params.rate); // Cap at 0.9 for natural flow
+
+      const voices = this.synthesis.getVoices();
+      const preferredVoice = voices.find(v => v.name === this.config.voiceName) || voices[0];
+      if (preferredVoice) utterance.voice = preferredVoice;
+
+      utterance.onend = () => {
+        resolve();
+      };
+      utterance.onerror = () => {
+        // Clear the speaking flag even if there's an error
+        this.isCurrentlySpeaking = false;
+        resolve();
+      };
+
+      this.synthesis.speak(utterance);
+    });
 
     // Don't change global state flags here - let the main speak() function handle that
     // NOTE: conversation.addTurn('JARVIS', ...) is called in App.tsx processKernelRequest
@@ -1051,6 +1160,14 @@ class VoiceCoreOptimized {
 
   private async speakWithPiper(text: string): Promise<void> {
     console.log('[VOICE] Attempting to speak with Piper TTS');
+    console.log('[VOICE] Using voice:', this.config.voiceName);
+
+    // Ensure Piper TTS is using the same voice as our config
+    const piperConfig = piperTTS.getConfig();
+    if (piperConfig.defaultVoice !== this.config.voiceName) {
+      console.log(`[VOICE] Syncing Piper voice: ${piperConfig.defaultVoice} -> ${this.config.voiceName}`);
+      piperTTS.setConfig({ defaultVoice: this.config.voiceName });
+    }
 
     // Enhance the text for more natural speech
     const enhancedText = enhancedTTS.enhanceTextForNaturalSpeech(text);
@@ -1427,16 +1544,21 @@ class VoiceCoreOptimized {
       this.networkErrorCount++;
       console.warn(`[VOICE] Network error count: ${this.networkErrorCount}`);
       
-      // After 3 network errors, try Whisper fallback (only if not forced to BROWSER)
-      if (this.networkErrorCount >= 3 && !this.useWhisperFallback && this.config.sttProvider !== 'BROWSER') {
-        console.log('[VOICE] Trying Whisper fallback...');
+      // After 2 network errors, try Whisper fallback (only if not forced to BROWSER)
+      if (this.networkErrorCount >= 2 && !this.useWhisperFallback && this.config.sttProvider !== 'BROWSER') {
+        console.log('[VOICE] Trying Whisper fallback due to network errors...');
         this.tryWhisperFallback();
+        return;
       }
       
-      // After 5 network errors, give up on browser STT
+      // After 5 network errors, switch to Whisper or give up
       if (this.networkErrorCount >= 5) {
         console.error('[VOICE] Too many network errors. Browser STT requires internet connection.');
-        if (!this.whisperAvailable) {
+        if (this.whisperAvailable && !this.useWhisperFallback) {
+          console.log('[VOICE] Switching to Whisper STT...');
+          this.tryWhisperFallback();
+        } else if (!this.whisperAvailable) {
+          console.error('[VOICE] No STT provider available');
           this.setState(VoiceState.ERROR);
         }
       }

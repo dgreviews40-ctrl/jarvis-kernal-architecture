@@ -332,7 +332,9 @@ class BootOrchestrator {
     
     // Verify version compatibility
     const versionParts = KERNEL_VERSION.split('.');
-    if (parseInt(versionParts[0]) !== 1 || parseInt(versionParts[1]) < 5) {
+    if (versionParts.length < 2) {
+      phaseLog('KERNEL MOUNT', 'WARNING: Invalid version format');
+    } else if (parseInt(versionParts[0]) !== 1 || parseInt(versionParts[1]) < 5) {
       phaseLog('KERNEL MOUNT', 'WARNING: Kernel version mismatch');
     }
   }

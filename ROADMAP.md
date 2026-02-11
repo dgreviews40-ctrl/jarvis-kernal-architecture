@@ -73,31 +73,24 @@ interface KVCache {
 
 ### 2. Advanced Vision Pipeline
 
-**Status:** ❌ NOT IMPLEMENTED (Basic vision exists, advanced pipeline pending)  
-**Priority:** Medium  
-**Effort:** Medium  
-**Depends on:** GPU memory availability
+**Status:** ✅ **IMPLEMENTED** (2026-02-11)  
+**Location:** `services/visionPipeline.ts`, `vision_server.py`, `hooks/useVisionPipeline.ts`  
+**Component:** `components/VisionPipelineMonitor.tsx`
 
-**Description:**  
-Current vision (`vision_server.py`) supports single image analysis. Advanced pipeline would include:
+**Implementation Details:**
+- **Video Stream Sampling** - Configurable FPS (default 1, max 5)
+- **Batch Processing** - Process up to 8 frames at once for GPU efficiency
+- **Visual Memory** - 10-minute retention with semantic search
+- **Activity Summary** - Top tags, unique objects, source tracking
 
-- [ ] Video stream frame sampling
-- [ ] Batch processing for efficiency  
-- [ ] Visual memory ("What did I see 5 minutes ago?")
-- [ ] Object tracking across frames
+**Features:**
+- Query visual memory with natural language ("What did I see 5 minutes ago?")
+- Real-time GPU memory monitoring (pauses if >80%)
+- Automatic batch queue management with timeout
+- CLIP-based semantic search for visual memory
 
-**Implementation Sketch:**
-```typescript
-interface VisionPipeline {
-  sampleVideo(stream: MediaStream, fps: number): Frame[];
-  describeFrames(frames: Frame[]): Description[];
-  queryVisualMemory(query: string): VisualMemory[];
-}
-```
-
-**Files to Create/Modify:**
-- New: `services/visionPipeline.ts`
-- Modify: `vision_server.py`
+**API Endpoints Added:**
+- `POST /batch/analyze` - Batch image analysis (up to 16 images)
 
 ---
 

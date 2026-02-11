@@ -279,6 +279,58 @@ class VisionServer:
             """Clear embedding cache"""
             self.cache.clear()
             return jsonify({"status": "ok", "message": "Cache cleared"})
+        
+        @self.app.route('/batch/analyze', methods=['POST'])
+        def batch_analyze():
+            """Analyze multiple images in batch for efficiency"""
+            start_time = time.time()
+            
+            try:
+                data = request.json
+                images = data.get('images', [])
+                
+                if not images or not isinstance(images, list):
+                    return jsonify({"error": "Provide an array of images"}), 400
+                
+                if len(images) > 16:  # Max batch size
+                    return jsonify({"error": "Maximum 16 images per batch"}), 400
+                
+                results = []
+                
+                # Process images
+                for img_data in images:
+                    try:
+                        image = self.decode_image(img_data)
+                        
+                        # Get analysis
+                        embedding = self.get_image_embedding(image)
+                        caption = self.generate_caption(image)
+                        tags = self.detect_tags(image, embedding)
+                        
+                        results.append({
+                            "embedding": embedding.tolist(),
+                            "description": caption,
+                            "tags": tags,
+                            "success": True
+                        })
+                    except Exception as e:
+                        results.append({
+                            "error": str(e),
+                            "success": False
+                        })
+                
+                batch_time_ms = (time.time() - start_time) * 1000
+                
+                return jsonify({
+                    "results": results,
+                    "batch_size": len(images),
+                    "batch_time_ms": batch_time_ms,
+                    "avg_time_per_image_ms": batch_time_ms / len(images) if images else 0
+                })
+                
+            except Exception as e:
+                print(f"[ERROR] batch_analyze: {e}")
+                return jsonify({"error": str(e)}), 500
     
     def load_models(self):
         """Load CLIP and captioning models"""

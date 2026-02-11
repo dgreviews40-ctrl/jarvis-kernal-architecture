@@ -193,6 +193,11 @@ const App: React.FC = () => {
 
   // Track last logged voice state to prevent duplicate logs
   const lastLoggedVoiceState = useRef<VoiceState | null>(null);
+  
+  // Session ID for KV-cache persistence (Ollama)
+  const sessionId = useRef<string>(`session-${Date.now()}`);
+  const lastActivityTime = useRef<number>(Date.now());
+  const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity = new session
 
   const refreshSystemState = useCallback(async () => {
     setBreakerStatuses(engine.getAllStatus());
@@ -570,6 +575,15 @@ const App: React.FC = () => {
   };
 
   const processKernelRequest = useCallback(async (input: string, origin: 'USER_TEXT' | 'USER_VOICE' = 'USER_TEXT') => {
+    // Check if session has timed out (5 minutes of inactivity)
+    const now = Date.now();
+    if (now - lastActivityTime.current > SESSION_TIMEOUT_MS) {
+      // Generate new session ID
+      sessionId.current = `session-${now}`;
+      console.log(`[SESSION] New session started: ${sessionId.current}`);
+    }
+    lastActivityTime.current = now;
+    
     // Prepare context for the kernel processor
     const context = {
       forcedMode,
@@ -581,7 +595,8 @@ const App: React.FC = () => {
       isProcessing,
       processingRequests: processingRequests.current,
       lastRequestTime,
-      lastRequestText
+      lastRequestText,
+      sessionId: sessionId.current
     };
 
     // Delegate to the refactored kernel processor

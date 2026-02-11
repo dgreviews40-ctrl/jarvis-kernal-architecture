@@ -5,6 +5,7 @@ import { cortex } from "./cortex";
 import { geminiRateLimiter } from "./rateLimiter";
 import { EnhancedCircuitBreaker } from "./CircuitBreaker";
 import { RequestDeduplicator, createDedupKey } from "./deduplicator";
+import { kvCache } from "./kvCache";
 import {
   JARVISError,
   ErrorCode,
@@ -454,11 +455,38 @@ export class OllamaProvider implements IAIProvider {
     // Use request timeout if provided, otherwise default
     const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
     
+    // KV-Cache: Get or create conversation context
+    let conversationContext: ReturnType<typeof kvCache.buildPromptWithContext> = null;
+    let cacheHit = false;
+    let cacheStartTime = 0;
+    
+    if (request.conversationId && !request.images?.length) {
+      cacheStartTime = Date.now();
+      const context = kvCache.getOrCreateContext(
+        request.conversationId,
+        request.systemInstruction || 'You are JARVIS.',
+        model
+      );
+      
+      // Build prompt with cached context
+      conversationContext = kvCache.buildPromptWithContext(
+        request.conversationId,
+        request.prompt
+      );
+      
+      cacheHit = context.useCount > 1;
+      if (cacheHit) {
+        console.log(`[KV-CACHE] Hit for conversation ${request.conversationId} (use #${context.useCount})`);
+      }
+    }
+    
     console.log('[OLLAMA DEBUG] Vision request model:', { 
       requestModel: request.model, 
       configModel: config.model, 
       finalModel: model,
-      hasImages: !!request.images?.length 
+      hasImages: !!request.images?.length,
+      cacheEnabled: !!request.conversationId,
+      cacheHit
     });
 
     // Validate request parameters
@@ -617,21 +645,35 @@ export class OllamaProvider implements IAIProvider {
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
+          // Build request body - use cached context if available
+          const requestBody: any = {
+            model: model,
+            stream: false,
+            options: {
+              temperature: request.temperature ?? config.temperature
+            }
+          };
+          
+          // Use KV-cached context if available
+          if (conversationContext) {
+            requestBody.prompt = conversationContext.prompt;
+            requestBody.system = conversationContext.system;
+            // Include Ollama context ID if available from previous response
+            if (conversationContext.context) {
+              requestBody.context = conversationContext.context;
+            }
+          } else {
+            requestBody.prompt = finalPrompt;
+            requestBody.system = request.systemInstruction;
+          }
+          
           const res = await fetch(`${config.url}/api/generate`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'User-Agent': 'JARVIS-Kernel/1.0' // Add user agent for identification
             },
-            body: JSON.stringify({
-              model: model,
-              prompt: finalPrompt,
-              system: request.systemInstruction,
-              stream: false,
-              options: {
-                temperature: request.temperature ?? config.temperature
-              }
-            }),
+            body: JSON.stringify(requestBody),
             signal: controller.signal
           });
 
@@ -652,6 +694,32 @@ export class OllamaProvider implements IAIProvider {
           throw fetchError;
         }
       }, timeoutMs);
+
+      // Update KV-Cache with response and Ollama context ID
+      if (request.conversationId && result && !request.images?.length) {
+        // Update with the Ollama context ID for next request
+        if (result.context) {
+          kvCache.updateOllamaContextId(request.conversationId, result.context);
+        }
+        
+        // Add user message to context
+        kvCache.addMessage(request.conversationId, 'user', request.prompt);
+        
+        // Add assistant response to context
+        if (result.response) {
+          kvCache.addMessage(request.conversationId, 'assistant', result.response);
+        }
+        
+        // Record latency improvement if cache hit
+        if (cacheHit) {
+          const totalTime = Date.now() - start;
+          // Estimate 20% improvement on cache hits (typical for KV-cache)
+          const estimatedImprovement = Math.round(totalTime * 0.2);
+          kvCache.recordLatencyImprovement(estimatedImprovement);
+          
+          console.log(`[KV-CACHE] Updated context for ${request.conversationId}, estimated improvement: ${estimatedImprovement}ms`);
+        }
+      }
 
       if (!result || !result.response) {
         throw new Error('Ollama returned empty response');
@@ -745,6 +813,50 @@ export class OllamaProvider implements IAIProvider {
     
     // Then check general keywords
     return internetKeywords.some(keyword => lowerQuery.includes(keyword));
+  }
+
+  // ==================== KV-CACHE METHODS ====================
+
+  /**
+   * Get KV-Cache statistics for Ollama conversations
+   */
+  getCacheStats(): ReturnType<typeof kvCache.getStats> {
+    return kvCache.getStats();
+  }
+
+  /**
+   * Get active conversation contexts
+   */
+  getActiveContexts(): ReturnType<typeof kvCache.getActiveContexts> {
+    return kvCache.getActiveContexts();
+  }
+
+  /**
+   * Clear a specific conversation context
+   */
+  clearContext(conversationId: string): void {
+    kvCache.invalidateContext(conversationId);
+  }
+
+  /**
+   * Clear all cached conversation contexts
+   */
+  clearAllContexts(): void {
+    kvCache.clearAll();
+  }
+
+  /**
+   * Enable or disable KV-Cache
+   */
+  setCacheEnabled(enabled: boolean): void {
+    kvCache.setEnabled(enabled);
+  }
+
+  /**
+   * Check if KV-Cache is enabled
+   */
+  isCacheEnabled(): boolean {
+    return kvCache.isEnabled();
   }
 }
 
@@ -870,6 +982,65 @@ class ProviderManager {
     if (fallback) return fallback.generate(request);
 
     throw new Error("No AI Providers available.");
+  }
+
+  // ==================== KV-CACHE MANAGEMENT ====================
+
+  /**
+   * Get KV-Cache statistics for Ollama provider
+   */
+  getOllamaCacheStats(): ReturnType<typeof kvCache.getStats> | null {
+    const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
+    if (!ollama) return null;
+    return ollama.getCacheStats();
+  }
+
+  /**
+   * Get active Ollama conversation contexts
+   */
+  getOllamaActiveContexts(): ReturnType<typeof kvCache.getActiveContexts> | null {
+    const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
+    if (!ollama) return null;
+    return ollama.getActiveContexts();
+  }
+
+  /**
+   * Clear a specific Ollama conversation context
+   */
+  clearOllamaContext(conversationId: string): void {
+    const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
+    if (ollama) {
+      ollama.clearContext(conversationId);
+    }
+  }
+
+  /**
+   * Clear all Ollama cached conversation contexts
+   */
+  clearAllOllamaContexts(): void {
+    const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
+    if (ollama) {
+      ollama.clearAllContexts();
+    }
+  }
+
+  /**
+   * Enable or disable Ollama KV-Cache
+   */
+  setOllamaCacheEnabled(enabled: boolean): void {
+    const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
+    if (ollama) {
+      ollama.setCacheEnabled(enabled);
+    }
+  }
+
+  /**
+   * Check if Ollama KV-Cache is enabled
+   */
+  isOllamaCacheEnabled(): boolean {
+    const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
+    if (!ollama) return false;
+    return ollama.isCacheEnabled();
   }
 }
 

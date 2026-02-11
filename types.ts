@@ -54,6 +54,7 @@ export interface KernelRequest {
   input: string;
   context: Record<string, any>;
   origin: 'USER_VOICE' | 'USER_TEXT' | 'SYSTEM_EVENT';
+  sessionId?: string; // Session ID for KV-cache persistence (Ollama)
 }
 
 export interface KernelResponse {
@@ -187,6 +188,7 @@ export interface AIRequest {
   stopSequences?: string[];
   timeout?: number; // Request timeout in milliseconds
   model?: string; // Optional model override (for Ollama)
+  conversationId?: string; // Optional conversation ID for KV-cache persistence
 }
 
 export interface AIResponse {

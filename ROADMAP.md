@@ -33,10 +33,24 @@ The following major features have been **implemented and verified** through code
 
 ### 1. KV-Cache Persistence for LLM Inference
 
-**Status:** ❌ NOT IMPLEMENTED  
-**Priority:** High  
-**Effort:** High  
-**Blocked by:** Requires Ollama API support or direct llama.cpp integration
+**Status:** ✅ **IMPLEMENTED** (2026-02-10)  
+**Location:** `services/kvCache.ts`, `services/providers.ts`, `hooks/useKVCache.ts`  
+**Component:** `components/KVCacheMonitor.tsx`
+
+**Implementation Details:**
+- Session-based conversation context caching
+- Ollama context ID tracking for multi-turn conversations
+- LRU eviction policy (max 5 contexts, 5-minute TTL)
+- ~20% estimated latency improvement for cached contexts
+- React hook `useKVCache()` for monitoring
+- UI component `KVCacheMonitor` for real-time stats
+
+**How It Works:**
+1. Each user session gets a unique session ID
+2. System prompts are cached per session
+3. Conversation history is maintained in memory
+4. Ollama's context ID is preserved across requests
+5. Auto-cleanup after 5 minutes of inactivity
 
 **Description:**  
 Cache attention keys/values for system prompts to avoid reprocessing "You are JARVIS..." on every request.

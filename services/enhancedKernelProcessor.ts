@@ -53,6 +53,7 @@ interface EnhancedProcessorContext {
   lastRequestText: { current: string };
   streamingEnabled: boolean;
   toolsEnabled: boolean;
+  sessionId?: string; // Current session ID for KV-cache
 }
 
 export class EnhancedKernelProcessor {
@@ -165,7 +166,8 @@ export class EnhancedKernelProcessor {
       prompt: conversationContext 
         ? `Previous context:\n${conversationContext}\n\nCurrent request: ${input}`
         : input,
-      systemInstruction: this.buildSystemPrompt(context)
+      systemInstruction: this.buildSystemPrompt(context),
+      conversationId: context.sessionId // Enable KV-cache for Ollama
     };
 
     let fullResponse = '';
@@ -431,6 +433,7 @@ export class EnhancedKernelProcessor {
       systemInstruction: "You are JARVIS. Analyze the visual input concisely.",
       // Pass the model from config to ensure the correct one is used
       model: provider === AIProvider.OLLAMA ? ollamaConfig.model : undefined,
+      conversationId: context.sessionId
     }, provider);
 
     return response.text;
@@ -454,7 +457,8 @@ export class EnhancedKernelProcessor {
       
       const synthesis = await providerManager.route({
         prompt: `Context from previous conversation:\n${recentContext}\n\nUser asks: ${input}\n\nAnswer based on the context.`,
-        systemInstruction: "You are JARVIS. Answer based on the provided context."
+        systemInstruction: "You are JARVIS. Answer based on the provided context.",
+        conversationId: context.sessionId
       }, provider);
       
       return synthesis.text;
@@ -521,7 +525,8 @@ export class EnhancedKernelProcessor {
     // Use AI for complex commands
     const response = await providerManager.route({
       prompt: input,
-      systemInstruction: "You are JARVIS. Execute the command or provide instructions."
+      systemInstruction: "You are JARVIS. Execute the command or provide instructions.",
+      conversationId: context.sessionId
     }, provider);
 
     return response.text;
@@ -564,7 +569,8 @@ export class EnhancedKernelProcessor {
 
     const response = await providerManager.route({
       prompt,
-      systemInstruction: "You are JARVIS. Be helpful and concise."
+      systemInstruction: "You are JARVIS. Be helpful and concise.",
+      conversationId: context.sessionId
     }, provider);
 
     return response.text;

@@ -3,8 +3,19 @@
  * Tracks significant moments with emotional context for a more human-like relationship
  */
 
-import { vectorMemoryService, type MemoryEntry } from './vectorMemoryService';
+import { vectorMemoryService } from './vectorMemoryService';
 import { eventBus } from './eventBus';
+
+// Local type definition for vector memory entries
+interface MemoryEntry {
+  id: string;
+  content: string;
+  timestamp: number;
+  type: 'EPISODE';
+  tags: string[];
+  created: number;
+  metadata?: Record<string, any>;
+}
 
 export interface EmotionalMoment {
   id: string;
@@ -434,7 +445,9 @@ export class EmotionalMemoryService {
         id: moment.id,
         content: `[${moment.type}] ${moment.content}`,
         timestamp: moment.timestamp,
-        type: 'emotional',
+        type: 'EPISODE',
+        tags: ['emotional', moment.type],
+        created: moment.timestamp,
         metadata: {
           emotionalContext: moment.emotionalContext,
           importance: moment.importance,

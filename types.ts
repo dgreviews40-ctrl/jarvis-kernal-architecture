@@ -27,6 +27,7 @@ export enum IntentType {
   MEMORY_WRITE = 'MEMORY_WRITE', 
   VISION_ANALYSIS = 'VISION_ANALYSIS',
   TIMER_REMINDER = 'TIMER_REMINDER',
+  SOCIAL = 'SOCIAL',         // Conversational/social interactions
   UNKNOWN = 'UNKNOWN'
 }
 

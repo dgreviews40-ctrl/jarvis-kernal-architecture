@@ -124,14 +124,14 @@ class VisionPipelineService extends EventEmitter {
       // Check GPU availability
       const gpuStats = gpuMonitor.getCurrentStats();
       if (!gpuStats) {
-        logger.log('VISION_PIPELINE', 'GPU monitor not available, continuing without GPU stats', 'warning');
+        logger.log('VISION', 'GPU monitor not available, continuing without GPU stats', 'warning');
       }
 
       // Check vision server
       await this.checkVisionServer();
       
       if (!this.visionServerAvailable) {
-        logger.log('VISION_PIPELINE', 'Vision server not available, some features disabled', 'warning');
+        logger.log('VISION', 'Vision server not available, some features disabled', 'warning');
       }
 
       // Start visual memory cleanup
@@ -139,11 +139,11 @@ class VisionPipelineService extends EventEmitter {
       
       this.initialized = true;
       this.emit('initialized');
-      logger.log('VISION_PIPELINE', 'Vision Pipeline initialized', 'success');
+      logger.log('VISION', 'Vision Pipeline initialized', 'success');
       
       return true;
     } catch (error) {
-      logger.log('VISION_PIPELINE', `Initialization failed: ${error}`, 'error');
+      logger.log('VISION', `Initialization failed: ${error}`, 'error');
       return false;
     }
   }
@@ -165,11 +165,11 @@ class VisionPipelineService extends EventEmitter {
     
     // Check if stream already exists
     if (this.activeStreams.has(sourceName)) {
-      logger.log('VISION_PIPELINE', `Stream ${sourceName} already exists, stopping previous`, 'warning');
+      logger.log('VISION', `Stream ${sourceName} already exists, stopping previous`, 'warning');
       this.stopSampling(sourceName);
     }
     
-    logger.log('VISION_PIPELINE', `Starting video sampling: ${sourceName} at ${fps} FPS`, 'info');
+    logger.log('VISION', `Starting video sampling: ${sourceName} at ${fps} FPS`, 'info');
     
     const frames: VideoFrame[] = [];
     const startTime = Date.now();
@@ -210,7 +210,7 @@ class VisionPipelineService extends EventEmitter {
       // Check GPU memory
       const gpuStats = gpuMonitor.getCurrentStats();
       if (gpuStats && gpuStats.vram_percent > VISION_CONFIG.maxGpuMemoryPercent) {
-        logger.log('VISION_PIPELINE', 'GPU memory high, pausing sampling', 'warning');
+        logger.log('VISION', 'GPU memory high, pausing sampling', 'warning');
         return;
       }
 
@@ -251,7 +251,7 @@ class VisionPipelineService extends EventEmitter {
           this.queueFrameForBatchProcessing(frame);
         }
       } catch (error) {
-        logger.log('VISION_PIPELINE', `Frame capture error: ${error}`, 'error');
+        logger.log('VISION', `Frame capture error: ${error}`, 'error');
       }
     }, intervalMs);
 
@@ -285,7 +285,7 @@ class VisionPipelineService extends EventEmitter {
       
       this.activeStreams.delete(sourceName);
       this.emit('samplingStopped', { source: sourceName });
-      logger.log('VISION_PIPELINE', `Stopped sampling: ${sourceName} (captured ${stream.frameCount} frames)`, 'info');
+      logger.log('VISION', `Stopped sampling: ${sourceName} (captured ${stream.frameCount} frames)`, 'info');
       return true;
     }
     return false;
@@ -343,7 +343,7 @@ class VisionPipelineService extends EventEmitter {
         gpuUtilization: gpuStats?.gpu_utilization || 0
       };
     } catch (error) {
-      logger.log('VISION_PIPELINE', `Batch processing error: ${error}`, 'error');
+      logger.log('VISION', `Batch processing error: ${error}`, 'error');
       throw error;
     } finally {
       this.isProcessing = false;
@@ -384,7 +384,7 @@ class VisionPipelineService extends EventEmitter {
         confidence: result.confidence || 0.8
       };
     } catch (error) {
-      logger.log('VISION_PIPELINE', `Frame analysis error: ${error}`, 'warning');
+      logger.log('VISION', `Frame analysis error: ${error}`, 'warning');
       return this.getFallbackAnalysis(frame);
     }
   }
@@ -430,7 +430,7 @@ class VisionPipelineService extends EventEmitter {
         scored.sort((a, b) => b.score - a.score);
         relevant = scored.slice(0, maxResults).map(s => s.entry);
       } catch (error) {
-        logger.log('VISION_PIPELINE', `Semantic search failed: ${error}`, 'warning');
+        logger.log('VISION', `Semantic search failed: ${error}`, 'warning');
         // Fall back to keyword search
         relevant = this.keywordSearch(relevant, query, maxResults);
       }
@@ -515,7 +515,7 @@ class VisionPipelineService extends EventEmitter {
     const count = this.visualMemory.length;
     this.visualMemory = [];
     this.emit('memoryCleared', { count });
-    logger.log('VISION_PIPELINE', `Cleared ${count} visual memory entries`, 'info');
+    logger.log('VISION', `Cleared ${count} visual memory entries`, 'info');
   }
 
   /**
@@ -544,7 +544,7 @@ class VisionPipelineService extends EventEmitter {
     
     this.initialized = false;
     this.removeAllListeners();
-    logger.log('VISION_PIPELINE', 'Vision Pipeline disposed', 'info');
+    logger.log('VISION', 'Vision Pipeline disposed', 'info');
   }
 
   // ==================== Private Methods ====================
@@ -588,7 +588,7 @@ class VisionPipelineService extends EventEmitter {
     try {
       await this.processBatch(batch);
     } catch (error) {
-      logger.log('VISION_PIPELINE', `Batch queue processing error: ${error}`, 'error');
+      logger.log('VISION', `Batch queue processing error: ${error}`, 'error');
     }
   }
 
@@ -675,7 +675,7 @@ class VisionPipelineService extends EventEmitter {
       const removed = before - this.visualMemory.length;
       
       if (removed > 0) {
-        logger.log('VISION_PIPELINE', `Cleaned up ${removed} old visual memory entries`, 'debug');
+        logger.log('VISION', `Cleaned up ${removed} old visual memory entries`, 'info');
       }
     }, 60000);
   }

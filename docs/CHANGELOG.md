@@ -2,6 +2,52 @@
 
 All notable changes to the JARVIS Kernel project.
 
+## [1.5.3] - 2026-02-11
+
+### Overview
+Added Home Assistant WebSocket support, CI/CD pipeline, thinking sounds, and shopping list integration.
+
+### Added
+- **Home Assistant Shopping List Integration** - Voice-controlled shopping lists
+  - `services/haShoppingList.ts` - HA shopping list & todo service
+  - Add items via voice: "Add milk to my shopping list"
+  - Query list: "What's on my shopping list?"
+  - Mark items complete: "Check off milk"
+  - Clear completed items
+  - Supports multiple todo lists
+  - Integrates with HA companion app
+
+- **Thinking Sounds** - Subtle audio cues during AI processing
+  - `services/thinkingSounds.ts` - Web Audio API sound synthesis
+  - Breathing sounds during normal processing (every 4s)
+  - "Hmm" vocalization for complex queries (>10 words)
+  - Click acknowledgment for simple commands
+  - Processing tones for long operations
+  - Configurable volume and enable/disable
+  - Auto-integrates with kernel processor
+
+- **CI/CD Pipeline** - GitHub Actions workflow
+  - `.github/workflows/ci.yml` - Automated testing and building
+  - Multi-version Node.js testing (20.x, 22.x)
+  - Security audit and TypeScript checking
+  - Build artifact upload
+  - Status badge in README
+
+- **Home Assistant WebSocket Integration** - Real-time entity state updates
+  - `home_assistant_ws.ts` - WebSocket client for HA real-time API
+  - Automatic reconnection with exponential backoff (max 30s)
+  - Push-based state updates instead of polling
+  - Connection status indicators in dashboard (HTTP + WS Live badges)
+  - Ping/pong keepalive for connection health
+  - Network online/offline detection
+
+### Technical
+- 483 tests passing (100%)
+- TypeScript compilation: 0 errors
+- Build successful
+
+---
+
 ## [1.5.2] - 2026-02-10
 
 ### Overview

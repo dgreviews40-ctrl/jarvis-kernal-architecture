@@ -145,65 +145,139 @@ Framework exists in `services/enhancedTTS.ts` but **disabled** (`ssmlSupported: 
 
 ### 5. Breathing/Thinking Sounds
 
-**Status:** ❌ NOT IMPLEMENTED  
+**Status:** ✅ **IMPLEMENTED** (2026-02-11)  
 **Priority:** Low  
 **Effort:** Medium  
-**Depends on:** Audio synthesis capability
+**Location:** `services/thinkingSounds.ts`
 
 **Description:**  
-Add subtle audio cues during "thinking" periods:
-- Soft breath sounds during processing
-- Subtle "hmm" sounds when analyzing
-- Silence-avoidance audio padding
+Subtle audio cues during AI processing to avoid awkward silence.
+
+**Features:**
+- **Breathing sounds** - Soft breath during normal processing (plays every 4s)
+- **"Hmm" sounds** - Vocal acknowledgment when analyzing complex queries (>10 words)
+- **Click sounds** - Quick acknowledgment for simple commands
+- **Processing sounds** - Subtle electronic tone for long operations
+
+**Sound Types:**
+| Type | Trigger | Description |
+|------|---------|-------------|
+| `breathing` | All processing | Soft noise-filtered breath |
+| `hmm` | Complex queries | Vocal thinking sound (oscillator) |
+| `click` | Simple commands | Subtle acknowledgment |
+| `processing` | Long operations | Electronic activity tone |
+
+**Integration:**
+- Auto-starts when kernel begins processing
+- Auto-stops when response is ready
+- Volume configurable (default: 15%)
+- Can be disabled via `FEATURES.ENABLE_THINKING_SOUNDS`
+
+**Configuration:**
+```typescript
+// In constants/config.ts
+ENABLE_THINKING_SOUNDS: true
+
+// Runtime control
+thinkingSounds.setVolume(0.2); // 20% volume
+thinkingSounds.disable(); // Turn off
+```
 
 ---
 
 ### 6. WebSocket for Home Assistant
 
-**Status:** 🔄 PARTIALLY IMPLEMENTED  
+**Status:** ✅ **IMPLEMENTED** (2026-02-10)  
 **Priority:** Medium  
 **Effort:** Medium  
-**Note:** Feature flag exists (`ENABLE_HA_WEBSOCKET: false`)
+**Location:** `services/home_assistant_ws.ts`, `services/home_assistant.ts`, `components/HomeAssistantDashboard.tsx`
 
-**Description:**  
-Replace polling-based HA updates with real-time WebSocket connection.
+**Implementation Details:**
+- Real-time entity state updates via WebSocket API
+- Automatic reconnection with exponential backoff
+- Connection state monitoring in dashboard
+- Subscribes to `state_changed` events
+- HTTP polling fallback when WebSocket unavailable
 
-**Current State:**
-- Feature flag defined in `constants/config.ts`
-- Basic WebSocket implementation pending
+**Features:**
+- Push-based state updates (no polling needed when connected)
+- Connection status indicator in HA dashboard (HTTP + WS Live)
+- Reconnection with backoff (max 30s delay)
+- Ping/pong keepalive (30s interval)
+- Network online/offline detection
 
-**Files to Modify:**
-- Modify: `services/home_assistant.ts`
-- New: `services/home_assistant_ws.ts`
+**Usage:**
+```typescript
+// Enable in constants/config.ts
+ENABLE_HA_WEBSOCKET: true
+
+// Dashboard shows:
+// - "HTTP" badge: REST API connection
+// - "WS Live" badge: Real-time WebSocket active
+```
 
 ---
 
 ### 7. CI/CD Pipeline
 
-**Status:** ❌ NOT IMPLEMENTED  
+**Status:** ✅ **IMPLEMENTED** (2026-02-11)  
 **Priority:** Low  
 **Effort:** Low  
+**Location:** `.github/workflows/ci.yml`
 
 **Description:**  
 GitHub Actions workflow for testing and building.
 
-**Required File:**
-```yaml
-# .github/workflows/ci.yml
-name: CI/CD
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-      - run: npm ci
-      - run: npm run test
+**Features:**
+- Multi-version Node.js testing (20.x, 22.x)
+- Automated testing with `npm test`
+- Build verification with `npm run build`
+- Security audit with `npm audit`
+- TypeScript type checking
+- Artifact upload for build outputs
+
+**Workflow triggers:**
+- Push to `main` or `develop` branches
+- Pull requests to `main`
+
+**Status badge added to README**
       - run: npm run build
 ```
+
+---
+
+### 8. Home Assistant Shopping List & Todo Integration
+
+**Status:** ✅ **IMPLEMENTED** (2026-02-11)  
+**Priority:** Medium  
+**Effort:** Medium  
+**Location:** `services/haShoppingList.ts`, `services/kernelProcessor.ts`
+
+**Description:**  
+Voice-controlled shopping list and todo management using Home Assistant's native entities.
+
+**Features:**
+- Add items to HA shopping list via voice
+- Mark items as complete/incomplete
+- Query shopping list contents
+- Clear completed items
+- Support for multiple todo lists
+
+**Voice Commands:**
+| Command | Action |
+|---------|--------|
+| "Add milk to my shopping list" | Adds milk to shopping list |
+| "Put eggs on the shopping list" | Adds eggs to shopping list |
+| "I need to buy bread" | Adds bread to shopping list |
+| "What's on my shopping list?" | Lists pending items |
+| "Check off milk" | Marks item as complete |
+| "Clear completed items" | Removes completed items |
+
+**Integration:**
+- Uses Home Assistant `shopping_list` services
+- Supports `todo` entities for multiple lists
+- Works with HA companion app shopping list
+- Syncs across all HA-connected devices
 
 ---
 
@@ -219,7 +293,7 @@ From `docs/archive/CAPABILITIES.md` - potential future integrations:
 | Translation Services | Low | Google Translate API |
 | Stock/Crypto Tracking | Low | Financial APIs |
 | Fitness/Health Data | Low | Wearable integration |
-| Shopping Lists | Low | Simple local storage |
+| ~~Shopping Lists~~ | ✅ Complete | HA integration complete |
 | Note-taking (Notion) | Low | API integration |
 
 ---
@@ -250,11 +324,11 @@ From `docs/archive/CAPABILITIES.md` - potential future integrations:
 |----------|-------|----------|---------|----------|
 | Core Architecture | 8 | 8 | 0 | 100% |
 | AI/ML Features | 6 | 5 | 1 | 83% |
-| Voice/Humanization | 7 | 6 | 1 | 86% |
+| Voice/Humanization | 7 | 7 | 0 | 100% |
 | Vision | 2 | 1 | 1 | 50% |
-| DevOps | 2 | 0 | 2 | 0% |
-| Integrations | 8 | 0 | 8 | 0% |
-| **TOTAL** | **33** | **20** | **13** | **61%** |
+| DevOps | 2 | 1 | 1 | 50% |
+| Integrations | 8 | 2 | 6 | 25% |
+| **TOTAL** | **34** | **25** | **9** | **74%** |
 
 ---
 

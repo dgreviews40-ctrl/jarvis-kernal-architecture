@@ -134,12 +134,18 @@ class WeatherService {
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
   private currentLocation: WeatherLocation | null = null;
   private storageKey = 'jarvis_weather_config';
-  private cacheKey = 'jarvis_weather_cache';
+  private cacheKey = 'jarvis_weather_cache_v2'; // Bumped version to invalidate old cached data
   private refreshIntervalMs = 10 * 60 * 1000; // 10 minutes
 
   constructor() {
     this.loadSavedLocation();
     this.loadCachedData();
+    // Clear old cache version to prevent stale data
+    try {
+      localStorage.removeItem('jarvis_weather_cache');
+    } catch (e) {
+      // Ignore
+    }
   }
 
   private loadSavedLocation(): void {
@@ -467,15 +473,13 @@ class WeatherService {
   }
 
   public formatTemperature(temp: number, unit: 'C' | 'F' = 'F'): string {
-    if (unit === 'F') {
-      return `${Math.round(temp * 9/5 + 32)}°F`;
-    }
-    return `${Math.round(temp)}°C`;
+    // Weather API returns Fahrenheit (temperature_unit=fahrenheit), so no conversion needed
+    return `${Math.round(temp)}°F`;
   }
 
   public formatTemperatureOnlyFahrenheit(temp: number): string {
-    // Always return Fahrenheit to comply with imperial-only requirement
-    return `${Math.round(temp * 9/5 + 32)}°F`;
+    // Weather API returns Fahrenheit, so just round the value
+    return `${Math.round(temp)}°F`;
   }
 
   public getWindDirectionLabel(degrees: number): string {

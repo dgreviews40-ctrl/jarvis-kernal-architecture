@@ -15,9 +15,8 @@ import {
 type TemperatureUnit = 'C' | 'F';
 
 const formatTemp = (temp: number, unit: TemperatureUnit): string => {
-  if (unit === 'F') {
-    return `${Math.round(temp * 9/5 + 32)}°`;
-  }
+  // Weather service already returns Fahrenheit (temperature_unit=fahrenheit in API call)
+  // So we just round the value, no conversion needed
   return `${Math.round(temp)}°`;
 };
 

@@ -145,6 +145,23 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
     setBackupConfig(memory.getBackupConfig());
   };
 
+  // ==================== DELETE ALL ====================
+
+  const handleClearAll = async () => {
+    const confirmed = confirm(
+      'WARNING: This will permanently delete ALL memories.\n\n' +
+      `This action will remove ${stats.totalNodes} memory nodes.\n\n` +
+      'Are you sure you want to continue?'
+    );
+    
+    if (confirmed) {
+      const count = await memory.clearAll();
+      onMemoryUpdate?.();
+      await refreshStats();
+      alert(`Deleted ${count} memories.`);
+    }
+  };
+
   // ==================== RENDER ====================
 
   return (
@@ -421,6 +438,33 @@ export const MemoryBank: React.FC<MemoryBankProps> = ({ nodes, onForget, onManua
               <div className="text-2xl font-bold text-white">{stats.totalBackups}</div>
             </div>
           </div>
+
+          {/* Danger Zone */}
+          {stats.totalNodes > 0 && (
+            <>
+              <h3 className="text-xs font-bold text-red-400 uppercase mb-3 flex items-center gap-2">
+                <AlertTriangle size={12} />
+                Danger Zone
+              </h3>
+              <div className="bg-red-950/20 border border-red-900/50 rounded-lg p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-red-400">Delete All Memories</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Permanently remove all {stats.totalNodes} memories. This cannot be undone.
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleClearAll}
+                    className="px-4 py-2 bg-red-900/30 border border-red-500/50 rounded-lg text-red-400 hover:bg-red-900/50 transition-all flex items-center gap-2 text-sm font-bold"
+                  >
+                    <Trash2 size={16} />
+                    DELETE ALL
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
           <h3 className="text-xs font-bold text-gray-400 uppercase mb-3">By Type</h3>
           <div className="space-y-2 mb-6">

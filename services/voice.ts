@@ -244,7 +244,7 @@ class VoiceCoreOptimized {
 
     // Initialize enhanced TTS with JARVIS-specific settings
     enhancedTTS.updateConfig({
-      rate: 0.80,  // Slower for better clarity and more natural flow
+      rate: 0.55,  // Slower speech rate (55% speed) for better clarity and understanding
       pitch: 1.05, // Slightly higher for friendliness
       intonationVariation: 0.6,  // Higher variation for more natural feel
       stressLevel: 0.4,          // Slightly lower emphasis to reduce choppy feeling
@@ -580,6 +580,56 @@ class VoiceCoreOptimized {
 
   public getState(): VoiceState {
     return this.state;
+  }
+
+  /**
+   * Reset voice service to fix stuck states
+   */
+  public reset(): void {
+    console.log('[VOICE] Reset called, current state:', this.state);
+    
+    // Stop any active recognition
+    if (this.recognition) {
+      try { this.recognition.abort(); } catch(e) { }
+      this.recognition = null;
+    }
+    
+    // Stop Whisper
+    this.stopWhisperSTT();
+    
+    // Clear timers
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    
+    // Reset flags
+    this.isRestarting = false;
+    this.isCurrentlySpeaking = false;
+    this.isSpeaking = false;
+    this.errorCount = 0;
+    
+    // Reset to IDLE state
+    this.setState(VoiceState.IDLE);
+    this.lastManualActivation = Date.now();
+    
+    // Restart listening
+    this.startListening();
+    
+    console.log('[VOICE] Reset complete, state:', this.state);
+  }
+
+  /**
+   * Get voice diagnostics for troubleshooting
+   */
+  public getDiagnostics(): { state: VoiceState; isListening: boolean; recognitionActive: boolean; whisperActive: boolean; errorCount: number } {
+    return {
+      state: this.state,
+      isListening: this.state === VoiceState.LISTENING || this.state === VoiceState.IDLE,
+      recognitionActive: !!this.recognition,
+      whisperActive: this.isWhisperActive(),
+      errorCount: this.errorCount
+    };
   }
 
   public setConfig(config: VoiceConfig) {
@@ -1134,8 +1184,8 @@ class VoiceCoreOptimized {
       utterance.pitch = params.pitch;
       utterance.volume = params.volume;
 
-      // Ensure the rate is appropriately slowed down for natural speech
-      utterance.rate = Math.min(0.9, params.rate); // Cap at 0.9 for natural flow
+      // Apply user-preferred slower speech rate for better clarity
+      // No upper cap - respects the configured rate setting
 
       const voices = this.synthesis.getVoices();
       const preferredVoice = voices.find(v => v.name === this.config.voiceName) || voices[0];

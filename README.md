@@ -1,5 +1,7 @@
 # J.A.R.V.I.S. - Just A Rather Very Intelligent System
 
+[![CI/CD](https://github.com/yourusername/jarvis-kernel/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/jarvis-kernel/actions/workflows/ci.yml)
+
 J.A.R.V.I.S. is an advanced AI kernel architecture that integrates multiple AI providers, smart home systems, and various sensors to create an intelligent assistant system.
 
 ## Features

@@ -50,6 +50,21 @@ export const TIMING = {
   /** Proxy configuration timeout */
   PROXY_CONFIG_TIMEOUT_MS: 10000,
   
+  /** WebSocket reconnection delay (base) */
+  HA_WS_RECONNECT_DELAY_MS: 2000,
+  
+  /** WebSocket maximum reconnection delay */
+  HA_WS_MAX_RECONNECT_DELAY_MS: 30000,
+  
+  /** WebSocket ping interval */
+  HA_WS_PING_INTERVAL_MS: 30000,
+  
+  /** WebSocket pong timeout */
+  HA_WS_PONG_TIMEOUT_MS: 10000,
+  
+  /** WebSocket connection timeout */
+  HA_WS_CONNECTION_TIMEOUT_MS: 10000,
+  
   /** Memory persistence debounce */
   MEMORY_PERSIST_DEBOUNCE_MS: 500,
   
@@ -344,6 +359,9 @@ export const FEATURES = {
   
   /** Enable analytics */
   ENABLE_ANALYTICS: false,
+  
+  /** Enable thinking sounds during processing */
+  ENABLE_THINKING_SOUNDS: true,
   
   /** Enable debug mode */
   ENABLE_DEBUG: import.meta.env?.DEV || false,

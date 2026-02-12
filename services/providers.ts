@@ -735,14 +735,10 @@ export class OllamaProvider implements IAIProvider {
 
     } catch (e) {
       console.error('[OLLAMA] Request failed:', e);
-      // Add a small delay before returning fallback
-      await new Promise(r => setTimeout(r, 800));
-      return {
-        text: `[SIMULATED] Local kernel fallback active. You requested: "${request.prompt}". (Error: ${e instanceof Error ? e.message : 'Unknown'})`,
-        provider: AIProvider.OLLAMA,
-        model: 'simulated-7b-quantized',
-        latencyMs: Date.now() - start
-      };
+      // Release rate limiter slot before throwing
+      ollamaRateLimiter.release();
+      // Throw error so providerManager can fallback to Gemini
+      throw new Error(`Ollama request failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     } finally {
       // Always release rate limiter slot
       ollamaRateLimiter.release();
@@ -953,7 +949,20 @@ class ProviderManager {
        targetProvider = this.forcedMode;
        const provider = this.providers.get(targetProvider);
        if (!provider) throw new Error(`Provider ${targetProvider} not found.`);
-       return await provider.generate(request);
+       
+       try {
+         return await provider.generate(request);
+       } catch (e) {
+         // If forced mode is OLLAMA and it fails, fallback to GEMINI
+         if (this.forcedMode === AIProvider.OLLAMA) {
+           console.warn('[PROVIDER] Ollama failed in forced mode, falling back to Gemini:', e);
+           const gemini = this.providers.get(AIProvider.GEMINI);
+           if (gemini) {
+             return await gemini.generate(request);
+           }
+         }
+         throw e; // Re-throw if not Ollama or if Gemini also not available
+       }
     }
 
     const policies = cortex.getActivePolicies('global.router');

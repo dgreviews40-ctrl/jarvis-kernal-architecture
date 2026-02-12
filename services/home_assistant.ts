@@ -1,3 +1,8 @@
+import { haWebSocketService } from './home_assistant_ws';
+import type { ConnectionState } from './home_assistant_ws';
+import { FEATURES } from '../constants/config';
+import { eventBus } from './eventBus';
+
 export interface HAEntity {
   entity_id: string;
   state: string;
@@ -12,18 +17,81 @@ export interface HAServiceCall {
   service_data?: Record<string, any>;
 }
 
+export { ConnectionState };
+
 class HomeAssistantService {
   private baseUrl: string = "";
   private token: string | null = null;
   private entities: Map<string, HAEntity> = new Map();
   private _initialized: boolean = false;
   private proxyUrl: string = "http://localhost:3101"; // Default proxy URL
+  private wsUnsubscribe: (() => void) | null = null;
+  private lastFetchTime: number = 0;
+  private readonly FETCH_COOLDOWN_MS = 5000; // Minimum time between fetches
 
-  constructor() {}
+  constructor() {
+    // Listen for WebSocket entity updates
+    this.setupWebSocketListeners();
+  }
+
+  /**
+   * Setup listeners for WebSocket events
+   */
+  private setupWebSocketListeners(): void {
+    // Listen for entity updates from WebSocket
+    eventBus.subscribe('ha:entity_updated', (event) => {
+      const entity = event.payload as HAEntity;
+      if (entity?.entity_id) {
+        this.entities.set(entity.entity_id, entity);
+        this.lastFetchTime = Date.now();
+      }
+    });
+
+    // Listen for connection state changes
+    eventBus.subscribe('ha:ws:connected', () => {
+      console.log('[HOME_ASSISTANT] WebSocket connected, real-time updates enabled');
+    });
+
+    eventBus.subscribe('ha:ws:disconnected', (event) => {
+      const { code, reason } = event.payload as { code: number; reason?: string };
+      console.log(`[HOME_ASSISTANT] WebSocket disconnected: ${code} ${reason || ''}`);
+    });
+  }
+
+  /**
+   * Get WebSocket connection state
+   */
+  public get wsConnectionState(): ConnectionState {
+    return haWebSocketService.connectionState;
+  }
+
+  /**
+   * Check if WebSocket is connected for real-time updates
+   */
+  public get isWebSocketConnected(): boolean {
+    return haWebSocketService.isConnected;
+  }
+
+  /**
+   * Get WebSocket stats for monitoring
+   */
+  public getWebSocketStats() {
+    return haWebSocketService.getStats();
+  }
+
+  /**
+   * Get all Home Assistant entities
+   */
+  public getAllEntities(): HAEntity[] {
+    return Array.from(this.entities.values());
+  }
 
   public configure(url: string, token: string) {
     this.baseUrl = url;
     this.token = token;
+    
+    // Also configure WebSocket
+    haWebSocketService.configure(url, token);
   }
 
   public get initialized(): boolean {
@@ -88,6 +156,11 @@ class HomeAssistantService {
       // Fetch entities to verify connection
       await this.fetchEntities();
       
+      // Connect WebSocket for real-time updates (if enabled)
+      if (FEATURES.ENABLE_HA_WEBSOCKET) {
+        await this.connectWebSocket();
+      }
+      
       this._initialized = true;
       console.log("[HOME_ASSISTANT] Service initialized successfully");
     } catch (error) {
@@ -95,6 +168,41 @@ class HomeAssistantService {
       this._initialized = false;
       throw error;
     }
+  }
+
+  /**
+   * Connect WebSocket for real-time updates
+   */
+  private async connectWebSocket(): Promise<void> {
+    if (!this.baseUrl || !this.token) return;
+    
+    // Configure WebSocket
+    haWebSocketService.configure(this.baseUrl, this.token);
+    
+    // Subscribe to entity updates before connecting
+    this.wsUnsubscribe = haWebSocketService.subscribeToStateChanges((entity) => {
+      this.entities.set(entity.entity_id, entity);
+      console.log(`[HOME_ASSISTANT] Entity updated via WebSocket: ${entity.entity_id} = ${entity.state}`);
+    });
+    
+    // Connect
+    const connected = await haWebSocketService.connect();
+    if (connected) {
+      console.log('[HOME_ASSISTANT] WebSocket connected for real-time updates');
+    } else {
+      console.log('[HOME_ASSISTANT] WebSocket connection failed or disabled, using polling fallback');
+    }
+  }
+
+  /**
+   * Disconnect WebSocket
+   */
+  public disconnectWebSocket(): void {
+    if (this.wsUnsubscribe) {
+      this.wsUnsubscribe();
+      this.wsUnsubscribe = null;
+    }
+    haWebSocketService.disconnect();
   }
 
   private async updateProxyConfigWithRetry(url: string, token: string, maxRetries: number = 3): Promise<void> {
@@ -122,7 +230,16 @@ class HomeAssistantService {
       throw new Error("Home Assistant service not configured. Please set URL and token.");
     }
 
+    // Rate limiting: don't fetch too frequently
+    const now = Date.now();
+    if (now - this.lastFetchTime < this.FETCH_COOLDOWN_MS) {
+      console.log('[HOME_ASSISTANT] Fetch skipped: cooldown active');
+      return;
+    }
+
     try {
+      this.lastFetchTime = now;
+      
       // Only update proxy config if not already initialized
       // (during initialization, it's already configured)
       if (!this._initialized) {

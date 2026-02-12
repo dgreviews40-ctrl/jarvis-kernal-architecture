@@ -542,6 +542,40 @@ export class MemoryCoreOptimized {
     return false;
   }
 
+  public async clearAll(): Promise<number> {
+    await this.ensureLoaded();
+    
+    const count = this.nodes.size;
+    if (count === 0) return 0;
+    
+    // Record deletion events for audit trail before clearing
+    for (const node of this.nodes.values()) {
+      await eventSourcing.recordDeleted(node, 'USER');
+    }
+    
+    // Clear all nodes
+    this.nodes.clear();
+    
+    // Clear the search index
+    this.searchIndex = {
+      wordToNodes: new Map(),
+      tagToNodes: new Map(),
+      typeToNodes: new Map()
+    };
+    
+    // Persist empty state
+    this.persist();
+    this.triggerAutoBackup();
+    
+    // Clear Vector DB sync queue and sync
+    vectorDBSync.queueBatchStore([], 'low');
+    
+    this.notify();
+    
+    logger.log('MEMORY', `Cleared all ${count} memories`, 'warning');
+    return count;
+  }
+
   public async restore(nodes: MemoryNode[]): Promise<void> {
     await this.ensureLoaded();
 

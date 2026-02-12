@@ -18,7 +18,48 @@ interface IntentPattern {
 }
 
 const INTENT_PATTERNS: IntentPattern[] = [
-  // HOME ASSISTANT DATA QUERY - MUST be first to catch sensor queries before MEMORY_READ
+  // VISION_ANALYSIS - Physical visual commands (MOVED FIRST for priority)
+  {
+    type: IntentType.VISION_ANALYSIS,
+    confidence: 0.95,
+    complexity: 0.4,
+    patterns: [
+      // Direct camera/webcam commands - HIGH PRIORITY
+      /\b(open|start|turn on)\s+(the|my)\s+(camera|webcam)\b/i,
+      /\b(camera|webcam)\s+(on|open|start)\b/i,
+      // Snapshot commands - HIGH PRIORITY
+      /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture|image|pic)\b/i,
+      /\b(snapshot|photo|picture)\s+(camera|webcam|me|this|now)\b/i,
+      // Look at camera/webcam/feed
+      /\b(look|see|view|check)\s+(at|at my|at the)?\s*(camera|webcam|local camera|video feed|camera feed)\b/i,
+      /\b(look|see|view)\s+(at|my|the)?\s*(local|this|my)?\s*(camera|webcam|feed)\b/i,
+      // Specific camera names (garage, front door, etc.)
+      /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture)\s+(of|from)\s+(the|my)?\s*(garage|front|back|rear|door|porch|yard|kitchen|living|office|room)\s*(cam|camera)?\b/i,
+      /\b(snapshot|photo)\s+(of|from)\s+(the|my)?\s*(garage|front|back|rear|door|porch|yard)\s*(cam|camera)?\b/i,
+      /\b(garage|front|back|rear|door|porch|yard|kitchen|living|office)\s*(cam|camera)\s*(snapshot|photo|picture)?\b/i,
+      // Physical/visual looking
+      /\b(show me|what is this|describe this|scan this|analyze this|what do you see|can you see)\s+(on|in|the|my)?\s*(camera|webcam|screen|feed)?\b/i,
+      /\b(take a look|show what|what's in front of you|what can you see)\b/i,
+      /\b(camera|webcam|visual)\s+(check|scan|analyze|show|feed|view|look)\b/i,
+      // Read/see content
+      /\b(read this|what does this say|translate this|ocr|can you read)\b/i,
+      // Looking at physical things (not data systems)
+      /\blook\s+(at|in|out)\s+(the|my|this|that)\s+(room|window|door|desk|table|object|thing)\b/i,
+      /\bwhat\s+(is|do you see)\s+(this|that|here|there|in front of you)\b/i,
+      // Voice-specific patterns for physical vision
+      /jarvis.*\b(look|see|show|describe|scan|analyze)\s+(at|this|the|my|camera|webcam)/i,
+      /jarvis.*\bwhat.*\b(see|looking at|on my|in my|in the|on the)\s+(screen|camera|desk|room)\b/i
+    ],
+    keywords: ['look', 'see', 'camera', 'webcam', 'visual', 'scan', 'describe', 'image', 'picture', 'screen', 'read', 'ocr', 'translate', 'show me', 'this', 'that', 'here', 'snapshot', 'photo', 'pic', 'local camera', 'camera feed', 'video feed', 'open camera', 'take photo', 'capture image', 'garage', 'front door', 'back yard'],
+    // Negative patterns - if these match, reduce confidence (data/system queries, not visual)
+    negativePatterns: [
+      /\b(home assistant|ha)\s+(sensor|entity|device|status|camera)\s+(value|reading|status)\b/i,
+      /\blook\s+(at|in)\s+(home assistant|ha|solar|energy|data|statistics|history|log)\b/i,
+      /\bcamera\s+(sensor|entity|status|value|reading)\b/i
+    ]
+  },
+  
+  // HOME ASSISTANT DATA QUERY - Catch sensor queries
   {
     type: IntentType.QUERY,
     confidence: 0.95,
@@ -70,6 +111,45 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /\b(home assistant|ha)\s+(sensor|entity|device|status)\b/i,
       /\bsensor\s+(value|reading|status)\b/i
     ],
+    // Negative patterns - exclude idea/project requests
+    negativePatterns: [
+      /\b(ideas?|suggestions?|projects?|recommendations?)\b/i,
+      /\bhelp\s+me\s+(with|on)\b/i,
+      /\bhow\s+(can|do)\s+I\s+(work on|build|create|make|set up)\b/i,
+      /\bwhat\s+can\s+I\s+(do|work on|build|create)\b/i
+    ],
+    // Negative patterns - exclude vision commands and personal conversation
+    negativePatterns: [
+      /\b(open|start|turn on)\s+(the|my)\s+(camera|webcam)\b/i,
+      /\b(look|see|view)\s+(at)?\s*(my|the|local)?\s*(camera|webcam|video feed)\b/i,
+      /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture|image|pic)\s+(of|from|at)/i,
+      /\bsnapshot\s+(of|from)\b/i,
+      /\bwhat\s+(do you see|can you see|is in front of you)\b/i,
+      /\bmy\s+(camera|webcam|local camera)\b/i,
+      /\b(garage|front|back|rear|door|porch|yard)\s*(cam|camera)\b/i,
+      // Exclude conversational/personal context after vision interactions
+      /\bthis\s+(image|photo|picture|snapshot)\s+(is|was|shows)\b/i,
+      /\b(my\s+garage|my\s+house|i'm\s+converting|i'm\s+cleaning|i'm\s+working)\b/i,
+      /\b(i\s+do|i\s+am|i'm\s+trying|i\s+want|i\s+like|i\s+have)\s+\w+\s+(projects|woodworking|cleaning|organizing)\b/i,
+      // Exclude vision memory recall patterns
+      /\b(look|show|find|search)\s+(in|at|through)\s+(vision memory|vision memories|stored images)\b/i,
+      /\b(do you remember|recall)\s+(the|that|my|seeing)\s*(image|photo|picture|snapshot|garage)\b/i,
+      // Exclude personal routines and morning conversation
+      /\b(i'm|i am|just)\s+(waking\s+up|getting\s+up|starting\s+my\s+day)\b/i,
+      /\bhaving\s+(my|a)\s+(coffee|tea|breakfast|morning)\b/i,
+      /\b(drinking|sipping)\s+(my|a)\s+(coffee|tea)\b/i,
+      /\b(just|i'm)\s+(up|awake|starting)\b/i,
+      /\bfiguring\s+(out|that)\s+(my|the|what|today)\b/i,
+      /\b(i'm|i am)\s+(just|currently|still)\s+\w+ing\b/i,
+      /\b(i|my)\s+(day|morning|afternoon|evening|routine)\b/i,
+      /\b(i've|i have)\s+been\s+(just|sitting|relaxing|thinking|here)\b/i,
+      /\bsitting\s+here\b/i,
+      /\bthinking\s+about\s+(it|that|things)\b/i,
+      // Exclude JARVIS-related coding conversation
+      /\b(writing|creating|developing)\s+(code|scripts|functions)\s+(for|to)\s+(you|jarvis)\b/i,
+      /\bcode\s+(for|to)\s+(you|jarvis|your)\b/i,
+      /\b(coding|programming|writing)\s+.*\s+(for|to)\s+(you|jarvis)\b/i
+    ],
     keywords: [
       // Core sensor keywords
       'sensor', 'device', 'entity', 'status', 'value', 'reading', 'level',
@@ -95,32 +175,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ]
   },
   
-  // VISION_ANALYSIS - Physical visual commands
-  {
-    type: IntentType.VISION_ANALYSIS,
-    confidence: 0.92,
-    complexity: 0.6,
-    patterns: [
-      // Physical/visual looking - camera/webcam/physical objects
-      /\b(look|see)\s+(at|this|here|the)\s+(camera|webcam|screen|image|picture|photo|video|display)/i,
-      /\b(show me|what is this|describe this|scan this|analyze this|what do you see|can you see)\s+(on|in|the)/i,
-      /\b(take a look|show what|what's in front of you)/i,
-      /\b(camera|webcam|visual)\s+(check|scan|analyze|show|feed|view)/i,
-      /\b(read this|what does this say|translate this|ocr)/i,
-      // Looking at physical things (not data systems)
-      /\blook\s+(at|in|out)\s+(the|my|this|that)\s+(room|window|door|desk|table|object|thing)/i,
-      /\bwhat\s+(is|do you see)\s+(this|that|here|there)/i,
-      // Voice-specific patterns for physical vision
-      /jarvis.*\b(look|see|show|describe|scan|analyze)\s+(at|this|the|my)/i,
-      /jarvis.*\bwhat.*\b(see|looking at|on my|in my|in the|on the)\s+(screen|camera|desk|room)/i
-    ],
-    keywords: ['look', 'see', 'camera', 'webcam', 'visual', 'scan', 'describe', 'image', 'picture', 'screen', 'read', 'ocr', 'translate', 'show me', 'this', 'that', 'here'],
-    // Negative patterns - if these match, reduce confidence (data/system queries, not visual)
-    negativePatterns: [
-      /\b(home assistant|ha|solar|production|energy|power usage|statistics|data|sensor value|entity state)\b/i,
-      /\blook\s+(at|in)\s+(home assistant|ha|solar|energy|data|statistics|history|log)/i
-    ]
-  },
+
   
   // TIMER_REMINDER - Timer and reminder requests
   {
@@ -142,21 +197,29 @@ const INTENT_PATTERNS: IntentPattern[] = [
   // MEMORY_WRITE - High confidence patterns
   {
     type: IntentType.MEMORY_WRITE,
-    confidence: 0.90,
+    confidence: 0.92,
     complexity: 0.2,
     patterns: [
       /^(save|remember|store|note|write down|record|log|add to memory)/i,
       /^(don't forget|never forget|make sure to remember|keep in mind)/i,
       /(my name is|i am|i live|i work|i prefer|i like|i want)/i,
-      /(this is important|remember that|take note)/i
+      /(this is important|remember that|take note)/i,
+      // Personal identification from images/vision memory
+      /\b(that|this|the)\s+(image|photo|picture|snapshot|person)\s+(is|was)\s+(me|myself|i|my\s+\w+)\b/i,
+      /\b(i am|i'm)\s+(the person|that person|in the|in that)\s+(image|photo|picture|snapshot)\b/i,
+      /\b(that|the)\s+(image|photo|picture|snapshot)\s+(shows|is|has)\s+(me|myself)\b/i,
+      // Image ownership statements
+      /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)?\s*(the|my)?\s*(garage|house|room|office)\s+(is|was)\s+(my|our)\b/i,
+      /\b(my|our)\s+(garage|house|room|office)\s+(is|was)\s+(in|shown in|depicted in)\s+(this|that|the)\s+(image|photo|picture|snapshot)\b/i,
+      /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\b/i
     ],
-    keywords: ['save', 'remember', 'store', 'note', 'record', 'log', 'forget', 'important']
+    keywords: ['save', 'remember', 'store', 'note', 'record', 'log', 'forget', 'important', 'that is me', 'this is me', 'i am the person', 'my garage', 'my house', 'this image is']
   },
   
   // MEMORY_READ - Personal memory recall (NOT sensor data)
   {
     type: IntentType.MEMORY_READ,
-    confidence: 0.85,
+    confidence: 0.92,
     complexity: 0.2,
     patterns: [
       /^(recall|what did|do you remember|what was|what have)/i,
@@ -165,14 +228,21 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /^(tell me about|what do you know about|what can you tell me)/i,
       /\b(previously|before|earlier|last time|yesterday|last week|stored|saved)\b/i,
       // "What's my" only for personal info, not sensor data
-      /what's my\s+(name|location|preference|setting|password)/i
+      /what's my\s+(name|location|preference|setting|password)/i,
+      // Vision memory recall - HIGH PRIORITY
+      /\b(look|show|find|search|check)\s+(in|at|through|my|the)?\s*(vision memory|vision memories|stored images|saved photos)\b/i,
+      /\b(show me|find|search|recall)\s+(my|the|past|previous|old)?\s*(images|photos|pictures|snapshots)\s+(of|from|in|my)?\b/i,
+      /\b(look|see|check)\s+(for|at)?\s*(the|my)?\s*(image|photo|picture|snapshot)\s+(of|from|in|my)?\b/i,
+      /\b(what|which)\s+(images|photos|pictures)\s+(did|have|was|do you have|did you save)\b/i,
+      /\b(do you remember|recall)\s+(the|that|my|seeing)\s*(image|photo|picture|snapshot|garage|the garage)\b/i
     ],
-    keywords: ['recall', 'remember', 'where', 'what did', 'previously', 'before', 'earlier', 'know about', 'stored'],
+    keywords: ['recall', 'remember', 'where', 'what did', 'previously', 'before', 'earlier', 'know about', 'stored', 'images', 'photos', 'pictures', 'vision memory', 'snapshots', 'look for', 'find image', 'see the image', 'vision'],
     // Strong negative patterns - reject sensor/data queries
     negativePatterns: [
       /\b(solar|energy|power|production|consumption|usage|sensor|device|entity|temperature|humidity|weather|stock|price|news)\b/i,
       /\b(current|now|today)\s+(solar|energy|power|temperature|weather)\b/i,
-      /\b(producing|generating|consuming)\s+(solar|energy|power)\b/i
+      /\b(producing|generating|consuming)\s+(solar|energy|power)\b/i,
+      // But ALLOW vision memory + garage
     ]
   },
   
@@ -193,17 +263,76 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /(door|lock|garage|cover|blind|shade|curtain|window)/i,
       /(printer|outlet|plug|socket|power|device|entity)/i
     ],
-    keywords: ['turn', 'toggle', 'switch', 'activate', 'enable', 'disable', 'open', 'close', 'lock', 'unlock', 'play', 'pause', 'stop', 'set', 'adjust', 'run', 'launch', 'increase', 'decrease', 'light', 'fan', 'thermostat']
+    keywords: ['turn', 'toggle', 'switch', 'activate', 'enable', 'disable', 'open', 'close', 'lock', 'unlock', 'play', 'pause', 'stop', 'set', 'adjust', 'run', 'launch', 'increase', 'decrease', 'light', 'fan', 'thermostat'],
+    // Negative patterns - exclude conversational context
+    negativePatterns: [
+      /\b(my\s+garage|my\s+house|this\s+image|this\s+photo)\s+(is|has|looks|was)\b/i,
+      /\b(i'm|i am|i've been)\s+(converting|cleaning|organizing|working|renovating|building)\b/i,
+      /\b(converting|cleaning|organizing)\s+(my|the)\s+(garage|house|room|space)\b/i
+    ]
   },
   
-  // SIMPLE_QUERY - Common conversational questions (high confidence)
+  // SOCIAL - Conversational/social interactions (highest priority for natural responses)
+  {
+    type: IntentType.SOCIAL,
+    confidence: 0.94,
+    complexity: 0.1,
+    patterns: [
+      // Greeting with reciprocation expected
+      /\b(how\s+are\s+you|how\s+you\s+doing|how's\s+it\s+going|how\s+are\s+things)\b/i,
+      /\bhow're\s+you\b/i,
+      /\bwhat's\s+up\b/i,
+      /\bhow\s+you\s+been\b/i,
+      // Shared experience (working on JARVIS together)
+      /\b(working|coding|programming)\s+on\s+(you|your\s+code|jarvis|the\s+project)\b/i,
+      /\b(writing|creating|developing)\s+(code|scripts|functions)\s+(for|to)\s+(you|jarvis|your)\b/i,
+      /\b(I've been|I have been)\s+(improving|updating|fixing|enhancing)\s+(you|your\s+code|jarvis)\b/i,
+      /\bmaking\s+(you|jarvis)\s+(better|smarter|faster)\b/i,
+      /\bcode\s+(for|to)\s+(you|jarvis|your)\b/i,
+      // Personal updates about user's space/projects (after vision interactions)
+      /\bthis\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|the)\s+(garage|house|room|office|workshop)\b/i,
+      /\b(my\s+garage|my\s+house|my\s+room|my\s+office|my\s+workshop)\s+(is|was|has)\b/i,
+      /\b(i'm|i am|i've been)\s+(converting|cleaning|organizing|working on|renovating|building)\b/i,
+      /\b(i\s+do|i\s+am|i'm|i\s+like|i\s+enjoy)\s+\w+\s*(projects|woodworking|cleaning|organizing|building|making)\b/i,
+      /\b(trying|want|plan)\s+to\s+(clean|organize|convert|renovate|build|work on)\b/i,
+      // Personal updates
+      /\b(I've been|I have been|I was)\s+(working|coding|programming|developing)\s+on\b/i,
+      /\b(I'm|I am)\s+(feeling|doing|been)\s+(good|great|well|tired|excited|stressed)\b/i,
+      // Morning/routine conversation
+      /\b(i'm|i am|just)\s+(waking\s+up|getting\s+up|starting\s+my\s+day)\b/i,
+      /\bhaving\s+(my|a)\s+(coffee|tea|breakfast|morning|drink|cup)\b/i,
+      /\b(coffee|tea|breakfast)\s+time\b/i,
+      /\b(enjoying|drinking|sipping)\s+(my|a|some)\s+(coffee|tea|drink|breakfast)\b/i,
+      /\b(cup\s+of)\s+(coffee|tea)\b/i,
+      /\b(just|i'm)\s+(up|awake|starting|beginning)\b/i,
+      /\bfiguring\s+(out|that)\s+(my|the|what|today|now)\b/i,
+      /\b(i'm|i am)\s+(just|currently|still)\s+\w+ing\b/i,
+      /\b(i|my)\s+(day|morning|afternoon|evening|routine|schedule)\b/i,
+      /\b(i|i've|i have)\s+(slept|sleep)\b/i,
+      /\b(i've|i have)\s+been\s+(just|sitting|relaxing|thinking)\b/i,
+      /\bsitting\s+here\b/i,
+      /\bthinking\s+about\s+(it|that|things)\b/i,
+      // Casual conversation
+      /\b(i'm|i am)\s+(just|only|simply)\b/i,
+      /\b(i|my|me)\s+(think|thought|wonder|wondering|guess|suppose)\b/i,
+      /\b(let me|lemme|i'll)\s+(tell|share|say|explain)\b/i,
+    ],
+    keywords: ['how are you', 'how you doing', 'how is it going', 'working on you', 'working on jarvis', 'coding', 'your code', 'I have been', 'Ive been', 'my garage', 'my house', 'converting', 'cleaning', 'woodworking', 'projects', 'this image', 'my workshop'],
+    // Negative patterns - exclude personal identification statements (should go to MEMORY_WRITE)
+    negativePatterns: [
+      /\b(that|this|the)\s+(image|photo|picture|snapshot|person)\s+(is|was)\s+(me|myself)\b/i,
+      /\b(i am|i'm)\s+(the person|that person|in the|in that)\s+(image|photo|picture|snapshot)\b/i,
+      /\b(that|the)\s+(image|photo|picture|snapshot)\s+(shows|is|has)\s+(me|myself)\b/i
+    ]
+  },
+  
+  // SIMPLE_QUERY - Common informational questions
   {
     type: IntentType.QUERY,
     confidence: 0.88,
     complexity: 0.3,
     patterns: [
-      // Personal/conversational queries
-      /\bhow\s+are\s+(you|you doing|things)\b/i,
+      // Personal info queries
       /\bwhat('s| is)\s+your\s+name\b/i,
       /\b(do you|can you|will you)\s+(know|remember|recall)\s+(my\s+)?name\b/i,
       /\bwho\s+am\s+i\b/i,
@@ -211,7 +340,10 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /\bwhat\s+can\s+you\s+do\b/i,
       /\bwhat\s+time\s+is\s+(it|it now)\b/i,
       /\bwhat\s+day\s+is\s+(it|today)\b/i,
-      /\bhow\s+(are you|is it going|are things)\b/i,
+      // Ideas and suggestions
+      /\b(can you|could you)\s+give\s+me\s+(some\s+)?(ideas?|suggestions?)/i,
+      /\bwhat\s+(are|do)\s+you\s+(suggest|recommend)/i,
+      /\b(ideas?|suggestions?)\s+(for|about|on)\b/i,
       // Weather (simple forms)
       /\bwhat('s|s| is)\s+(the\s+)?weather\b/i,
       /\bhow('s| is)\s+(the\s+)?weather\b/i,
@@ -220,7 +352,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /\bwhat\s+(do you|should i)\s+(suggest|recommend)\b/i,
       /\bwhat\s+(can|should)\s+i\s+do\b/i
     ],
-    keywords: ['how are you', 'your name', 'my name', 'who am i', 'what time', 'what day', 'weather', 'recommendations', 'suggest']
+    keywords: ['your name', 'my name', 'who am i', 'what time', 'what day', 'weather', 'recommendations', 'suggest']
   },
   
   // QUERY - Catch-all for questions (lowest priority in patterns)
@@ -292,6 +424,62 @@ export class LocalIntentClassifier {
     const cached = this.getCached(normalized);
     if (cached) return cached;
     
+    // EARLY CHECK: Vision memory recall - high priority
+    const isVisionMemoryQuery = /\b(look|show|find|search|check)\s+(in|at|through|for|my|the|into)?\s*(vision memory|vision memories|stored images|saved photos|image memory|visual memory)\b/i.test(normalized) ||
+                                /\b(look|see|check)\s+(for|at)?\s*(the|my|any)?\s*(image|photo|picture|snapshot|snapshots)\s+(of|from|in|my|the)?\b/i.test(normalized) ||
+                                /\b(do you remember|recall)\s+(the|that|my|seeing|any)?\s*(image|photo|picture|snapshot|garage|photos)\b/i.test(normalized) ||
+                                /\b(current|previous|last|stored|saved)\s+(image|photo|picture|snapshot|photos)\b/i.test(normalized) ||
+                                /\bimage\s+of\s+(my|the)\s+(garage|house|room|office|person|me)\b/i.test(normalized) ||
+                                /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(normalized);
+    
+    // EXCLUDE ownership/identification statements
+    const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(normalized) ||
+                                 /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i.test(normalized);
+    
+    if (isVisionMemoryQuery && !isOwnershipStatement) {
+      const result: ParsedIntent = {
+        type: IntentType.MEMORY_READ,
+        confidence: 0.95,
+        complexity: 0.2,
+        suggestedProvider: 'OLLAMA',
+        entities: this.extractEntities(normalized),
+        reasoning: 'Vision memory recall detected - high priority'
+      };
+      this.cacheResult(normalized, result);
+      return result;
+    }
+    
+    // EARLY CHECK: Social conversation - prevent misclassification as HA query
+    const isSocialConversation = /\b(i'm|i am|just)\s+(waking\s+up|getting\s+up|starting\s+my\s+day)\b/i.test(normalized) ||
+                                 /\bhaving\s+(my|a)\s+(coffee|tea|breakfast|morning|drink|cup)\b/i.test(normalized) ||
+                                 /\b(coffee|tea|breakfast)\s+time\b/i.test(normalized) ||
+                                 /\b(enjoying|drinking|sipping)\s+(my|a|some)\s+(coffee|tea|drink|breakfast)\b/i.test(normalized) ||
+                                 /\b(cup\s+of)\s+(coffee|tea)\b/i.test(normalized) ||
+                                 /\b(just|i'm)\s+(up|awake|starting)\b/i.test(normalized) ||
+                                 /\bfiguring\s+(out|that)\s+(my|the|what|today|now)\b/i.test(normalized) ||
+                                 /\b(i'm|i am)\s+(just|currently|still)\s+\w+ing\b/i.test(normalized) ||
+                                 /\b(good\s+morning|morning|evening|afternoon)\b/i.test(normalized) ||
+                                 /\b(i'm|i am)\s+(just|only|simply)\b/i.test(normalized) ||
+                                 /\b(i|my)\s+(think|thought|wonder|wondering|guess|suppose)\b/i.test(normalized) ||
+                                 /\b(i've|i have)\s+been\s+(just|sitting|relaxing|thinking)\b/i.test(normalized) ||
+                                 /\bsitting\s+here\b/i.test(normalized) ||
+                                 /\bthinking\s+about\s+(it|that|things)\b/i.test(normalized) ||
+                                 /\b(writing|creating|developing)\s+(code|scripts|functions)\s+(for|to)\s+(you|jarvis)\b/i.test(normalized) ||
+                                 /\bcode\s+(for|to)\s+(you|jarvis|your)\b/i.test(normalized);
+    
+    if (isSocialConversation) {
+      const result: ParsedIntent = {
+        type: IntentType.SOCIAL,
+        confidence: 0.94,
+        complexity: 0.1,
+        suggestedProvider: 'OLLAMA',
+        entities: this.extractEntities(normalized),
+        reasoning: 'Social conversation detected - personal routine/update'
+      };
+      this.cacheResult(normalized, result);
+      return result;
+    }
+    
     // Try pattern matching with normalized input
     const result = this.matchPatterns(normalized, trimmed);
     
@@ -310,6 +498,44 @@ export class LocalIntentClassifier {
     // Always use Gemini for complex creative tasks
     if (COMPLEXITY_INDICATORS.some(w => normalized.includes(w))) {
       return true;
+    }
+    
+    // NEVER use Gemini for vision memory queries - handle locally
+    const isVisionMemoryQuery = /\b(look|show|find|search|check)\s+(in|at|through|for|my|the|into)?\s*(vision memory|vision memories|stored images|saved photos|image memory|visual memory)\b/i.test(normalized) ||
+                                /\b(look|see|check)\s+(for|at)?\s*(the|my|any)?\s*(image|photo|picture|snapshot|snapshots)\s+(of|from|in|my|the)?\b/i.test(normalized) ||
+                                /\b(do you remember|recall)\s+(the|that|my|seeing|any)?\s*(image|photo|picture|snapshot|garage|photos)\b/i.test(normalized) ||
+                                /\b(current|previous|last|stored|saved)\s+(image|photo|picture|snapshot|photos)\b/i.test(normalized) ||
+                                /\bimage\s+of\s+(my|the)\s+(garage|house|room|office|person|me)\b/i.test(normalized) ||
+                                /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(normalized);
+    
+    // EXCLUDE ownership/identification statements
+    const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(normalized) ||
+                                 /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i.test(normalized);
+    
+    if (isVisionMemoryQuery && !isOwnershipStatement) {
+      return false; // Handle vision memory locally
+    }
+    
+    // NEVER use Gemini for social conversation - handle locally
+    const isSocialConversation = /\b(i'm|i am|just)\s+(waking\s+up|getting\s+up|starting\s+my\s+day)\b/i.test(normalized) ||
+                                 /\bhaving\s+(my|a)\s+(coffee|tea|breakfast|morning|drink|cup)\b/i.test(normalized) ||
+                                 /\b(coffee|tea|breakfast)\s+time\b/i.test(normalized) ||
+                                 /\b(enjoying|drinking|sipping)\s+(my|a|some)\s+(coffee|tea|drink|breakfast)\b/i.test(normalized) ||
+                                 /\b(cup\s+of)\s+(coffee|tea)\b/i.test(normalized) ||
+                                 /\b(just|i'm)\s+(up|awake|starting)\b/i.test(normalized) ||
+                                 /\bfiguring\s+(out|that)\s+(my|the|what|today|now)\b/i.test(normalized) ||
+                                 /\b(i'm|i am)\s+(just|currently|still)\s+\w+ing\b/i.test(normalized) ||
+                                 /\b(good\s+morning|morning|evening|afternoon)\b/i.test(normalized) ||
+                                 /\b(i'm|i am)\s+(just|only|simply)\b/i.test(normalized) ||
+                                 /\b(i|my)\s+(think|thought|wonder|wondering|guess|suppose)\b/i.test(normalized) ||
+                                 /\b(i've|i have)\s+been\s+(just|sitting|relaxing|thinking)\b/i.test(normalized) ||
+                                 /\bsitting\s+here\b/i.test(normalized) ||
+                                 /\bthinking\s+about\s+(it|that|things)\b/i.test(normalized) ||
+                                 /\b(writing|creating|developing)\s+(code|scripts|functions)\s+(for|to)\s+(you|jarvis)\b/i.test(normalized) ||
+                                 /\bcode\s+(for|to)\s+(you|jarvis|your)\b/i.test(normalized);
+    
+    if (isSocialConversation) {
+      return false; // Handle social conversation locally
     }
     
     // Check if this is a Home Assistant sensor query

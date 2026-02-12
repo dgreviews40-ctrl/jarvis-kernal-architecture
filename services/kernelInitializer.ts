@@ -12,6 +12,7 @@ import { localVectorDB } from './localVectorDB';
 import { contextWindowService } from './contextWindowService';
 import { memoryConsolidationService } from './memoryConsolidationService';
 import { agentOrchestrator } from './agentOrchestrator';
+import { visionMemory } from './visionMemory';
 import { logger } from './logger';
 import { getKernelStoreState } from '../stores';
 
@@ -20,6 +21,7 @@ export interface KernelInitStatus {
   contextWindow: boolean;
   memoryConsolidation: boolean;
   agentSystem: boolean;
+  visionMemory: boolean;
   errors: string[];
 }
 
@@ -32,6 +34,7 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
     contextWindow: false,
     memoryConsolidation: false,
     agentSystem: false,
+    visionMemory: false,
     errors: []
   };
 
@@ -91,6 +94,21 @@ export async function initializeKernelV140(): Promise<KernelInitStatus> {
     logger.log('KERNEL', `Agent System initialization error: ${(error as Error).message}`, 'error');
   }
 
+  // Initialize Vision Memory Service
+  try {
+    logger.log('KERNEL', 'Initializing Vision Memory Service...', 'info');
+    status.visionMemory = await visionMemory.initialize();
+    if (status.visionMemory) {
+      const stats = visionMemory.getStats();
+      logger.log('KERNEL', `Vision Memory ready: ${stats.totalImages} images stored`, 'success');
+    } else {
+      logger.log('KERNEL', 'Vision Memory initialized without CLIP server (using fallback)', 'warning');
+    }
+  } catch (error) {
+    status.errors.push(`Vision Memory error: ${(error as Error).message}`);
+    logger.log('KERNEL', `Vision Memory initialization error: ${(error as Error).message}`, 'error');
+  }
+
   const allSuccess = status.vectorDB && status.contextWindow && status.memoryConsolidation && status.agentSystem;
   if (allSuccess) {
     logger.log('KERNEL', 'JARVIS Kernel v1.5.0 initialized successfully', 'success');
@@ -113,6 +131,7 @@ export function getKernelStatus(): KernelInitStatus {
     contextWindow: true, // Always available
     memoryConsolidation: true, // Default to true
     agentSystem: true, // Default to true
+    visionMemory: true, // Default to true
     errors: []
   };
 }

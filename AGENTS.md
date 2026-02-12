@@ -541,6 +541,64 @@ Bundle size warnings are expected for feature chunks. The `chunkSizeWarningLimit
 
 ---
 
+## Social Response Handler (v2.1)
+
+The Social Response Handler (`services/socialResponseHandler.ts`) enables JARVIS to engage in natural conversational reciprocity:
+
+### What It Does
+
+| Interaction Type | Example Input | Response Pattern |
+|-----------------|---------------|------------------|
+| **Reciprocal Greeting** | "Good morning, how you doing?" | Answers about JARVIS's state before asking how to help |
+| **Shared Experience** | "I've been working on your code" | Expresses gratitude, acknowledges collaborative effort |
+| **Personal Update** | "I've been working hard on..." | Responds with interest, stores as memory |
+| **Emotional Check-in** | "I'm feeling tired/stressed/excited" | Responds with appropriate empathy |
+
+### Intent Detection
+
+The handler uses regex patterns to detect social intents before routing to AI:
+
+```typescript
+// Greeting with reciprocation expected
+/\b(how\s+are\s+you|how\s+you\s+doing|how's\s+it\s+going)\b/i
+
+// Shared experience (working on JARVIS together)
+/\b(working|coding|programming)\s+on\s+(you|your\s+code|jarvis)\b/i
+
+// Personal updates
+/\b(I've been|I have been)\s+(working|coding|programming)\s+on\b/i
+```
+
+### Response Examples
+
+**Before:**
+- User: "Good morning how you doing"
+- JARVIS: "Good morning! How can I assist you today?"
+- ❌ Doesn't answer "how you doing"
+
+**After:**
+- User: "Good morning how you doing"
+- JARVIS: "Good morning! I'm doing quite well, thank you for asking. All my systems are running smoothly. How can I assist you today?"
+- ✅ Reciprocates the greeting
+
+**Before:**
+- User: "I've been working hard on your code"
+- JARVIS: "Yes, I have access to your Home Assistant. I can control 1065 smart home devices."
+- ❌ Completely ignores the personal/collaborative aspect
+
+**After:**
+- User: "I've been working hard on your code"
+- JARVIS: "I really appreciate you investing your time in me. It means a lot that you're working to make me better. Is there anything I can help you with on the technical side?"
+- ✅ Acknowledges and thanks the user
+
+### Technical Integration
+
+1. **Local Intent Classifier** (`localIntent.ts`): New `SOCIAL` intent type for high-confidence matches
+2. **Kernel Processor** (`kernelProcessor.ts`): Dedicated `handleSocial()` method
+3. **Types** (`types.ts`): Added `SOCIAL` to `IntentType` enum
+
+---
+
 ## Additional Resources
 
 | Document | Description |

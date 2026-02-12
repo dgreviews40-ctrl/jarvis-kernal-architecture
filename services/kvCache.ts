@@ -81,7 +81,7 @@ class KVCacheManager extends EventEmitter {
   constructor() {
     super();
     this.startCleanupTimer();
-    logger.log('KV_CACHE', 'KV-Cache Manager initialized', 'info');
+    logger.log('MEMORY', 'KV-Cache Manager initialized', 'info');
   }
 
   /**
@@ -112,7 +112,7 @@ class KVCacheManager extends EventEmitter {
         useCount: existing.useCount 
       });
       
-      logger.log('KV_CACHE', `Context hit for ${conversationId} (use #${existing.useCount})`, 'debug');
+      logger.log('MEMORY', `Context hit for ${conversationId} (use #${existing.useCount})`, 'info');
       return existing;
     }
 
@@ -128,7 +128,7 @@ class KVCacheManager extends EventEmitter {
     const newContext = this.createNewContext(conversationId, systemPrompt, model);
     this.contexts.set(conversationId, newContext);
     
-    logger.log('KV_CACHE', `Created new context for ${conversationId}`, 'debug');
+    logger.log('MEMORY', `Created new context for ${conversationId}`, 'info');
     return newContext;
   }
 
@@ -142,7 +142,7 @@ class KVCacheManager extends EventEmitter {
     const context = this.contexts.get(conversationId);
     if (context) {
       context.ollamaContextId = contextId;
-      logger.log('KV_CACHE', `Updated Ollama context ID for ${conversationId}: ${contextId}`, 'debug');
+      logger.log('MEMORY', `Updated Ollama context ID for ${conversationId}: ${contextId}`, 'info');
     }
   }
 
@@ -239,7 +239,7 @@ class KVCacheManager extends EventEmitter {
     const existed = this.contexts.delete(conversationId);
     if (existed) {
       this.emit('contextInvalidated', { contextId: conversationId });
-      logger.log('KV_CACHE', `Invalidated context ${conversationId}`, 'info');
+      logger.log('MEMORY', `Invalidated context ${conversationId}`, 'info');
     }
   }
 
@@ -250,7 +250,7 @@ class KVCacheManager extends EventEmitter {
     const count = this.contexts.size;
     this.contexts.clear();
     this.emit('allContextsCleared', { count });
-    logger.log('KV_CACHE', `Cleared all ${count} contexts`, 'info');
+    logger.log('MEMORY', `Cleared all ${count} contexts`, 'info');
   }
 
   /**
@@ -325,7 +325,7 @@ class KVCacheManager extends EventEmitter {
     if (!enabled) {
       this.clearAll();
     }
-    logger.log('KV_CACHE', `KV-Cache ${enabled ? 'enabled' : 'disabled'}`, 'info');
+    logger.log('MEMORY', `KV-Cache ${enabled ? 'enabled' : 'disabled'}`, 'info');
   }
 
   // ==================== Private Methods ====================
@@ -366,7 +366,7 @@ class KVCacheManager extends EventEmitter {
         contextId: oldestId, 
         useCount: oldest.useCount 
       });
-      logger.log('KV_CACHE', `Evicted oldest context ${oldestId}`, 'debug');
+      logger.log('MEMORY', `Evicted oldest context ${oldestId}`, 'info');
     }
   }
 
@@ -409,11 +409,11 @@ class KVCacheManager extends EventEmitter {
     for (const id of expired) {
       this.contexts.delete(id);
       this.emit('contextExpired', { contextId: id });
-      logger.log('KV_CACHE', `Cleaned up expired context ${id}`, 'debug');
+      logger.log('MEMORY', `Cleaned up expired context ${id}`, 'info');
     }
 
     if (expired.length > 0) {
-      logger.log('KV_CACHE', `Cleaned up ${expired.length} expired contexts`, 'info');
+      logger.log('MEMORY', `Cleaned up ${expired.length} expired contexts`, 'info');
     }
   }
 
@@ -427,7 +427,7 @@ class KVCacheManager extends EventEmitter {
     }
     this.clearAll();
     this.removeAllListeners();
-    logger.log('KV_CACHE', 'KV-Cache Manager disposed', 'info');
+    logger.log('MEMORY', 'KV-Cache Manager disposed', 'info');
   }
 }
 
@@ -436,4 +436,5 @@ export const kvCache = new KVCacheManager();
 export default kvCache;
 
 // Also export the class for testing
-export { KVCacheManager, CachedContext, ContextStats, KV_CACHE_CONFIG };
+export { KVCacheManager, KV_CACHE_CONFIG };
+export type { CachedContext, ContextStats };

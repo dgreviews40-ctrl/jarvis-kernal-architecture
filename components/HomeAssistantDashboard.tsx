@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { haService, HAEntity } from '../services/home_assistant';
+import { haService, HAEntity, ConnectionState } from '../services/home_assistant';
 import { textStyle, textColor, fontFamily } from '../constants/typography';
 import {
   getWhitelistState,
@@ -34,10 +34,12 @@ const HomeAssistantDashboard: React.FC = () => {
     connected: boolean;
     entitiesCount: number;
     error?: string;
+    wsState?: ConnectionState;
   }>({
     connected: false,
     entitiesCount: 0,
-    error: ''
+    error: '',
+    wsState: 'disconnected'
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
@@ -57,7 +59,10 @@ const HomeAssistantDashboard: React.FC = () => {
         // Get connection status
         const status = await haService.getStatus();
         if (!isMounted) return;
-        setConnectionStatus(status);
+        setConnectionStatus({
+          ...status,
+          wsState: haService.wsConnectionState
+        });
 
         if (status.connected) {
           // Get all HA entities
@@ -110,11 +115,24 @@ const HomeAssistantDashboard: React.FC = () => {
     
     loadDataAsync();
     
-    // Refresh data periodically
+    // Refresh data periodically (less frequent when WebSocket is active)
     const interval = setInterval(loadDataAsync, 120000);
+    
+    // Listen for WebSocket state changes
+    const handleWsStateChange = (event: CustomEvent) => {
+      if (!isMounted) return;
+      setConnectionStatus(prev => ({
+        ...prev,
+        wsState: event.detail?.newState || haService.wsConnectionState
+      }));
+    };
+    
+    window.addEventListener('ha:ws:state_change', handleWsStateChange as EventListener);
+    
     return () => {
       isMounted = false;
       clearInterval(interval);
+      window.removeEventListener('ha:ws:state_change', handleWsStateChange as EventListener);
     };
   }, []);
 
@@ -364,6 +382,7 @@ const HomeAssistantDashboard: React.FC = () => {
             )}
           </div>
           <div className="flex items-center space-x-4">
+            {/* HTTP Connection Status */}
             <div className={`flex items-center space-x-2 px-3 py-1 rounded-full ${
               connectionStatus.connected
                 ? 'bg-green-900/30 text-green-400 border border-green-800'
@@ -373,9 +392,37 @@ const HomeAssistantDashboard: React.FC = () => {
                 connectionStatus.connected ? 'bg-green-400' : 'bg-red-400'
               }`}></div>
               <span className={textStyle.bodySecondary}>
-                {connectionStatus.connected ? 'Connected' : 'Disconnected'}
+                {connectionStatus.connected ? 'HTTP' : 'Disconnected'}
               </span>
             </div>
+            
+            {/* WebSocket Status */}
+            {connectionStatus.connected && (
+              <div 
+                className={`flex items-center space-x-2 px-3 py-1 rounded-full border ${
+                  connectionStatus.wsState === 'connected'
+                    ? 'bg-blue-900/30 text-blue-400 border-blue-800'
+                    : connectionStatus.wsState === 'connecting' || connectionStatus.wsState === 'authenticating'
+                    ? 'bg-yellow-900/30 text-yellow-400 border-yellow-800'
+                    : 'bg-gray-800/50 text-gray-400 border-gray-700'
+                }`}
+                title={`WebSocket: ${connectionStatus.wsState}`}
+              >
+                <div className={`w-2 h-2 rounded-full ${
+                  connectionStatus.wsState === 'connected' ? 'bg-blue-400 animate-pulse' :
+                  connectionStatus.wsState === 'connecting' || connectionStatus.wsState === 'authenticating' ? 'bg-yellow-400 animate-pulse' :
+                  'bg-gray-400'
+                }`}></div>
+                <span className={textStyle.bodySecondary}>
+                  {connectionStatus.wsState === 'connected' ? 'WS Live' :
+                   connectionStatus.wsState === 'connecting' ? 'WS...' :
+                   connectionStatus.wsState === 'authenticating' ? 'Auth...' :
+                   connectionStatus.wsState === 'reconnecting' ? 'Retry...' :
+                   'WS Off'}
+                </span>
+              </div>
+            )}
+            
             <div className={`${textStyle.bodySecondary} text-gray-400`}>
               {connectionStatus.entitiesCount} entities
             </div>

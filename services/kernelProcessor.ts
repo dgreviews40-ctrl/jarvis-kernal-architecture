@@ -57,7 +57,13 @@ import {
   moodDetection,
   naturalResponse
 } from './intelligence';
+import { socialResponseHandler } from './socialResponseHandler';
+import { visionMemory } from './visionMemory';
 import { proactiveEventHandler } from './proactiveEventHandler';
+import { thinkingSounds } from './thinkingSounds';
+import { haShoppingList } from './haShoppingList';
+import { runDiagnostics, getActiveAlerts, clearAcknowledgedAlerts } from './coreOs';
+import { memoryConsolidationService } from './memoryConsolidationService';
 
 interface ProcessorContext {
   forcedMode: AIProvider | null;
@@ -79,34 +85,42 @@ export class KernelProcessor {
    * Process a kernel request through a series of focused modules
    */
   async processRequest(input: string, context: ProcessorContext): Promise<void> {
-    // Module 1: Input Validation
-    const validationResult = await this.validateInput(input, context);
-    if (!validationResult.isValid) {
-      return;
+    // Start thinking sounds for user feedback during processing
+    thinkingSounds.start('breathing');
+
+    try {
+      // Module 1: Input Validation
+      const validationResult = await this.validateInput(input, context);
+      if (!validationResult.isValid) {
+        return;
+      }
+      
+      const { sanitizedInput, now, trimmedInput } = validationResult as { sanitizedInput: string; now: number; trimmedInput: string };
+
+      // Module 2: Duplicate Prevention
+      const duplicateCheck = await this.checkForDuplicates(trimmedInput, now, context);
+      if (duplicateCheck.isDuplicate) {
+        return;
+      }
+
+      // Module 3: Request Initiation
+      await this.initiateRequest(context, input);
+
+      // Module 4: Intelligence Processing
+      const intelligenceResult = await this.processIntelligence(input, context, now);
+
+      // Module 5: Learning Integration
+      const learnedInfo = await this.processLearning(input, context);
+
+      // Module 6: Intent Analysis
+      const analysis = await this.analyzeIntent(input, context);
+
+      // Module 7: Execution Routing
+      await this.routeExecution(analysis, input, sanitizedInput, context, intelligenceResult, learnedInfo);
+    } finally {
+      // Stop thinking sounds when processing completes
+      thinkingSounds.stop();
     }
-    
-    const { sanitizedInput, now, trimmedInput } = validationResult as { sanitizedInput: string; now: number; trimmedInput: string };
-
-    // Module 2: Duplicate Prevention
-    const duplicateCheck = await this.checkForDuplicates(trimmedInput, now, context);
-    if (duplicateCheck.isDuplicate) {
-      return;
-    }
-
-    // Module 3: Request Initiation
-    await this.initiateRequest(context, input);
-
-    // Module 4: Intelligence Processing
-    const intelligenceResult = await this.processIntelligence(input, context, now);
-
-    // Module 5: Learning Integration
-    const learnedInfo = await this.processLearning(input, context);
-
-    // Module 6: Intent Analysis
-    const analysis = await this.analyzeIntent(input, context);
-
-    // Module 7: Execution Routing
-    await this.routeExecution(analysis, input, sanitizedInput, context, intelligenceResult, learnedInfo);
   }
 
   /**
@@ -456,6 +470,32 @@ export class KernelProcessor {
 
     // Check for image/diagram creation requests first and handle them specially
     const lowerInput = input.toLowerCase();
+    
+    // EARLY CHECK: Vision memory recall queries - force MEMORY_READ intent
+    const isVisionMemoryQuery = /\b(look|show|find|search|check)\s+(in|at|through|for|my|the|into)?\s*(vision memory|vision memories|stored images|saved photos|image memory|visual memory)\b/i.test(input) ||
+                                /\b(look|see|check)\s+(for|at)?\s*(the|my|any)?\s*(image|photo|picture|snapshot|snapshots)\s+(of|from|in|my|the)?\b/i.test(input) ||
+                                /\b(do you remember|recall)\s+(the|that|my|seeing|any)?\s*(image|photo|picture|snapshot|garage|photos)\b/i.test(input) ||
+                                /\b(current|previous|last|stored|saved)\s+(image|photo|picture|snapshot|photos)\b/i.test(input) ||
+                                /\bimage\s+of\s+(my|the)\s+(garage|house|room|office|person|me)\b/i.test(input) ||
+                                /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input);
+    
+    // EXCLUDE ownership/identification statements - should go to MEMORY_WRITE
+    const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(input) ||
+                                 /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i.test(input);
+    
+    if (isVisionMemoryQuery && !isOwnershipStatement) {
+      logger.log('KERNEL', 'Detected vision memory recall query, forcing MEMORY_READ intent', 'info');
+      return {
+        analysis: {
+          type: IntentType.MEMORY_READ,
+          entities: [],
+          suggestedProvider: 'OLLAMA'
+        },
+        selectedProvider: AIProvider.OLLAMA,
+        relevantCorrection
+      };
+    }
+    
     const isImageCreationRequest =
       (lowerInput.includes('create') || lowerInput.includes('generate') || lowerInput.includes('make') || lowerInput.includes('draw')) &&
       (lowerInput.includes('image') || lowerInput.includes('picture') || lowerInput.includes('photo') ||
@@ -474,6 +514,11 @@ export class KernelProcessor {
         suggestedProvider: 'GEMINI'
       };
     } else {
+      // Play "hmm" sound for complex analysis (queries longer than 10 words)
+      if (input.split(/\s+/).length > 10) {
+        thinkingSounds.play('hmm');
+      }
+      
       // Analyze intent with AI provider for other requests
       logger.log('KERNEL', `Analyzing intent with ${context.forcedMode === AIProvider.GEMINI ? 'Core Engine' : 'Local Ollama'}...`, 'info');
       analysis = await analyzeIntent(input);
@@ -539,6 +584,22 @@ export class KernelProcessor {
     }
 
     try {
+      // Check for voice reset command
+      const lowerInput = input.toLowerCase();
+      if (/\b(reset|restart|fix)\s+(voice|microphone|listening|hearing)\b/i.test(input)) {
+        logger.log('VOICE', 'Voice reset command detected', 'info');
+        voice.reset();
+        return "Voice service has been reset. You should be able to speak to me now. Try saying 'Hey JARVIS' or click the microphone button.";
+      }
+      
+      // Check for voice diagnostics
+      if (/\b(voice|microphone)\s+(status|diagnostic|info|state)\b/i.test(input) || 
+          /\bis\s+(voice|microphone)\s+working\b/i.test(input)) {
+        const diag = voice.getDiagnostics();
+        logger.log('VOICE', `Voice diagnostics: ${JSON.stringify(diag)}`, 'info');
+        return `Voice status: ${diag.state}. Listening: ${diag.isListening ? 'Yes' : 'No'}. Recognition active: ${diag.recognitionActive ? 'Yes' : 'No'}. Errors: ${diag.errorCount}. If you're having issues, say "reset voice" to fix it.`;
+      }
+      
       // v1.4.2: Check if this should be handled by the Agent System
       const shouldUseAgent = this.shouldUseAgent(input, analysis);
       
@@ -559,11 +620,20 @@ export class KernelProcessor {
             break;
             
           case IntentType.TIMER_REMINDER:
+            // Acknowledge quick command with subtle click
+            thinkingSounds.play('click');
             outputText = await this.handleTimerReminder(input, context);
             break;
             
           case IntentType.COMMAND:
+            // Acknowledge quick command with subtle click
+            thinkingSounds.play('click');
             outputText = await this.handleCommand(input, analysis, context, correctionContext, selectedProvider, intelligenceResult);
+            break;
+            
+          case IntentType.SOCIAL:
+            // Social interactions get natural conversational responses
+            outputText = await this.handleSocial(input, context, intelligenceResult);
             break;
             
           case IntentType.QUERY:
@@ -596,26 +666,104 @@ export class KernelProcessor {
 
     let imageBase64: string | null = null;
     let captureSource = 'local';
+    let selectedCameraName = '';
+    
+    // Check if user explicitly wants local camera
+    const lowerInput = input.toLowerCase();
+    const wantsLocalCamera = /\blocal\s*(camera|webcam)\b/.test(lowerInput) || 
+                             /\bmy\s*(camera|webcam)\b/.test(lowerInput) ||
+                             /\b(computer|laptop)\s*(camera|webcam)\b/.test(lowerInput);
+    
+    // Check if user explicitly wants HA camera
+    const wantsHACamera = /\b(home assistant|ha)\s*(camera|cam)\b/.test(lowerInput) ||
+                          /\btapo|wyze|reolink|hikvision\b/.test(lowerInput);
+    
+    // Extract specific camera name from input (e.g., "garage cam", "front door")
+    const cameraNameMatch = lowerInput.match(/\b(garage|front|back|rear|side|door| porch| deck| yard| room| office| kitchen| living)\s*(?:cam|camera|door)?\b/);
+    const requestedCameraName = cameraNameMatch ? cameraNameMatch[0] : '';
 
-    // Check if HA camera is active first
-    const haCameraState = visionHACamera.getState();
-    if (haCameraState.type === 'home_assistant' && haCameraState.isActive && haCameraState.currentCamera) {
-      logger.log('VISION', `Capturing from HA camera: ${haCameraState.currentCamera}`, 'info');
-      imageBase64 = await visionHACamera.captureCurrentFeed();
-      captureSource = 'ha_camera';
-    }
-
-    // Fall back to local camera if HA camera not available
-    if (!imageBase64) {
+    // Prioritize based on user intent
+    if (wantsHACamera || requestedCameraName) {
+      // User wants HA camera - try to find and use specific camera
+      const haCameras = visionHACamera.getHACameras();
+      
+      if (haCameras.length > 0) {
+        let targetCamera = haCameras[0].entity_id; // Default to first camera
+        
+        // If user specified a camera name, find matching camera
+        if (requestedCameraName) {
+          const matchingCamera = haCameras.find(cam => 
+            cam.friendly_name.toLowerCase().includes(requestedCameraName) ||
+            cam.entity_id.toLowerCase().includes(requestedCameraName)
+          );
+          if (matchingCamera) {
+            targetCamera = matchingCamera.entity_id;
+            selectedCameraName = matchingCamera.friendly_name;
+            logger.log('VISION', `Found matching HA camera: ${selectedCameraName} (${targetCamera})`, 'info');
+          } else {
+            logger.log('VISION', `No camera matching '${requestedCameraName}', using ${haCameras[0].friendly_name}`, 'warning');
+            selectedCameraName = haCameras[0].friendly_name;
+          }
+        } else {
+          selectedCameraName = haCameras[0].friendly_name;
+        }
+        
+        // Switch to and capture from the selected camera
+        await visionHACamera.switchToHACamera(targetCamera);
+        imageBase64 = await visionHACamera.captureHACamera(targetCamera);
+        captureSource = 'ha_camera';
+      } else {
+        return "Home Assistant camera is not available. Please check your camera configuration.";
+      }
+    } else if (wantsLocalCamera) {
+      // User explicitly wants local camera - skip HA camera check
+      logger.log('VISION', 'User requested local camera, skipping HA camera', 'info');
       if (vision.getState() !== 'ACTIVE') {
-        await vision.startCamera();
-        // Brief delay for camera to initialize - only when camera wasn't already active
-        await new Promise(r => setTimeout(r, 300));
+        try {
+          await vision.startCamera();
+          await new Promise(r => setTimeout(r, 300));
+        } catch (error) {
+          return "Could not access your local camera. Please ensure camera permissions are granted.";
+        }
       }
       imageBase64 = vision.captureFrame();
       captureSource = 'local';
+    } else {
+      // Default: Try HA cameras first, then fall back to local
+      const haCameras = visionHACamera.getHACameras();
+      
+      if (haCameras.length > 0) {
+        // Use first available HA camera
+        const targetCamera = haCameras[0].entity_id;
+        selectedCameraName = haCameras[0].friendly_name;
+        logger.log('VISION', `Using HA camera: ${selectedCameraName}`, 'info');
+        
+        await visionHACamera.switchToHACamera(targetCamera);
+        imageBase64 = await visionHACamera.captureHACamera(targetCamera);
+        captureSource = 'ha_camera';
+      } else if (visionHACamera.getState().type === 'home_assistant' && visionHACamera.getState().currentCamera) {
+        // Use currently active HA camera
+        const currentCamera = visionHACamera.getState().currentCamera;
+        logger.log('VISION', `Using active HA camera: ${currentCamera}`, 'info');
+        imageBase64 = await visionHACamera.captureCurrentFeed();
+        captureSource = 'ha_camera';
+      }
+
+      // Fall back to local camera if HA camera not available
+      if (!imageBase64) {
+        if (vision.getState() !== 'ACTIVE') {
+          try {
+            await vision.startCamera();
+            await new Promise(r => setTimeout(r, 300));
+          } catch (error) {
+            return "Could not access camera. Please ensure camera permissions are granted.";
+          }
+        }
+        imageBase64 = vision.captureFrame();
+        captureSource = 'local';
+      }
     }
-    if (imageBase64) {
+    if (imageBase64 && imageBase64.length > 100) {
       logger.log('VISION', `Frame captured from ${captureSource}. Size: ${imageBase64.length} chars`, 'success');
       
       // Get current Ollama config to ensure we use the correct model
@@ -625,17 +773,86 @@ export class KernelProcessor {
       // Log first 100 chars of image data for debugging
       console.log('[VISION DEBUG] Image data preview:', imageBase64.substring(0, 100) + '...');
       
+      // Add camera source context to help user understand which camera was used
+      let sourceContext: string;
+      if (captureSource === 'local') {
+        sourceContext = '[Using local camera] ';
+      } else if (selectedCameraName) {
+        sourceContext = `[Using ${selectedCameraName}] `;
+      } else {
+        sourceContext = '[Using Home Assistant camera] ';
+      }
+      
+      // Check if we should use Gemini for better vision (if API key available)
+      const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const useGeminiForVision = geminiKey && geminiKey.length > 10;
+      
+      // Use Gemini for vision if available, otherwise Ollama
+      const visionProvider = useGeminiForVision ? AIProvider.GEMINI : selectedProvider;
+      
+      if (useGeminiForVision) {
+        logger.log('VISION', 'Using Gemini for vision analysis (better accuracy)', 'info');
+      }
+      
       const response = await providerManager.route({
         prompt: input + correctionContext,
         images: [imageBase64],
-        systemInstruction: "You are JARVIS. Analyze the visual input concisely.",
-        // Pass the model from config to ensure the correct one is used
-        model: selectedProvider === AIProvider.OLLAMA ? ollamaConfig.model : undefined,
-      }, selectedProvider);
+        systemInstruction: "You are JARVIS. Describe exactly what you see in the camera image. Be specific about objects, people, and the environment. If the image is dark or unclear, say so.",
+        // Use Gemini for vision if available for better accuracy
+        model: visionProvider === AIProvider.OLLAMA ? ollamaConfig.model : undefined,
+      }, visionProvider);
+      
       logger.log(response.provider === AIProvider.GEMINI ? 'GEMINI' : 'OLLAMA', response.text, 'success');
-      return response.text;
+      
+      // Display the captured image in the UI so user can verify
+      setKernelDisplay('IMAGE', {
+        type: 'IMAGE',
+        title: captureSource === 'local' ? 'Local Camera Capture' : 'Home Assistant Camera Capture',
+        description: `Captured at ${new Date().toLocaleTimeString()}`,
+        image: {
+          src: `data:image/jpeg;base64,${imageBase64}`,
+          title: 'Camera Snapshot',
+          alt: 'Captured camera image',
+          fit: 'contain'
+        }
+      });
+      
+      // Store in vision memory if this is a snapshot command
+      let visionMemoryStored = false;
+      const isSnapshotCommand = /\b(snapshot|photo|picture|capture)\b/i.test(input);
+      if (isSnapshotCommand) {
+        // Construct full data URL for vision memory (storeImage expects full URL)
+        const imageDataUrl = `data:image/jpeg;base64,${imageBase64}`;
+        
+        logger.log('VISION', 'Storing snapshot in vision memory...', 'info');
+        
+        // Store asynchronously - don't block the response
+        visionMemory.storeImage(imageDataUrl, {
+          description: response.text,
+          context: input,
+          tags: [captureSource, selectedCameraName || 'camera', 'snapshot', new Date().toISOString().split('T')[0]]
+        }).then(entry => {
+          if (entry) {
+            visionMemoryStored = true;
+            logger.log('VISION', `Image stored in vision memory: ${entry.id} (${entry.metadata.width}x${entry.metadata.height})`, 'success');
+          } else {
+            logger.log('VISION', 'Vision memory store returned null - check console for errors', 'warning');
+          }
+        }).catch(err => {
+          logger.log('VISION', `Failed to store in vision memory: ${err}`, 'warning');
+        });
+      }
+      
+      // Return response with camera source prefix and vision memory confirmation
+      let fullResponse = sourceContext + response.text;
+      if (isSnapshotCommand) {
+        fullResponse += `\n\n[Image saved to vision memory]`;
+      }
+      return fullResponse;
     } else {
-      return "Optical sensors failed to return frame buffer.";
+      return captureSource === 'ha_camera'
+        ? "Home Assistant camera is not responding. Please check if the camera is online in Home Assistant."
+        : "Could not access local camera. Please ensure camera permissions are granted in your browser.";
     }
   }
 
@@ -644,6 +861,75 @@ export class KernelProcessor {
     const lowerInput = input.toLowerCase();
 
     logger.log('MEMORY', `Processing memory read request: "${input}"`, 'info');
+
+    // Check if this is a vision memory recall request
+    const isVisionMemoryQuery = /\b(images|photos|pictures|snapshots|vision memory|vision memories|image memory|visual memory)\b/i.test(input) ||
+                                   /\b(show me|find|search|look|check)\s+(in|at|through|for|my|the|past)?\s*(images|photos|pictures|vision memory|vision)\b/i.test(input) ||
+                                   /\b(see|look at|check)\s+(the|my)?\s*(current|previous|last|stored|saved)?\s*(image|photo|picture|snapshot)\b/i.test(input) ||
+                                   /\b(image|photo|picture|snapshot)\s+(of|from|in|my)\s+(garage|house|room|the garage|person|me|someone)\b/i.test(input) ||
+                                   /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input);
+    
+    // EXCLUDE ownership/identification statements - these should be stored as memory, not searched
+    const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(input) ||
+                                 /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i.test(input) ||
+                                 /\b(my|our)\s+(garage|house|room|office)\s+(is|was)\s+(in|shown|depicted)\b/i.test(input);
+    
+    if (isVisionMemoryQuery && !isOwnershipStatement) {
+      logger.log('MEMORY', 'Vision memory recall detected', 'info');
+      try {
+        // Extract search terms from query - keep important keywords
+        let searchTerms = input.replace(/\b(show me|find|search|look|check|in|at|through|for|the|past|previous|old|current|last|stored|saved|images|photos|pictures|snapshots|vision memory|vision memories|do you|did you|can you|could you|please)\b/gi, '').trim();
+        
+        // If user mentioned specific spaces, keep that as search term
+        if (/\b(garage|house|room|office|workshop)\b/i.test(input)) {
+          const spaceMatch = input.match(/\b(garage|house|room|office|workshop)\b/i);
+          if (spaceMatch && !searchTerms.toLowerCase().includes(spaceMatch[0].toLowerCase())) {
+            searchTerms = spaceMatch[0] + ' ' + searchTerms;
+          }
+        }
+        
+        // If user mentioned person/people/me, keep that as search term
+        if (/\b(person|people|someone|man|woman|human|me|myself|face)\b/i.test(input)) {
+          const personMatch = input.match(/\b(person|people|someone|man|woman|human|me|myself|face)\b/i);
+          if (personMatch && !searchTerms.toLowerCase().includes(personMatch[0].toLowerCase())) {
+            searchTerms = personMatch[0] + ' ' + searchTerms;
+          }
+        }
+        
+        // Clean up extra whitespace
+        searchTerms = searchTerms.replace(/\s+/g, ' ').trim();
+        
+        logger.log('MEMORY', `Searching vision memory for: "${searchTerms || 'camera snapshot'}"`, 'info');
+        
+        // Search vision memory
+        const results = await visionMemory.searchMemories(searchTerms || 'camera snapshot', 5);
+        
+        if (results.length > 0) {
+          logger.log('MEMORY', `Found ${results.length} vision memories`, 'success');
+          
+          // Display the most relevant image
+          const topResult = results[0];
+          setKernelDisplay('IMAGE', {
+            type: 'IMAGE',
+            title: 'Vision Memory Recall',
+            description: `Found: ${topResult.entry.description.substring(0, 100)}...`,
+            image: {
+              src: topResult.entry.imageUrl,
+              title: 'Vision Memory',
+              alt: topResult.entry.description,
+              fit: 'contain'
+            }
+          });
+          
+          // Return summary
+          return `I found ${results.length} image(s) in your vision memory. Here's the most relevant one: "${topResult.entry.description}" (captured ${new Date(topResult.entry.timestamp).toLocaleDateString()}).`;
+        } else {
+          return "I don't have any images stored in your vision memory yet. Try saying 'take a snapshot' to capture and store an image.";
+        }
+      } catch (error) {
+        logger.log('MEMORY', `Vision memory search error: ${(error as Error).message}`, 'error');
+      }
+    }
 
     // v1.5.1: Use Smart Context Router for personal queries
     try {
@@ -772,7 +1058,10 @@ export class KernelProcessor {
                           lowerInput.includes('i am') ||
                           lowerInput.includes('i\'m') ||
                           lowerInput.includes('called') ||
-                          lowerInput.includes('known as');
+                          lowerInput.includes('known as') ||
+                          // Personal identification from images
+                          /\b(that|this|the)\s+(image|photo|picture|snapshot|person)\s+(is|was)\s+(me|myself)\b/i.test(input) ||
+                          /\b(i am|i'm)\s+(the person|that person|in the|in that)\s+(image|photo|picture|snapshot)\b/i.test(input);
 
     // v1.4.1: Store with automatic consolidation
     try {
@@ -908,8 +1197,89 @@ export class KernelProcessor {
     context.setActiveModule('EXECUTION');
     context.setActiveModule('COMMAND');
 
-    // Check if this is a Home Assistant command
     const lower = input.toLowerCase();
+
+    // SYSTEM DIAGNOSTIC COMMANDS (handled before Home Assistant)
+    // Deep Scan / Full System Diagnostic
+    if (/\b(run|perform|initiate|start)\s+(full\s+)?system\s+(diagnostic|scan|check|analysis)\b/i.test(input) ||
+        /\b(deep\s+scan|self\s+diagnostic|system\s+health\s+check)\b/i.test(input) ||
+        lower === 'run full system diagnostic') {
+      logger.log('KERNEL', 'Running full system diagnostic', 'info');
+      try {
+        const diagnosticReport = await runDiagnostics();
+        // Display the diagnostic report in the terminal/display
+        setKernelDisplay('TEXT', {
+          type: 'TEXT',
+          title: 'System Diagnostic Report',
+          description: diagnosticReport
+        });
+        return 'Full system diagnostic complete. Results displayed on screen. All systems are functioning within normal parameters.';
+      } catch (error) {
+        logger.log('KERNEL', `Diagnostic error: ${(error as Error).message}`, 'error');
+        return `Diagnostic encountered an error: ${(error as Error).message}`;
+      }
+    }
+
+    // Circuit Reset - Clear all circuit breakers and alerts
+    if (/\b(reset|cycle|clear)\s+(system\s+)?(circuit|breaker|breakers)\b/i.test(input) ||
+        /\bcircuit\s+reset\b/i.test(input)) {
+      logger.log('KERNEL', 'Resetting system circuits (circuit breakers)', 'info');
+      try {
+        // Clear all acknowledged alerts
+        clearAcknowledgedAlerts();
+        // Get current alerts status
+        const alerts = getActiveAlerts();
+        // Also reset any error states in the kernel store
+        const { useKernelStore } = await import('../stores');
+        const store = useKernelStore.getState();
+        if (store.clearHealthIssues) {
+          store.clearHealthIssues();
+        }
+        return `System circuits reset complete. ${alerts.length > 0 ? alerts.length + ' active alert(s) require attention.' : 'All breakers cleared and systems nominal.'}`;
+      } catch (error) {
+        logger.log('KERNEL', `Circuit reset error: ${(error as Error).message}`, 'error');
+        return `Circuit reset encountered an error: ${(error as Error).message}`;
+      }
+    }
+
+    // Memory Optimization Protocol
+    if (/\b(run|perform|initiate|start)\s+memory\s+(optimization|compress|consolidation)\b/i.test(input) ||
+        /\b(optimize|compress|consolidate)\s+(memory|vector\s+store|storage)\b/i.test(input) ||
+        /\bmemory\s+(optimize|compress|consolidation)\s+protocol\b/i.test(input)) {
+      logger.log('KERNEL', 'Running memory optimization protocol', 'info');
+      try {
+        // Trigger memory consolidation
+        const stats = await memoryConsolidationService.consolidateNow();
+        return `Memory optimization complete. Consolidated ${stats.mergedCount} duplicate memories, removed ${stats.expiredCount} expired entries. Vector store optimized.`;
+      } catch (error) {
+        logger.log('KERNEL', `Memory optimization error: ${(error as Error).message}`, 'error');
+        return `Memory optimization encountered an error: ${(error as Error).message}`;
+      }
+    }
+
+    // Network Probe / Latency Test
+    if (/\b(network\s+probe|measure\s+(uplink|network)|network\s+latency|test\s+connection)\b/i.test(input) ||
+        /\binitiate\s+network\s+latency\s+probe\b/i.test(input)) {
+      logger.log('KERNEL', 'Running network probe', 'info');
+      try {
+        const { getNetworkInfo } = await import('./coreOs');
+        const network = getNetworkInfo();
+        const testStart = performance.now();
+        // Simple latency test by fetching a small resource
+        try {
+          await fetch('/api/health', { method: 'HEAD', cache: 'no-cache' });
+        } catch {
+          // Ignore errors, we just want timing
+        }
+        const latency = Math.round(performance.now() - testStart);
+        return `Network probe complete. Connection: ${network.effectiveType || 'unknown'}, Latency: ~${latency}ms, Online: ${network.online ? 'Yes' : 'No'}`;
+      } catch (error) {
+        logger.log('KERNEL', `Network probe error: ${(error as Error).message}`, 'error');
+        return `Network probe encountered an error: ${(error as Error).message}`;
+      }
+    }
+
+    // Check if this is a Home Assistant command
 
     // Check if this is actually a query for sensor data (not a command to change state)
     // Patterns like "tell me the temperature", "what is the temperature", "how hot is it" are QUERIES
@@ -935,6 +1305,60 @@ export class KernelProcessor {
       }
     } else {
       // This is an actual command (not a sensor query)
+      
+      // Check for shopping list commands first
+      const shoppingListPatterns = [
+        /\b(add|put)\b.*\b(shopping|list)\b/i,
+        /\b(shopping list)\b/i,
+        /\badd\b.*\bto\b.*\blist\b/i,
+        /\bi need\b.*\b(buy|get)\b/i,
+        /\bwhat('s| is)\s+on\s+(?:the\s+)?shopping/i,
+        /\bwhat\s+do\s+(?:i|we)\s+need\s+to\s+buy/i,
+        /\bclear\b.*\b(shopping|completed)\b/i,
+        /\bcheck\s+(?:off|complete)\b/i,
+      ];
+      
+      const isShoppingListCommand = shoppingListPatterns.some(pattern => pattern.test(input));
+      
+      if (isShoppingListCommand && haService.initialized) {
+        try {
+          // Parse the shopping list command
+          const parsed = haShoppingList.parseItemFromText(input);
+          
+          if (parsed && parsed.listType === 'shopping') {
+            // Add item to shopping list
+            return await haShoppingList.addItem(parsed.item);
+          }
+          
+          // Check for "what's on my shopping list" queries
+          if (/\bwhat('s| is)\s+on|show\s+me|read\s+me/i.test(input)) {
+            return await haShoppingList.getShoppingListSummary();
+          }
+          
+          // Check for "clear completed"
+          if (/\bclear\s+(?:completed|done|finished)|remove\s+(?:completed|done)/i.test(input)) {
+            return await haShoppingList.clearCompleted();
+          }
+          
+          // Check for completing items
+          const completeMatch = input.match(/\b(check\s+(?:off|complete)|mark\s+(?:as\s+)?complete|complete)\b\s+(.+)/i);
+          if (completeMatch && completeMatch[2]) {
+            return await haShoppingList.completeItem(completeMatch[2].trim());
+          }
+          
+          // Default: try to parse and add
+          if (parsed && parsed.item) {
+            return await haShoppingList.addItem(parsed.item);
+          }
+          
+          return "I'm not sure what you want to do with the shopping list. Try saying 'add milk to my shopping list' or 'what's on my shopping list?'";
+        } catch (error) {
+          const errorMessage = `Shopping list command failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          logger.log('HOME_ASSISTANT', errorMessage, 'error');
+          return errorMessage;
+        }
+      }
+      
       const homeAssistantKeywords = ['light', 'lights', 'lamp', 'switch', 'lock', 'door', 'thermostat', 'temperature', 'climate', 'ac', 'heat', 'fan', 'cover', 'shade', 'garage', 'home assistant', 'smart', 'printer', '3d', 'outlet', 'plug', 'socket', 'power', 'turn on', 'turn off', 'toggle'];
 
       // Check if this is clearly a request for creating a diagram/schematic first
@@ -1012,8 +1436,82 @@ export class KernelProcessor {
   }
 
   private async handleQuery(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, intelligenceResult: IntelligenceResult, analysis: ParsedIntent): Promise<string> {
-    // Check if this is a diagram/schematic creation request (but NOT if it explicitly asks for SVG)
+    // SAFETY CHECK: Redirect vision memory queries to handleMemoryRead
+    const isVisionMemoryQuery = /\b(look|show|find|search|check)\s+(in|at|through|for|my|the|into)?\s*(vision memory|vision memories|stored images|saved photos|image memory|visual memory)\b/i.test(input) ||
+                                /\b(look|see|check)\s+(for|at)?\s*(the|my|any)?\s*(image|photo|picture|snapshot|snapshots)\s+(of|from|in|my|the)?\b/i.test(input) ||
+                                /\b(do you remember|recall)\s+(the|that|my|seeing|any)?\s*(image|photo|picture|snapshot|garage|photos)\b/i.test(input) ||
+                                /\b(current|previous|last|stored|saved)\s+(image|photo|picture|snapshot|photos)\b/i.test(input) ||
+                                /\bimage\s+of\s+(my|the)\s+(garage|house|room|office|person|me)\b/i.test(input) ||
+                                /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input);
+    
+    // EXCLUDE ownership/identification statements
+    const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(input) ||
+                                 /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i.test(input);
+    
+    if (isVisionMemoryQuery && !isOwnershipStatement) {
+      logger.log('KERNEL', 'Vision memory query detected in handleQuery, redirecting to handleMemoryRead', 'info');
+      return this.handleMemoryRead(input, context, correctionContext, selectedProvider, analysis);
+    }
+    
+    // Check for social/conversational intents first - these get priority for natural responses
+    const socialIntent = socialResponseHandler.detectSocialIntent(input);
+    if (socialIntent.type && socialIntent.confidence >= 0.85) {
+      logger.log('KERNEL', `Social intent detected: ${socialIntent.type} (${(socialIntent.confidence * 100).toFixed(0)}%)`, 'info');
+      const socialResponse = await socialResponseHandler.generateResponse(socialIntent, input);
+      if (socialResponse) {
+        // For high-confidence social intents, use the social response directly
+        // This ensures "how are you" and "working on your code" get proper reciprocal responses
+        logger.log('KERNEL', `Using social response: ${socialResponse.response.substring(0, 50)}...`, 'success');
+        let fullResponse = socialResponse.response;
+        if (socialResponse.shouldFollowUp && socialResponse.followUpQuestion) {
+          fullResponse += ` ${socialResponse.followUpQuestion}`;
+        }
+        return fullResponse;
+      }
+    }
+
+    // Check for system diagnostic requests (natural language queries)
     const lowerInput = input.toLowerCase();
+    if (/\b(run|do|perform)\s+a?\s*(self\s+)?(system\s+)?diagnostic\b/i.test(input) ||
+        /\bhow\s+(is|are)\s+(you|the\s+system|things|running)\b/i.test(input) ||
+        /\bsystem\s+(status|health|check)\b/i.test(input) ||
+        /\b(run|do)\s+a\s+deep\s+scan\b/i.test(input)) {
+      logger.log('KERNEL', 'System diagnostic requested via query handler', 'info');
+      try {
+        const diagnosticReport = await runDiagnostics();
+        setKernelDisplay('TEXT', {
+          type: 'TEXT',
+          title: 'System Diagnostic Report',
+          description: diagnosticReport
+        });
+        return 'System diagnostic complete. Results are displayed on screen. I am functioning within normal parameters.';
+      } catch (error) {
+        logger.log('KERNEL', `Diagnostic error: ${(error as Error).message}`, 'error');
+        return `I encountered an error while running diagnostics: ${(error as Error).message}`;
+      }
+    }
+    
+    // Check if this is a diagram/schematic creation request (but NOT if it explicitly asks for SVG)
+    
+    // Check for shopping list queries
+    const shoppingListQueryPatterns = [
+      /\bwhat('s| is)\s+(?:on\s+)?(?:my\s+)?(?:the\s+)?shopping/i,
+      /\bwhat\s+do\s+(?:i|we)\s+need\s+to\s+buy/i,
+      /\bread\s+(?:me\s+)?(?:my\s+)?shopping/i,
+      /\bshow\s+(?:me\s+)?(?:my\s+)?shopping/i,
+    ];
+    
+    const isShoppingListQuery = shoppingListQueryPatterns.some(pattern => pattern.test(input));
+    
+    if (isShoppingListQuery && haService.initialized) {
+      try {
+        return await haShoppingList.getShoppingListSummary();
+      } catch (error) {
+        logger.log('HOME_ASSISTANT', `Shopping list query failed: ${error}`, 'error');
+        return "I couldn't access your shopping list right now.";
+      }
+    }
+    
     const isDiagramRequest = (lowerInput.includes('show') && (lowerInput.includes('diagram') || lowerInput.includes('schematic') || lowerInput.includes('architecture') || lowerInput.includes('flowchart'))) ||
                              (lowerInput.includes('create') && (lowerInput.includes('diagram') || lowerInput.includes('schematic') || lowerInput.includes('schematic of') || lowerInput.includes('diagram of'))) ||
                              (lowerInput.includes('draw') && (lowerInput.includes('diagram') || lowerInput.includes('schematic')));
@@ -1243,6 +1741,30 @@ export class KernelProcessor {
             location: weatherData.location.name
           };
 
+          // Check for specific rain/precipitation questions
+          const isRainQuestion = lowerInput.includes('rain') || lowerInput.includes('precipitation') || lowerInput.includes('umbrella');
+          
+          if (isRainQuestion) {
+            const name = jarvisPersonality.getUserName();
+            // Check today's precipitation probability
+            const today = weatherData.daily[0];
+            const rainChance = today?.precipitationProbabilityMax || 0;
+            const isRainingNow = weatherData.current.precipitation > 0;
+            const condition = weatherData.current.condition.description.toLowerCase();
+            
+            if (isRainingNow) {
+              return `Yes, it's currently raining in ${weatherData.location.name}${name ? `, ${name}` : ''}. The precipitation chance today is ${rainChance}%.`;
+            } else if (rainChance > 70) {
+              return `Yes, there's a good chance of rain today - about ${rainChance}%${name ? `, ${name}` : ''}. You might want to bring an umbrella if you're heading out.`;
+            } else if (rainChance > 40) {
+              return `There's a moderate chance of rain today - around ${rainChance}%${name ? `, ${name}` : ''}. You may want to keep an umbrella handy just in case.`;
+            } else if (rainChance > 10) {
+              return `There's a slight chance of rain today - about ${rainChance}%${name ? `, ${name}` : ''}. Probably not enough to worry about, but the skies are looking ${condition}.`;
+            } else {
+              return `No rain expected today${name ? `, ${name}` : ''} - the chance is only ${rainChance}%. It's ${condition} with a temperature of ${Math.round(weatherData.current.temperature)}°.`;
+            }
+          }
+          
           if (lowerInput.includes('forecast') || lowerInput.includes('tomorrow')) {
             const tomorrow = weatherData.daily[1];
             const name = jarvisPersonality.getUserName();
@@ -1311,8 +1833,9 @@ export class KernelProcessor {
         logger.log('WEATHER', result, 'error');
         return `I'm having trouble getting the weather data right now. ${error instanceof Error ? error.message : 'Please try again in a moment.'}`;
       }
-    } else if (lowerInput.includes('home assistant') || lowerInput.includes('smart home') || lowerInput.includes('connected') || lowerInput.includes('integration')) {
-      // Handle queries about Home Assistant integration
+    } else if ((lowerInput.includes('home assistant') || lowerInput.includes('smart home') || lowerInput.includes('connected') || lowerInput.includes('integration')) &&
+               !/\b(ideas?|suggestions?|projects?|recommendations?|help me|how (can|do) I|what can I|ideas for|suggestions for)\b/i.test(lowerInput)) {
+      // Handle queries about Home Assistant integration (but not idea requests)
       if (haService.initialized) {
         const status = await haService.getStatus();
         const result = `Yes, I have access to your Home Assistant. I can control ${status.entitiesCount} smart home devices.`;
@@ -1493,6 +2016,39 @@ export class KernelProcessor {
     ];
     
     return complexIndicators.some(check => check(input));
+  }
+
+  /**
+   * Handle SOCIAL intents - conversational interactions that require reciprocal responses
+   * v2.1: New dedicated handler for natural social conversation
+   */
+  private async handleSocial(input: string, context: ProcessorContext, intelligenceResult: IntelligenceResult): Promise<string> {
+    context.setActiveModule('SOCIAL');
+    logger.log('KERNEL', 'Processing social interaction...', 'info');
+
+    try {
+      // Use the social response handler to generate natural reciprocal responses
+      const socialIntent = socialResponseHandler.detectSocialIntent(input);
+      if (socialIntent.type) {
+        const response = await socialResponseHandler.generateResponse(socialIntent, input);
+        if (response) {
+          let fullResponse = response.response;
+          if (response.shouldFollowUp && response.followUpQuestion) {
+            fullResponse += ` ${response.followUpQuestion}`;
+          }
+          logger.log('KERNEL', `Social response generated: ${response.tone} tone`, 'success');
+          return fullResponse;
+        }
+      }
+      
+      // Fallback: If social handler doesn't produce a response, treat as simple query
+      logger.log('KERNEL', 'Social handler returned no response, falling back to query handling', 'warning');
+      return this.handleQuery(input, context, '', AIProvider.GEMINI, intelligenceResult, { type: IntentType.QUERY, entities: [], confidence: 0.7 } as ParsedIntent);
+    } catch (error) {
+      logger.log('KERNEL', `Social handling error: ${(error as Error).message}`, 'error');
+      // Fallback to ensure we always respond
+      return this.handleQuery(input, context, '', AIProvider.GEMINI, intelligenceResult, { type: IntentType.QUERY, entities: [], confidence: 0.7 } as ParsedIntent);
+    }
   }
 
   private async finalizeResponse(outputText: string, input: string, context: ProcessorContext, intelligenceResult: IntelligenceResult): Promise<void> {

@@ -467,6 +467,59 @@ export function formatEntityValue(entity: HAEntity): string {
 export function isHomeAssistantQuery(query: string): boolean {
   const lower = query.toLowerCase();
   
+  // EXCLUDE vision/camera commands - these should go to VISION_ANALYSIS
+  const visionPatterns = [
+    /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture|image|pic)\b/,
+    /\b(open|start|turn on)\s+(the|my)\s+(camera|webcam)\b/,
+    /\b(look|see|view)\s+(at)?\s*(my|the|local)?\s*(camera|webcam|video feed)\b/,
+    /\bwhat\s+(do you see|can you see|is in front of you)\b/,
+    /\b(my|local)\s+(camera|webcam)\b/,
+    /\bsnapshot\b/,
+    // Exclude vision memory recall - BROADER PATTERNS
+    /\b(look|show|find|search|check)\s+(in|at|through|for|my|the|into)?\s*(vision memory|vision memories|stored images|saved photos|image memory|visual memory)\b/i,
+    /\b(look|see|check)\s+(for|at)?\s*(the|my|any)?\s*(image|photo|picture|snapshot|snapshots)\s+(of|from|in|my|the)?\b/i,
+    /\b(do you remember|recall)\s+(the|that|my|seeing|any)?\s*(image|photo|picture|snapshot|garage|photos)\b/i,
+    /\b(current|previous|last|stored|saved)\s+(image|photo|picture|snapshot|photos)\b/i,
+    /\bimage\s+of\s+(my|the)\s+(garage|house|room|office|person|me|someone)\b/i,
+    /\b(garage|house)\s+(image|photo|picture|snapshot)\b/i,
+    /\bvision\s+(memory|memories)\b/i,
+    /\brecall\s+(the|my|that|an)?\s*(image|photo|picture|snapshot|garage)\b/i,
+    /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i,
+    /\b(that|this|the)\s+(image|photo|picture|snapshot|person)\s+(is|was)\s+(me|myself)\b/i,
+    // Exclude ownership/identification statements
+    /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i,
+    /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i,
+    /\b(my|our)\s+(garage|house|room|office)\s+(is|was)\s+(in|shown|depicted)\b/i,
+    // Exclude personal conversation/routines
+    /\b(i'm|i am|just)\s+(waking\s+up|getting\s+up|starting\s+my\s+day)\b/i,
+    /\bhaving\s+(my|a)\s+(coffee|tea|breakfast|morning|drink|cup)\b/i,
+    /\b(coffee|tea|breakfast)\s+time\b/i,
+    /\b(enjoying|drinking|sipping)\s+(my|a|some)\s+(coffee|tea|drink|breakfast)\b/i,
+    /\b(cup\s+of)\s+(coffee|tea)\b/i,
+    /\b(just|i'm)\s+(up|awake|starting)\b/i,
+    /\bfiguring\s+(out|that)\s+(my|the|what|today)\b/i,
+    /\b(i've|i have)\s+been\s+(just|sitting|relaxing|thinking)\b/i,
+    /\bsitting\s+here\b/i,
+    /\bthinking\s+about\s+(it|that|things)\b/i,
+    // Exclude JARVIS-related coding
+    /\b(writing|creating|developing)\s+(code|scripts|functions)\s+(for|to)\s+(you|jarvis)\b/i,
+    /\bcode\s+(for|to)\s+(you|jarvis|your)\b/i
+  ];
+  
+  if (visionPatterns.some(p => p.test(lower))) {
+    return false;
+  }
+  
+  // Exclude idea/suggestion requests about HA (not status queries)
+  const isIdeaRequest = /\b(ideas?|suggestions?|projects?|recommendations?)\b/i.test(lower) &&
+                        /\b(home assistant|ha|smart home)\b/i.test(lower);
+  const isHelpRequest = /\b(help me|how (can|do) I|what can I|ideas for|suggestions for)\b/i.test(lower) &&
+                        /\b(home assistant|ha|smart home|automation)\b/i.test(lower);
+  
+  if (isIdeaRequest || isHelpRequest) {
+    return false; // This is a request for ideas/help, not a sensor query
+  }
+  
   // Direct HA keywords
   const haKeywords = [
     'sensor', 'entity', 'device', 'home assistant', 'ha ', 'smart home',

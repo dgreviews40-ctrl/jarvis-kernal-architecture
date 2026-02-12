@@ -20,7 +20,7 @@ import { notificationService } from './notificationService';
 import type { engine } from './execution';
 import type { registry } from './registry';
 import type { pluginLoader } from './pluginLoader';
-import type { imageGeneratorService } from './imageGenerator';
+import { ImageGeneratorService } from './imageGenerator';
 
 // Types for the secure API
 export interface SecurePluginAPI {
@@ -96,7 +96,7 @@ interface InternalServices {
   engine?: typeof engine;
   registry?: typeof registry;
   pluginLoader?: typeof pluginLoader;
-  imageGenerator?: typeof imageGeneratorService;
+  imageGenerator?: ImageGeneratorService;
 }
 
 let internalServices: InternalServices = {};

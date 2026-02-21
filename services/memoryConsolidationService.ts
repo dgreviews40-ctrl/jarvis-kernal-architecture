@@ -513,6 +513,21 @@ export class MemoryConsolidationService {
   /**
    * Clean up and stop service
    */
+  /**
+   * Trigger immediate memory consolidation (manual/consolidate command)
+   * Maps runConsolidation results to the expected format
+   */
+  public async consolidateNow(): Promise<{
+    mergedCount: number;
+    expiredCount: number;
+  }> {
+    const result = await this.runConsolidation();
+    return {
+      mergedCount: result.merged + result.duplicates,
+      expiredCount: result.removed
+    };
+  }
+
   public destroy(): void {
     this.stopAutoConsolidation();
     this.persistSessionSummaries();

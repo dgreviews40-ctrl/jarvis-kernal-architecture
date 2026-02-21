@@ -61,11 +61,32 @@ credentials.json
 .qwen/
 gha-creds-*.json
 
-# Large binary files
+# Large binary files - Piper TTS
 *.onnx
-Piper/voices/*.onnx
-Piper/*.dll
-Piper/*.exe
-Piper/*.zip
-Piper/piper/*.dll
-Piper/piper/*.exe
+Piper/
+
+# LoRA Adapters (large model files)
+adapters/
+*.safetensors
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Test results
+test-results/
+playwright-report/
+
+# Local model files and downloads
+*.pt
+*.pth
+*.bin
+*.ckpt
+
+# Misc
+*.zip
+*.tar.gz
+*.rar

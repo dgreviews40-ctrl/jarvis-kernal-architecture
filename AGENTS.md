@@ -41,7 +41,10 @@ J.A.R.V.I.S. is an advanced AI kernel architecture that integrates multiple AI p
 - **cors** - Cross-origin resource sharing
 
 ### Python Services
-- **whisper_server.py** - Speech-to-text transcription server
+- **whisper_server.py** - Speech-to-text transcription server (port 5001)
+- **vision_server.py** - Computer vision and image analysis server (port 5002)
+- **lora_server.py** - LoRA fine-tuning server for model personalization (port 5005)
+- **embedding_server.py** - CUDA-accelerated embedding generation server
 
 ---
 
@@ -84,8 +87,9 @@ jarvis-kernel-architect/
 │   ├── proxy.js        # Home Assistant proxy
 │   └── hardware-monitor.cjs
 ├── tests/               # Test suites
-│   ├── unit/           # Unit tests (381 tests)
+│   ├── unit/           # Unit tests (475 tests)
 │   ├── performance/    # Performance tests (21 tests)
+│   ├── e2e/            # E2E integration tests (70+ tests)
 │   └── setup.ts        # Test configuration
 ├── docs/                # Documentation
 │   ├── ARCHITECTURE.md # Architecture decision records
@@ -139,6 +143,9 @@ npm test -- --coverage
 
 # Run specific test file
 npm test -- tests/unit/cache.test.ts
+
+# Run E2E tests
+npm run test:e2e
 ```
 
 ### Auxiliary Services
@@ -209,7 +216,7 @@ Copy `.env.example` to `.env.local` and configure:
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `VITE_GEMINI_API_KEY` | Google Gemini API key (must be prefixed with VITE_) | No |
-| `VITE_OPENAI_API_KEY` | OpenAI API key for DALL-E image generation | No |
+| `VITE_OPENAI_API_KEY` | OpenAI API key (optional, NOT required for image generation) | No |
 | `HA_URL` | Home Assistant URL | No |
 | `HA_TOKEN` | Home Assistant long-lived access token | No |
 | `OLLAMA_URL` | Ollama server URL (default: http://localhost:11434) | No |
@@ -314,16 +321,26 @@ const mainView = useUIStore((s) => s.mainView); // Selective subscription
 
 ```
 tests/
-├── unit/                    # Unit tests (381 tests)
+├── unit/                    # Unit tests (475 tests)
 │   ├── cache.test.ts
 │   ├── secureStorage.test.ts
 │   ├── eventBus.test.ts
 │   ├── notificationService.test.ts
 │   ├── logger.test.ts
 │   ├── settings.test.ts
-│   └── providers.test.ts
+│   ├── providers.test.ts
+│   └── ...
 ├── performance/             # Performance tests (21 tests)
 │   └── services.performance.test.ts
+├── e2e/                     # E2E integration tests (70+ tests)
+│   ├── critical-path.spec.ts   # Core user journeys (6 tests)
+│   ├── memory.spec.ts          # Memory system (3 tests)
+│   ├── plugins.spec.ts         # Plugin system (2 tests)
+│   ├── voice.spec.ts           # Voice system (5 tests) ✨ NEW
+│   ├── vision.spec.ts          # Vision system (4 tests) ✨ NEW
+│   ├── settings.spec.ts        # Settings UI (6 tests) ✨ NEW
+│   ├── accessibility.spec.ts   # A11y tests (8 tests) ✨ NEW
+│   └── visual.spec.ts          # Visual regression (7 tests) ✨ NEW
 └── setup.ts                 # Test configuration and mocks
 ```
 
@@ -372,6 +389,15 @@ describe('CacheService', () => {
 | 1000 events | <1000ms | jsdom |
 | 100 cache ops | <500ms | jsdom |
 | Memory growth | <50MB | jsdom |
+| E2E test suite | <30s | Chromium |
+
+### Continuous Integration
+
+All tests run automatically on pull requests:
+1. **TypeScript compilation** (`tsc --noEmit`)
+2. **Unit tests** (Vitest)
+3. **E2E tests** (Playwright)
+4. **Build verification** (Vite)
 
 ---
 
@@ -455,9 +481,19 @@ Each plugin has rate limiting:
 
 ### API Key Management
 
+**CRITICAL: API keys are stored server-side only (NOT in client bundle)**
+
+The proxy server (port 3101) handles all API key storage and API calls to prevent exposing keys in the browser bundle.
+
 1. **Never commit API keys** - Use `.env.local` (gitignored)
-2. **Vite prefix requirement** - Browser-exposed keys must use `VITE_` prefix
-3. **Proxy-based storage** - API keys saved via proxy server to `.env.local`
+2. **Server-side storage** - API keys stored as `GEMINI_API_KEY` (no `VITE_` prefix) in `.env.local`
+3. **Proxy-based API calls** - All Gemini calls route through `localhost:3101/gemini/*`
+4. **Settings UI saves to proxy** - API keys entered in Settings are sent to proxy, not stored client-side
+5. **Migration script** - Run `node scripts/migrate-api-keys.js` to convert existing `VITE_` prefixed keys
+
+**Why this matters:** In Vite, `VITE_` prefixed env vars are embedded in the client bundle at build time, making them visible to anyone who inspects the JavaScript. The proxy server approach keeps keys server-side only.
+
+See `docs/API_KEY_SECURITY.md` for detailed implementation guide.
 
 ### Input Validation
 
@@ -479,6 +515,82 @@ All user inputs pass through `inputValidator.ts`:
 - SVG content sanitization in DisplayArea
 - Dangerous pattern detection for plugin code
 - Validation for user-generated content
+
+---
+
+## Local Image Generation (11GB VRAM Optimized)
+
+JARVIS supports **purely local** image generation - NO cloud APIs required!
+
+**Optimized for GTX 1080 Ti (11GB VRAM)** and similar cards.
+
+### Supported Providers
+
+| Provider | Quality | Best For | Setup Difficulty |
+|----------|---------|----------|------------------|
+| **ComfyUI** | ⭐⭐⭐⭐⭐ Excellent | SD 3.5, SDXL on 11GB | Medium |
+| **AUTOMATIC1111** | ⭐⭐⭐⭐ Very Good | Stable Diffusion models | Easy |
+| **Ollama** | ⭐⭐⭐ Good | Experimental (macOS only) | Easy |
+
+### VRAM Requirements
+
+**For 11GB VRAM (GTX 1080 Ti, RTX 3060, etc.):**
+
+| Model | Size | Fits 11GB? | Quality |
+|-------|------|------------|---------|
+| **SD 3.5 Medium** | 7GB | ✅ Yes | ⭐⭐⭐⭐⭐ Excellent |
+| **RealVisXL** | 7GB | ✅ Yes | ⭐⭐⭐⭐⭐ Photorealistic |
+| **SDXL Base** | 7GB | ✅ Yes | ⭐⭐⭐⭐ Very Good |
+| **SD 1.5** | 4GB | ✅ Yes | ⭐⭐⭐ Good |
+| FLUX.1 | 23GB+ | ❌ No | Won't fit |
+| SD 3.5 Large | 16GB | ❌ No | Won't fit |
+
+### Quick Setup (ComfyUI - Recommended)
+
+1. **Download ComfyUI Portable**: https://github.com/comfyanonymous/ComfyUI/releases
+2. **Extract** to `C:\ComfyUI`
+3. **Edit** `run_nvidia_gpu.bat` for 11GB VRAM:
+   ```batch
+   python main.py --normalvram --fp16-vae --dont-upcast-attention
+   ```
+4. **Download a model** (place in `ComfyUI\models\checkpoints\`):
+   - **SD 3.5 Medium** (7GB) - ⭐ BEST for 11GB VRAM
+   - **RealVisXL V5.0** (7GB) - Best portraits
+   - **SDXL Base 1.0** (7GB) - Reliable fallback
+5. **Run**: `run_nvidia_gpu.bat`
+6. **JARVIS auto-detects** on port 8188
+
+### Usage Examples
+
+```
+You: "Generate an image of a futuristic workshop"
+JARVIS: Uses local ComfyUI/A1111 to create image
+
+You: "Envision this garage as a woodworking shop"
+JARVIS: Captures camera + generates layout diagram
+```
+
+### Hardware Requirements
+
+**Minimum (CPU)**:
+- 16GB RAM
+- 50GB disk space
+
+**Recommended - 11GB VRAM (GTX 1080 Ti, RTX 3060)**:
+- **Models:** SD 3.5 Medium, RealVisXL, SDXL (7GB models)
+- **Max Resolution:** 1024x1024
+- **Speed:** 20-35 seconds per image
+- **Launch Args:** `--normalvram --fp16-vae --dont-upcast-attention`
+
+**For FLUX/SD 3.5 Large:**
+- RTX 3090/4090 (24GB VRAM) required
+- 11GB cards should use SD 3.5 Medium instead
+
+### Fallback
+
+If no local provider is detected, JARVIS generates **high-quality SVG diagrams** instead of photorealistic images. These are crisp, scalable, and work well for technical diagrams, layouts, and schematics.
+
+See `docs/LOCAL_IMAGE_GENERATION.md` for detailed setup instructions.
 
 ---
 
@@ -518,6 +630,66 @@ When changing storage structures:
 1. Update storage version constants
 2. Add migration logic if needed
 3. Update `checkStorageVersion()` in stores
+
+---
+
+## TypeScript Compliance
+
+### Static Analysis Status
+
+**Last Updated:** 2026-02-14  
+**TypeScript Version:** 5.8.3  
+**Status:** ✅ **Zero Errors**
+
+```bash
+npx tsc --noEmit
+# Result: 0 errors
+```
+
+### Recent TypeScript Fixes (2026-02-14)
+
+The following pre-existing type issues were resolved:
+
+#### 1. Type Definitions (`types.ts`)
+- **Added** `'TEXT'` to `DisplayMode` union type (used by kernelProcessor)
+- **Added** `'LORA_SERVICE'` to `LogEntry` source union type
+- **Added** `maxTokens?: number` to `AIRequest` interface
+
+#### 2. Memory Consolidation Service (`services/memoryConsolidationService.ts`)
+- **Added** missing `consolidateNow()` method that was being called from `kernelProcessor.ts`
+
+#### 3. Kernel Processor (`services/kernelProcessor.ts`)
+- **Fixed** `ParsedIntent` type assertions to include all required fields:
+  - `complexity: number`
+  - `suggestedProvider: string`
+  - `reasoning: string`
+
+#### 4. Social Response Handler (`services/socialResponseHandler.ts`)
+- **Fixed** `recordMoment()` call to use correct positional arguments instead of object
+
+#### 5. UI Components (`App.tsx`, `LoRADashboard.tsx`)
+- **Fixed** missing `AIProvider.SYSTEM` case in `modeLabels` record
+- **Fixed** logger calls using `'LoRA'` instead of `'LORA_SERVICE'`
+
+#### 6. Services (`loraService.ts`, `voice.ts`)
+- **Fixed** type mismatch: `currentJob: this.currentJob` → `currentJob: this.currentJob ?? undefined`
+- **Fixed** method name: `isWhisperActive()` → `isUsingWhisper()`
+
+#### 7. SDK Templates
+- **Excluded** `sdk/templates/**/*` and `examples/**/*` from TypeScript compilation (templates have module resolution issues)
+
+### Type Safety Best Practices
+
+1. **Always run type checking before commits:**
+   ```bash
+   npx tsc --noEmit
+   ```
+
+2. **Use strict mode enabled** - TypeScript is configured with `strict: true`
+
+3. **Avoid type assertions** (`as Type`) when possible - use proper type guards instead
+
+4. **Keep `tsconfig.json` exclusions updated** when adding new non-source directories
 
 ---
 

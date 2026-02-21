@@ -93,17 +93,23 @@ describe('SearchService', () => {
   });
 
   describe('browser environment handling', () => {
-    it('should return CORS fallback in browser mode', async () => {
+    it('should return CORS fallback when fetch fails in browser mode', async () => {
       // Service created with document present (browser mode)
       const browserService = new SearchService();
+      // Mock fetch to simulate CORS error
+      fetchMock.mockRejectedValue(new Error('Failed to fetch'));
+      
       const results = await browserService.search('test query');
       
-      expect(results.results[0].title).toBe('Search Unavailable in Browser');
-      expect(results.results[0].snippet).toContain('CORS restrictions');
+      expect(results.results[0].title).toBe('Web Search Temporarily Unavailable');
+      expect(results.results[0].snippet).toContain('temporarily unavailable');
     });
 
     it('should provide manual search URL in browser fallback', async () => {
       const browserService = new SearchService();
+      // Mock fetch to simulate CORS error
+      fetchMock.mockRejectedValue(new Error('Failed to fetch'));
+      
       const results = await browserService.search('javascript tutorial');
       
       expect(results.results[0].url).toContain('duckduckgo.com');
@@ -219,8 +225,8 @@ describe('SearchService', () => {
 
       const results = await service.search('test');
       
-      expect(results.results[0].title).toBe('Search Error');
-      expect(results.results[0].snippet).toContain('Unable to perform search');
+      expect(results.results[0].title).toBe('Search Temporarily Unavailable');
+      expect(results.results[0].snippet).toContain('Unable to complete the search');
     });
 
     it('should handle network errors', async () => {
@@ -229,8 +235,8 @@ describe('SearchService', () => {
 
       const results = await service.search('test');
       
-      expect(results.results[0].title).toBe('Search Error');
-      expect(results.results[0].snippet).toContain('Network error');
+      expect(results.results[0].title).toBe('Search Temporarily Unavailable');
+      expect(results.results[0].snippet).toContain('temporarily unavailable');
     });
 
     it('should handle malformed JSON', async () => {
@@ -242,7 +248,7 @@ describe('SearchService', () => {
 
       const results = await service.search('test');
       
-      expect(results.results[0].title).toBe('Search Error');
+      expect(results.results[0].title).toBe('Search Temporarily Unavailable');
     });
 
     it('should handle empty API response', async () => {

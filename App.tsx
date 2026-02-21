@@ -11,10 +11,10 @@ import { BootSequence } from './components/BootSequence';
 import { BootSequenceFast } from './components/BootSequenceFast';
 import { MainDashboard } from './components/MainDashboard';
 import { NotificationSystem } from './components/NotificationSystem';
-import { Settings as SettingsIcon, LayoutDashboard, Bug, Terminal as TerminalIcon, Zap, Activity, Sparkles, Bell, Database, Power, Image, Cpu } from 'lucide-react';
-import { textStyle, textColor, fontFamily, tracking } from './constants/typography';
+import { Settings as SettingsIcon, LayoutDashboard, Bug, Zap, Activity, Bell, Database, Power, Image, Cpu, Brain } from 'lucide-react';
+import { textStyle, fontFamily } from './constants/typography';
 import { logger } from './services/logger';
-import { TIMING, LIMITS } from './constants/config';
+import { TIMING } from './constants/config';
 
 // Non-lazy components (avoid dynamic import issues)
 import VisionMemoryPanel from './components/VisionMemoryPanel';
@@ -36,16 +36,13 @@ const WeatherDashboard = lazy(() => import('./components/WeatherDashboard'));
 const AgentDashboard = lazy(() => import('./components/AgentDashboard'));
 const VectorDBDashboard = lazy(() => import('./components/VectorDBDashboard'));
 const RealtimeDashboard = lazy(() => import('./components/RealtimeDashboard'));
+const LoRADashboard = lazy(() => import('./components/LoRADashboard'));
 
 import { 
   ProcessorState, 
   AIProvider, 
-  BreakerStatus, 
-  RuntimePlugin, 
-  MemoryNode, 
   VoiceState, 
-  VisionState,
-  IntentType
+  VisionState
 } from './types';
 import { engine } from './services/execution';
 import { registry } from './services/registry';
@@ -57,22 +54,11 @@ import { hardware } from './services/hardware';
 import { graphService } from './services/graph';
 import { haService } from './services/home_assistant';
 import { conversationFlow, intelligence } from './services/intelligence';
-import { inputValidator } from './services/inputValidator';
-import { conversation } from './services/conversation';
-import { learningService } from './services/learning';
-import { analyzeIntent } from './services/gemini';
-import { isHomeAssistantQuery, searchEntities, generateEntityResponse } from './services/haEntitySearch';
-import { weatherService } from './services/weather';
-import { taskAutomation } from './services/integrations/taskAutomation';
+
+
 import { kernelProcessor } from './services/kernelProcessor';
-import { webSocketService } from './services/webSocketService';
-import { pluginHotReloader } from './services/pluginHotReloader';
-import { cacheService } from './services/cacheService';
-import { securityService } from './services/securityService';
-import { resilienceService } from './services/resilienceService';
-import { predictiveService } from './services/predictiveService';
-import { performanceMonitoringService } from './services/performanceMonitoringService';
-import { testingFramework } from './services/testingFramework';
+
+
 import { localVectorDB } from './services/localVectorDB';
 import { contextWindowService } from './services/contextWindowService';
 import { JARVISErrorBoundary } from './components/ErrorBoundary';
@@ -86,8 +72,7 @@ import { ToastNotifications } from './components/ToastNotifications';
 import { NotificationCenter } from './components/NotificationCenter';
 import { notificationService } from './services/notificationService';
 
-// Test Suite
-import { systemTests } from './tests/systemTest';
+
 
 // Wrapper for lazy-loaded views with error boundary - defined outside component to prevent re-renders
 const LazyViewWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -220,13 +205,17 @@ const App: React.FC = () => {
     // This ensures the marketplace shows them as installed
     initializeBuiltInPlugins(BUILTIN_PLUGIN_MANIFESTS);
 
-    // Initialize new v1.3 services
-    webSocketService.connectToServer().catch(err => {
-      logger.log('SYSTEM', `WebSocket service not available: ${err.message}`, 'info');
+    // Initialize new v1.3 services (lazy loaded)
+    import('./services/webSocketService').then(({ webSocketService }) => {
+      webSocketService.connectToServer().catch(err => {
+        logger.log('SYSTEM', `WebSocket service not available: ${err.message}`, 'info');
+      });
     });
 
-    pluginHotReloader.watchAllActivePlugins().catch(err => {
-      logger.log('PLUGIN', `Hot reload service not available: ${err.message}`, 'info');
+    import('./services/pluginHotReloader').then(({ pluginHotReloader }) => {
+      pluginHotReloader.watchAllActivePlugins().catch(err => {
+        logger.log('PLUGIN', `Hot reload service not available: ${err.message}`, 'info');
+      });
     });
 
     // Initialize additional v1.3 services
@@ -367,11 +356,13 @@ const App: React.FC = () => {
         setMemories(memories);
     });
 
-    // Set the speak function for task automation
-    taskAutomation.setSpeakFunction((text: string) => {
-      if (voice.getState() !== VoiceState.MUTED) {
-        voice.speak(text);
-      }
+    // Set the speak function for task automation (lazy loaded)
+    import('./services/integrations/taskAutomation').then(({ taskAutomation }) => {
+      taskAutomation.setSpeakFunction((text: string) => {
+        if (voice.getState() !== VoiceState.MUTED) {
+          voice.speak(text);
+        }
+      });
     });
 
     addLog('SYSTEM', 'Kernel Boot Sequence Complete.', 'success');
@@ -399,12 +390,14 @@ const App: React.FC = () => {
     
     console.log('[App] Secure plugin API registered');
 
-    // Run quick health check after boot
+    // Run quick health check after boot (lazy loaded)
     setTimeout(() => {
-      systemTests.runAll().then(results => {
-        const passed = results.filter(r => r.passed).length;
-        const total = results.length;
-        addLog('SYSTEM', `Health check complete: ${passed}/${total} tests passed`, passed === total ? 'success' : 'warning');
+      import('./tests/systemTest').then(({ systemTests }) => {
+        systemTests.runAll().then(results => {
+          const passed = results.filter(r => r.passed).length;
+          const total = results.length;
+          addLog('SYSTEM', `Health check complete: ${passed}/${total} tests passed`, passed === total ? 'success' : 'warning');
+        });
       });
     }, 2000);
 
@@ -415,18 +408,25 @@ const App: React.FC = () => {
         unsubscribeVision();
         unsubscribeMemory();
 
-        // Clean up v1.3 services
-        webSocketService.close();
-        pluginHotReloader.unwatchAllPlugins().catch(err => {
-          logger.log('PLUGIN', `Error stopping plugin watchers: ${err.message}`, 'warning');
+        // Clean up v1.3 services (lazy loaded)
+        import('./services/webSocketService').then(({ webSocketService }) => {
+          webSocketService.close();
+        });
+        import('./services/pluginHotReloader').then(({ pluginHotReloader }) => {
+          pluginHotReloader.unwatchAllPlugins().catch(err => {
+            logger.log('PLUGIN', `Error stopping plugin watchers: ${err.message}`, 'warning');
+          });
         });
 
+        // Clear predictive service data (lazy loaded)
+        import('./services/predictiveService').then(({ predictiveService }) => {
+          predictiveService.clearAllData();
+        });
 
-        // Clear predictive service data
-        predictiveService.clearAllData();
-
-        // Clear performance monitoring data
-        performanceMonitoringService.clearAllData();
+        // Clear performance monitoring data (lazy loaded)
+        import('./services/performanceMonitoringService').then(({ performanceMonitoringService }) => {
+          performanceMonitoringService.clearAllData();
+        });
 
         // Clean up voice service resources
         try {
@@ -436,12 +436,12 @@ const App: React.FC = () => {
           console.warn('Error cleaning up voice service:', e);
         }
 
-        // Clean up task automation service
-        try {
-          taskAutomation.cleanup(); // Clear all automation timers on shutdown
-        } catch (e) {
+        // Clean up task automation service (lazy loaded)
+        import('./services/integrations/taskAutomation').then(({ taskAutomation }) => {
+          taskAutomation.cleanup();
+        }).catch(e => {
           console.warn('Error cleaning up task automation service:', e);
-        }
+        });
 
         // Clean up global window object references to prevent memory leaks
         // SECURITY: Only __JARVIS_DEV__ is exposed (and only in DEV mode)
@@ -568,10 +568,27 @@ const App: React.FC = () => {
   };
 
   const handleNetworkToggle = () => {
-    const newMode = forcedMode === AIProvider.GEMINI ? AIProvider.OLLAMA : AIProvider.GEMINI;
+    // Cycle through providers: GEMINI -> OLLAMA -> LORA -> GEMINI
+    let newMode: AIProvider;
+    if (forcedMode === AIProvider.GEMINI) {
+      newMode = AIProvider.OLLAMA;
+    } else if (forcedMode === AIProvider.OLLAMA) {
+      newMode = AIProvider.LORA;
+    } else {
+      newMode = AIProvider.GEMINI;
+    }
+    
     setForcedMode(newMode);
     providerManager.setForcedMode(newMode);
-    addLog('SYSTEM', `Provider manually locked to: ${newMode === AIProvider.GEMINI ? 'CORE ENGINE (GEMINI)' : 'LOCAL OLLAMA'}`, 'warning');
+    
+    const modeLabels: Record<AIProvider, string> = {
+      [AIProvider.GEMINI]: 'CORE ENGINE (GEMINI)',
+      [AIProvider.OLLAMA]: 'LOCAL OLLAMA',
+      [AIProvider.LORA]: 'PERSONAL LoRA ADAPTER',
+      [AIProvider.SYSTEM]: 'SYSTEM DEFAULT'
+    };
+    
+    addLog('SYSTEM', `Provider manually locked to: ${modeLabels[newMode]}`, 'warning');
   };
 
   const processKernelRequest = useCallback(async (input: string, origin: 'USER_TEXT' | 'USER_VOICE' = 'USER_TEXT') => {
@@ -633,6 +650,7 @@ const App: React.FC = () => {
   if (view === 'REALTIME') return <div className="h-screen w-screen"><LazyViewWrapper><RealtimeDashboard onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
 if (view === 'VISION_MEMORY') return <div className="h-screen w-screen"><LazyViewWrapper><VisionMemoryPanel isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
 if (view === 'MODEL_MANAGER') return <div className="h-screen w-screen"><LazyViewWrapper><ModelManagerPanel isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
+if (view === 'LORA_DASHBOARD') return <div className="h-screen w-screen"><LazyViewWrapper><LoRADashboard isOpen={true} onClose={() => setView('DASHBOARD')} /></LazyViewWrapper></div>;
 
   const isMainDashboard = activeTab === 'DASHBOARD';
 
@@ -708,6 +726,7 @@ if (view === 'MODEL_MANAGER') return <div className="h-screen w-screen"><LazyVie
              <button onClick={() => setView('REALTIME')} className="jarvis-btn-icon text-red-500" title="Real-Time Dashboard"><Activity size={18} /></button>
              <button onClick={() => setView('VISION_MEMORY')} className="jarvis-btn-icon text-pink-500" title="Vision Memory"><Image size={18} /></button>
              <button onClick={() => setView('MODEL_MANAGER')} className="jarvis-btn-icon text-cyan-500" title="Model Manager"><Cpu size={18} /></button>
+             <button onClick={() => setView('LORA_DASHBOARD')} className="jarvis-btn-icon text-purple-500" title="LoRA Fine-Tuning"><Brain size={18} /></button>
              <button onClick={() => setView('DEV')} className="jarvis-btn-icon text-yellow-500" title="Dev Tools"><Bug size={18} /></button>
              <button onClick={() => setView('SETTINGS')} className="jarvis-btn-icon text-gray-500" title="Settings"><SettingsIcon size={18} /></button>
              <button onClick={handleExit} className="jarvis-btn-icon text-red-600 hover:text-red-400" title="Exit JARVIS"><Power size={18} /></button>

@@ -1,6 +1,6 @@
 # JARVIS Kernel Architecture - Actual Implementation
 
-> **Version:** v1.5.0  
+> **Version:** v1.5.1  
 > **Last Updated:** 2025-02-07  
 > **Hardware Target:** GTX 1080 Ti 11GB, 32GB RAM, Ryzen 5 5500X
 

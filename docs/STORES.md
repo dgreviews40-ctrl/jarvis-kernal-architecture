@@ -66,8 +66,8 @@ type TabView = 'DASHBOARD' | 'ARCH' | 'MEMORY' | 'VISION' | 'HEALTH' |
 const KERNEL_VERSION = {
   major: 1,
   minor: 5,
-  patch: 0,
-  build: 'v1.5.0-stable'
+  patch: 1,
+  build: 'v1.5.1-stable'
 };
 ```
 

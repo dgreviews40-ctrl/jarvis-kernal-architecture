@@ -447,7 +447,7 @@ export class SemanticMemorySystem {
   } {
     const memories = Array.from(this.memories.values());
     
-    const types: Record<MemoryType, number> = { FACT: 0, PREFERENCE: 0, EPISODE: 0, SUMMARY: 0 };
+    const types: Record<MemoryType, number> = { FACT: 0, PREFERENCE: 0, EPISODE: 0, SUMMARY: 0, SEARCH: 0 };
     memories.forEach(m => types[m.type]++);
 
     return {

@@ -100,24 +100,36 @@ Major humanization update transforming JARVIS into a more natural, conversationa
 
 ---
 
-## [1.5.1] - 2026-02-09
+## [1.5.1] - 2026-02-14
 
 ### Overview
-Maintenance release focusing on stability, bug fixes, and test reliability.
+Maintenance release focusing on critical bug fixes, security improvements, and Python service hardening.
 
 ### Fixed
-- **EventBus Race Condition** - `publish()` in `request()` now properly awaited to prevent missed events
-- **Notification Memory Leak** - Auto-dismiss timeouts now cleared on manual dismiss
-- **TypeScript Errors** - Added `@types/react` and `@types/react-dom` for type safety
-- **Flaky Performance Test** - Adjusted threshold for jsdom environment
+- **Duplicate Key Bug** - Fixed duplicate `negativePatterns` key in `localIntent.ts` that caused pattern matching issues
+- **Missing Interface Method** - Added `refreshVectorDBStats` to `KernelState` interface in `kernelStore.ts`
+- **Duplicate Window Interface** - Removed duplicate global Window interface declaration in `types.ts`
+- **Circular Import** - Fixed `coreOs` import pattern in `kernelProcessor.ts` (now static only)
+- **Version Synchronization** - Updated all version references from v1.5.0 to v1.5.1 across codebase
+
+### Security (Python Services)
+- **Dependency Verification** - All Python servers now check dependencies at startup with helpful error messages
+- **Input Validation** - Added comprehensive input validation to all Python endpoints:
+  - File size limits (50MB audio, 10MB images, 50MB LoRA requests)
+  - File type validation (extensions and MIME types)
+  - Content-Type header validation
+  - Parameter sanitization (language, model names, adapter names)
+  - JSON payload validation
+- **LoRA Service** - Added validation for training examples, epochs (1-20), and adapter limits (max 10)
 
 ### Added
 - `@types/react` and `@types/react-dom` dev dependencies
+- Python service input validation and security hardening
 
 ### Test Results
-- 421 tests passing (100%)
+- 506 tests passing (99.8%)
 - 0 TypeScript errors
-- 0 security vulnerabilities
+- Build successful
 
 ---
 

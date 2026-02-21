@@ -30,21 +30,22 @@ export class SearchService {
       return await this.searchWeather(query);
     }
 
-    // In browser environments, DuckDuckGo API calls will likely fail due to CORS
-    // Return a graceful fallback instead of attempting the fetch
+    // In browser mode, try the proxy server first
     if (this.isBrowser) {
-      console.warn('[SEARCH] Browser environment detected. DuckDuckGo API has CORS restrictions. Consider using a proxy server.');
-      return {
-        query,
-        results: [{
-          title: 'Search Unavailable in Browser',
-          url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
-          snippet: `Web search is not available in browser mode due to CORS restrictions. Please visit the link to search manually, or configure a proxy server for search functionality.`
-        }]
-      };
+      try {
+        const proxyResult = await this.searchViaProxy(query);
+        if (proxyResult.results.length > 0 && proxyResult.results[0].title !== 'Proxy Error') {
+          return proxyResult;
+        }
+      } catch (e) {
+        console.log('[SEARCH] Proxy unavailable, trying direct API...');
+      }
     }
 
     try {
+      // Try to fetch from DuckDuckGo API directly
+      // Note: In browser environments, this may fail due to CORS
+      // We'll attempt it anyway and fall back gracefully if it fails
       // Use DuckDuckGo Instant Answer API (doesn't require API key)
       const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`, {
         method: 'GET',
@@ -105,13 +106,73 @@ export class SearchService {
         }]
       };
     } catch (error) {
-      console.error('Search error:', error);
+      console.error('[SEARCH] Error:', error);
+      
+      // Check if this is likely a CORS error
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const isCorsError = errorMessage.includes('CORS') || 
+                          errorMessage.includes('Failed to fetch') ||
+                          errorMessage.includes('NetworkError');
+      
+      if (isCorsError && this.isBrowser) {
+        return {
+          query,
+          results: [{
+            title: 'Web Search Temporarily Unavailable',
+            url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+            snippet: `Web search is temporarily unavailable. The proxy server should auto-start with JARVIS.bat. If you're running JARVIS manually, start the proxy with "npm run proxy" or visit the DuckDuckGo link to search manually.`
+          }]
+        };
+      }
+      
       return {
         query,
         results: [{
-          title: 'Search Error',
+          title: 'Search Temporarily Unavailable',
           url: 'https://duckduckgo.com',
-          snippet: `Unable to perform search for: ${query}. Error: ${error instanceof Error ? error.message : 'Unknown error'}`
+          snippet: `Unable to complete the search for "${query}". The search service may be temporarily unavailable. Please try again later.`
+        }]
+      };
+    }
+  }
+
+  /**
+   * Search via proxy server (bypasses CORS in browser)
+   */
+  private async searchViaProxy(query: string): Promise<SearchResults> {
+    try {
+      // Try to connect to the proxy server on port 3101
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const response = await fetch(`http://localhost:3101/search?q=${encodeURIComponent(query)}`, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Proxy error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      return {
+        query: data.query || query,
+        results: data.results || []
+      };
+    } catch (error) {
+      console.log('[SEARCH] Proxy search failed:', error instanceof Error ? error.message : 'Unknown error');
+      return {
+        query,
+        results: [{
+          title: 'Proxy Error',
+          url: 'https://duckduckgo.com',
+          snippet: 'Proxy server is not available'
         }]
       };
     }

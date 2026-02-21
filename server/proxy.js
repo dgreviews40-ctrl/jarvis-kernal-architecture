@@ -9,6 +9,7 @@ import { dirname, resolve } from 'path';
 import process from 'process';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -193,8 +194,10 @@ app.post('/save-api-key', async (req, res) => {
       envContent = '';
     }
     
-    // Build the env variable name
-    const envVarName = `VITE_${provider.toUpperCase()}_API_KEY`;
+    // Build the env variable name - prefer server-only variant (no VITE_ prefix)
+    // This keeps API keys out of the client bundle
+    const envVarName = `${provider.toUpperCase()}_API_KEY`;
+    const legacyEnvVarName = `VITE_${provider.toUpperCase()}_API_KEY`;
     
     // Check if the key already exists and replace it, or add it
     const lines = envContent.split('\n');
@@ -206,22 +209,34 @@ app.post('/save-api-key', async (req, res) => {
         keyFound = true;
         return `${envVarName}=${key}`;
       }
+      // Also remove legacy VITE_ prefixed key if present
+      const legacyMatch = line.match(new RegExp(`^\\s*${legacyEnvVarName}\\s*=.*$`));
+      if (legacyMatch) {
+        return `# ${line} # MIGRATED to ${envVarName}`;
+      }
       return line;
-    });
+    }).filter(line => !line.includes(`VITE_${provider.toUpperCase()}_API_KEY=${key}`));
     
     // If key wasn't found, add it
     if (!keyFound) {
       // Add a comment header if the file is not empty and doesn't have a comment
       if (newLines.length > 0 && newLines[0].trim() !== '' && !newLines[0].startsWith('#')) {
-        newLines.unshift(`# ${provider.toUpperCase()} API Key`);
+        newLines.unshift(`# ${provider.toUpperCase()} API Key (server-only, not exposed to client)`);
       }
       newLines.push(`${envVarName}=${key}`);
     }
     
     // Write the updated content
-    fs.writeFileSync(targetPath, newLines.join('\n'), 'utf8');
+    const newContent = newLines.join('\n');
+    fs.writeFileSync(targetPath, newContent, 'utf8');
     
-    console.log(`[PROXY] API key for ${provider} saved to ${targetPath}`);
+    // Verify the write
+    const verifyContent = fs.readFileSync(targetPath, 'utf8');
+    if (verifyContent.includes(`${envVarName}=${key}`)) {
+      console.log(`[PROXY] API key for ${provider} saved and verified in ${targetPath}`);
+    } else {
+      console.error('[PROXY] Warning: API key write verification failed');
+    }
     
     res.json({ 
       success: true, 
@@ -242,6 +257,17 @@ app.post('/save-api-key', async (req, res) => {
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Home Assistant Proxy', timestamp: new Date().toISOString() });
+});
+
+// Gemini API proxy routes
+import { handleGeminiRequest, handleGeminiStreamRequest, isGeminiConfigured, getGeminiStatus } from './gemini-proxy.js';
+
+app.post('/gemini/generate', handleGeminiRequest);
+app.post('/gemini/stream', handleGeminiStreamRequest);
+
+// Gemini status endpoint
+app.get('/gemini/status', (req, res) => {
+  res.json(getGeminiStatus());
 });
 
 // Shutdown endpoint - gracefully shuts down all JARVIS services
@@ -273,7 +299,6 @@ app.post('/api/shutdown', async (req, res) => {
     // On Windows, we need to kill the Node.js processes
     if (process.platform === 'win32') {
       // Kill by window title patterns
-      const { spawn } = require('child_process');
       
       // Kill Vite dev server
       spawn('taskkill', ['/F', '/FI', 'WINDOWTITLE eq *Vite*', '/T'], { 
@@ -489,6 +514,93 @@ app.use('/ha-api', async (req, res, next) => {
   }
 });
 
+// Web Search Proxy - DuckDuckGo Instant Answer API
+app.get('/search', async (req, res) => {
+  const query = req.query.q;
+  
+  if (!query) {
+    return res.status(400).json({
+      error: 'Missing query parameter',
+      message: 'Please provide a search query via the "q" parameter'
+    });
+  }
+  
+  try {
+    console.log(`[PROXY] Web search query: "${query}"`);
+    
+    // Forward to DuckDuckGo API
+    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    
+    const response = await fetch(ddgUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`DuckDuckGo API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Format results similar to the search service
+    const results = [];
+    
+    if (data.AbstractText) {
+      results.push({
+        title: data.Heading || 'Summary',
+        url: data.AbstractURL || 'https://duckduckgo.com',
+        snippet: data.AbstractText
+      });
+    }
+    
+    // Add related topics
+    if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
+      data.RelatedTopics.slice(0, 3).forEach(topic => {
+        if (topic.Text && topic.FirstURL) {
+          results.push({
+            title: topic.Result || topic.Name || 'Related Topic',
+            url: topic.FirstURL,
+            snippet: topic.Text
+          });
+        }
+      });
+    }
+    
+    // Fallback to Results array
+    if (results.length === 0 && data.Results && Array.isArray(data.Results)) {
+      data.Results.slice(0, 3).forEach(result => {
+        if (result.Text && result.FirstURL) {
+          results.push({
+            title: result.Result || 'Search Result',
+            url: result.FirstURL,
+            snippet: result.Text
+          });
+        }
+      });
+    }
+    
+    res.json({
+      query,
+      results: results.length > 0 ? results : [{
+        title: 'No results found',
+        url: 'https://duckduckgo.com',
+        snippet: `No specific information found for: ${query}`
+      }]
+    });
+    
+  } catch (error) {
+    console.error('[PROXY] Search error:', error);
+    res.status(500).json({
+      error: 'Search failed',
+      message: error.message,
+      query
+    });
+  }
+});
+
 // Handle preflight requests for all routes
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -505,6 +617,10 @@ app.listen(PORT, () => {
   console.log('Routes:');
   console.log('  POST /config - Set Home Assistant URL and token');
   console.log('  POST /save-api-key - Save API key to .env.local file');
+  console.log('  POST /gemini/generate - Proxy to Gemini API');
+  console.log('  POST /gemini/stream - Stream from Gemini API');
+  console.log('  GET  /gemini/status - Get Gemini configuration status');
+  console.log('  GET  /search - Web search via DuckDuckGo');
   console.log('  POST /api/shutdown - Shutdown JARVIS services');
   console.log('  GET  /status - Get configuration status');
   console.log('  GET  /health - Health check');
@@ -514,3 +630,4 @@ app.listen(PORT, () => {
 // Export for use in other modules if needed
 export const proxyApp = app;
 export const updateConfig = (url, token) => { haConfig = { url, token }; };
+

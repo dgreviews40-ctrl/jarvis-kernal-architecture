@@ -24,6 +24,7 @@ const STORAGE_KEYS = [
   'jarvis-logs-store',
   'jarvis-plugin-store',
   'jarvis-store-version',
+  'jarvis_ha_entity_whitelist', // Home Assistant entity whitelist settings
 ];
 
 // Settings that contain sensitive data

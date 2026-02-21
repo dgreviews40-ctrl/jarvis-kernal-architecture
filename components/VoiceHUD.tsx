@@ -4,7 +4,7 @@ import { conversation } from '../services/conversation';
 import { voice } from '../services/voice';
 import { piperLauncher, PiperLauncherState } from '../services/piperLauncher';
 import { useKernelStore } from '../stores';
-import { Mic, MicOff, Volume2, Activity, Loader2, AlertTriangle, MessageSquare, XCircle, Power, Server, Cpu } from 'lucide-react';
+import { Mic, MicOff, Volume2, Activity, Loader2, AlertTriangle, MessageSquare, XCircle, Power, Server, Cpu, Hand } from 'lucide-react';
 
 interface VoiceHUDProps {
   onToggle: () => void;
@@ -85,7 +85,13 @@ export const VoiceHUD: React.FC<VoiceHUDProps> = ({ onToggle }) => {
       case VoiceState.PROCESSING: 
         return { color: 'text-cyan-500', bg: 'bg-cyan-500/10', text: 'PROCESSING...', icon: <Loader2 size={20} className="animate-spin" /> };
       case VoiceState.SPEAKING: 
-        return { color: 'text-green-500', bg: 'bg-green-500/10', text: 'SPEAKING', icon: <Volume2 size={20} className="animate-pulse" /> };
+        const interruptionEnabled = voice.isInterruptionEnabled();
+        return { 
+          color: 'text-green-500', 
+          bg: 'bg-green-500/10', 
+          text: interruptionEnabled ? 'SPEAKING (SAY "STOP" TO INTERRUPT)' : 'SPEAKING', 
+          icon: <Volume2 size={20} className="animate-pulse" /> 
+        };
       case VoiceState.INTERRUPTED:
         return { color: 'text-orange-500', bg: 'bg-orange-500/10', text: 'INTERRUPTED', icon: <XCircle size={20} /> };
       case VoiceState.ERROR: 
@@ -157,6 +163,14 @@ export const VoiceHUD: React.FC<VoiceHUDProps> = ({ onToggle }) => {
                  piperStatus === 'STARTING' ? 'PIPER ⏳' :
                  piperStatus === 'NOT_RUNNING' ? 'PIPER ✗' :
                  piperStatus === 'ERROR' ? 'PIPER !' : 'PIPER ?'}
+              </div>
+            )}
+            
+            {/* Interruption Indicator - Show when speaking and interruption is enabled */}
+            {state === VoiceState.SPEAKING && voice.isInterruptionEnabled() && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-mono bg-orange-950/30 border-orange-800/50 text-orange-400 animate-pulse">
+                <Hand size={10} />
+                SAY "STOP" TO INTERRUPT
               </div>
             )}
         </div>

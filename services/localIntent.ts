@@ -30,10 +30,11 @@ const INTENT_PATTERNS: IntentPattern[] = [
       // Snapshot commands - HIGH PRIORITY
       /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture|image|pic)\b/i,
       /\b(snapshot|photo|picture)\s+(camera|webcam|me|this|now)\b/i,
-      // Look at camera/webcam/feed
-      /\b(look|see|view|check)\s+(at|at my|at the)?\s*(camera|webcam|local camera|video feed|camera feed)\b/i,
-      /\b(look|see|view)\s+(at|my|the)?\s*(local|this|my)?\s*(camera|webcam|feed)\b/i,
-      // Specific camera names (garage, front door, etc.)
+      // Look at camera/webcam/feed - BROAD MATCH for any camera mention with look/see
+      /\b(look|see|view|check)\s+(at|at my|at the)?\s*(camera|webcam|local camera|video feed|camera feed|live feed|optical feed)\b/i,
+      /\b(look|see|view)\s+(at|my|the)?\s*(local|this|my|the)?\s*(camera|webcam|feed)\b/i,
+      // Specific camera names (garage, front door, etc.) - WITH LOOK/SEE VERBS
+      /\b(look|see|view|check|show)\s+(at|at the|at my|the|my)?\s*(garage|front|back|rear|door|porch|yard|kitchen|living|office|room)\s*(cam|camera|feed)?\b/i,
       /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture)\s+(of|from)\s+(the|my)?\s*(garage|front|back|rear|door|porch|yard|kitchen|living|office|room)\s*(cam|camera)?\b/i,
       /\b(snapshot|photo)\s+(of|from)\s+(the|my)?\s*(garage|front|back|rear|door|porch|yard)\s*(cam|camera)?\b/i,
       /\b(garage|front|back|rear|door|porch|yard|kitchen|living|office)\s*(cam|camera)\s*(snapshot|photo|picture)?\b/i,
@@ -46,19 +47,84 @@ const INTENT_PATTERNS: IntentPattern[] = [
       // Looking at physical things (not data systems)
       /\blook\s+(at|in|out)\s+(the|my|this|that)\s+(room|window|door|desk|table|object|thing)\b/i,
       /\bwhat\s+(is|do you see)\s+(this|that|here|there|in front of you)\b/i,
-      // Voice-specific patterns for physical vision
-      /jarvis.*\b(look|see|show|describe|scan|analyze)\s+(at|this|the|my|camera|webcam)/i,
-      /jarvis.*\bwhat.*\b(see|looking at|on my|in my|in the|on the)\s+(screen|camera|desk|room)\b/i
+      // Voice-specific patterns for physical vision (handle wake words)
+      /(?:jarvis|travis|hey\s+jarvis|ok\s+jarvis).*\b(look|see|show|describe|scan|analyze)\s+(at|this|the|my|camera|webcam|feed)/i,
+      /(?:jarvis|travis|hey\s+jarvis|ok\s+jarvis).*\bwhat.*\b(see|looking at|on my|in my|in the|on the)\s+(screen|camera|desk|room|feed)\b/i,
+      // Explicit camera requests with running/active keywords
+      /\b(running|active|live)\s+(camera|cam|feed)\b/i,
+      /\bcamera\s+(running|active|live|now)\b/i
     ],
-    keywords: ['look', 'see', 'camera', 'webcam', 'visual', 'scan', 'describe', 'image', 'picture', 'screen', 'read', 'ocr', 'translate', 'show me', 'this', 'that', 'here', 'snapshot', 'photo', 'pic', 'local camera', 'camera feed', 'video feed', 'open camera', 'take photo', 'capture image', 'garage', 'front door', 'back yard'],
+    keywords: ['look', 'see', 'camera', 'webcam', 'visual', 'scan', 'describe', 'image', 'picture', 'screen', 'read', 'ocr', 'translate', 'show me', 'this', 'that', 'here', 'snapshot', 'photo', 'pic', 'local camera', 'camera feed', 'video feed', 'live feed', 'optical feed', 'open camera', 'take photo', 'capture image', 'garage camera', 'front door', 'back yard'],
     // Negative patterns - if these match, reduce confidence (data/system queries, not visual)
     negativePatterns: [
-      /\b(home assistant|ha)\s+(sensor|entity|device|status|camera)\s+(value|reading|status)\b/i,
+      /\b(home assistant|ha)\s+(sensor|entity|device|status)\s+(value|reading|status)\b/i,
       /\blook\s+(at|in)\s+(home assistant|ha|solar|energy|data|statistics|history|log)\b/i,
-      /\bcamera\s+(sensor|entity|status|value|reading)\b/i
+      /\bcamera\s+(sensor|entity|value|reading)\s+(value|reading|status)\b/i,
+      /\bhow\s+(many|much)\s+(camera|device|entity)\b/i
     ]
   },
   
+  // ENVISION - Generate redesign/layout images based on current space
+  {
+    type: IntentType.ENVISION,
+    confidence: 0.93,
+    complexity: 0.7,
+    patterns: [
+      // Envision/redesign commands
+      /\b(envision|imagine|redesign|reimagine|transform)\s+(this|that|the|my)\s+(space|room|garage|area|workshop)\b/i,
+      /\bshow\s+me\s+(what|how)\s+(it|this|that)\s+(would|could)\s+(look|be)\s+(like|with)\b/i,
+      /\bshow\s+me\s+(a\s+)?(diagram|schematic|layout|plan|design|blueprint)\s+(of|for)\b/i,
+      /\bwhat\s+(would|could)\s+(it|this|that)\s+(look\s+like|be)\s+(with|if|as)\b/i,
+      // Empty space + setup commands
+      /\b(if\s+)?(this|that|the)\s+(space|room|garage|area)\s+(is|was|were)\s+(empty|clear)\b/i,
+      /\bset\s+up\s+(with|as|for)\s+(woodworking|tools|workshop|studio)\b/i,
+      /\borganize\s+(this|that|the)\s+(space|room|garage|area)\s+(with|as|for)\b/i,
+      // Layout/design requests
+      /\b(layout|design|plan)\s+(for|with)\s+(woodworking|tools|workshop)\b/i,
+      /\bdiagram\s+(of|showing)\s+(how|what)\s+(to|this|that)\b/i,
+      // Generate image based on current view
+      /\b(generate|create|make)\s+(a\s+)?(diagram|schematic|image|picture|visualization)\s+(of|showing|from)\s+(this|that|the|current)\b/i,
+      /\b(draw|sketch)\s+(a\s+)?(diagram|layout|plan)\s+(of|for)\s+(this|that|the)\b/i
+    ],
+    keywords: ['envision', 'imagine', 'redesign', 'reimagine', 'transform', 'diagram', 'schematic', 'layout', 'plan', 'design', 'blueprint', 'empty', 'set up', 'organize', 'woodworking', 'workshop', 'generate', 'visualization', 'what would it look like', 'show me'],
+    // Negative patterns - exclude simple description requests
+    negativePatterns: [
+      /\b(describe|tell me about|explain)\s+(the|a)\s+(diagram|schematic)\s+(without|no)\s+(image|picture|visual)/i,
+      /\b(text|words?|description)\s+(only|based)\s+(diagram|layout)/i
+    ]
+  },
+  
+  // IMAGE_GENERATION - General image creation (not based on current view)
+  {
+    type: IntentType.IMAGE_GENERATION,
+    confidence: 0.95,
+    complexity: 0.6,
+    patterns: [
+      // Direct generation commands
+      /\b(generate|create|make|draw|paint|render)\s+(an?|the|me\s+an?|a\s+picture\s+of|an\s+image\s+of)\s+(.{5,200})/i,
+      /\b(generate|create|make|draw|paint|render)\s+(me\s+)?(a|an)\s+(photo|image|picture|drawing|painting|render)\s+(of\s+)?(.{5,200})/i,
+      // Image type requests
+      /\b(show\s+me|display|give\s+me)\s+(a|an)\s+(photo|image|picture|drawing)\s+(of\s+)?(.{5,200})/i,
+      // Create visual content
+      /\b(visualize|imagine)\s+(a|an)\s+(.{5,200})/i,
+      // Pattern for "X sitting on Y" or "X doing Y" with generate/create
+      /\b(generate|create|make)\s+(.{3,100}\s+(sitting|standing|walking|running|flying|swimming|eating|playing|holding|wearing))/i,
+      // Artist style requests
+      /\b(in\s+the\s+style\s+of|like|as\s+if\s+by)\s+(.{3,50})\s+(generated|created|drawn|painted)/i,
+      /\b(generate|create|make)\s+(.{5,200})\s+(style|art|artwork|illustration)/i,
+      // Generic "generate X" or "create X" where X is a visual subject
+      /\b(generate|create)\s+(a|an)\s+(giant|big|small|tiny|large)?\s*(mechanical|robotic|futuristic|ancient|magical|cyberpunk|steampunk)?\s*(bird|dragon|car|building|city|landscape|portrait|character|creature|animal|monster|vehicle|scene)/i
+    ],
+    keywords: ['generate', 'create', 'make', 'draw', 'paint', 'render', 'image', 'picture', 'photo', 'drawing', 'painting', 'illustration', 'visualize', 'imagine', 'artwork', 'art', 'portrait', 'landscape', 'scene', 'character', 'creature'],
+    // Negative patterns - exclude if it's about existing images or data generation
+    negativePatterns: [
+      /\b(generate|create)\s+(a|an)\s+(report|list|summary|document|file|code|script|text|poem|story|essay)/i,
+      /\b(generate|create)\s+(me|a)\s+(playlist|schedule|plan|route|itinerary)/i,
+      /\b(existing|current|saved|stored)\s+(image|picture|photo)/i,
+      /\b(generate|create)\s+(password|key|token|hash)/i
+    ]
+  },
+
   // HOME ASSISTANT DATA QUERY - Catch sensor queries
   {
     type: IntentType.QUERY,
@@ -111,15 +177,12 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /\b(home assistant|ha)\s+(sensor|entity|device|status)\b/i,
       /\bsensor\s+(value|reading|status)\b/i
     ],
-    // Negative patterns - exclude idea/project requests
+    // Negative patterns - exclude idea/project requests, vision commands, and personal conversation
     negativePatterns: [
       /\b(ideas?|suggestions?|projects?|recommendations?)\b/i,
       /\bhelp\s+me\s+(with|on)\b/i,
       /\bhow\s+(can|do)\s+I\s+(work on|build|create|make|set up)\b/i,
-      /\bwhat\s+can\s+I\s+(do|work on|build|create)\b/i
-    ],
-    // Negative patterns - exclude vision commands and personal conversation
-    negativePatterns: [
+      /\bwhat\s+can\s+I\s+(do|work on|build|create)\b/i,
       /\b(open|start|turn on)\s+(the|my)\s+(camera|webcam)\b/i,
       /\b(look|see|view)\s+(at)?\s*(my|the|local)?\s*(camera|webcam|video feed)\b/i,
       /\b(take|capture|grab)\s+(a\s+)?(snapshot|photo|picture|image|pic)\s+(of|from|at)/i,
@@ -355,6 +418,23 @@ const INTENT_PATTERNS: IntentPattern[] = [
     keywords: ['your name', 'my name', 'who am i', 'what time', 'what day', 'weather', 'recommendations', 'suggest']
   },
   
+  // SEARCH - Web search queries (explicit search requests)
+  {
+    type: IntentType.SEARCH,
+    confidence: 0.95,
+    complexity: 0.4,
+    patterns: [
+      // Explicit search commands
+      /\b(search\s+(the\s+)?web\s+(for\s+)?|google\s+|look\s+up\s+|find\s+(me\s+)?(info(rmation)?\s+(about|on)\s+)|\bwiki\s+)/i,
+      /\b(what('s| is)|who\s+(is|was)|where\s+(is|was)|when\s+(did|was)|how\s+(do|does|can|to))\b.*\b(latest|news|current|today|recent|update)\b/i,
+      /\bsearch\s+for\s+/i,
+      /\b(can\s+you\s+)?(search|google|look\s+up)\s+/i,
+      // Questions requiring real-time/current info
+      /\b(what|who|where|when|why|how)\b.*\b(\d{4}|latest|news|stock\s+price|weather|forecast|now|today)\b/i,
+    ],
+    keywords: ['search', 'google', 'look up', 'find info', 'latest', 'news', 'current', 'update', 'web']
+  },
+  
   // QUERY - Catch-all for questions (lowest priority in patterns)
   {
     type: IntentType.QUERY,
@@ -395,7 +475,10 @@ export class LocalIntentClassifier {
     [/\bsore\b/g, 'solar'],           // "sore" → "solar"
     [/\bsoar\b/g, 'solar'],          // "soar" → "solar"
     [/\bjervis\b/g, 'jarvis'],       // "jervis" → "jarvis"
+    [/\btravis\b/g, ''],             // "travis" → remove (common wake word misheard)
     [/\bjarvis\b/g, ''],             // Remove wake word for classification
+    [/\bhey\s+jarvis\b/g, ''],       // Remove "hey jarvis" wake phrase
+    [/\bok\s+jarvis\b/g, ''],        // Remove "ok jarvis" wake phrase
     [/\bproducktion\b/g, 'production'], // Common speech typo
     [/\bproduktion\b/g, 'production'],  // Another variant
   ];

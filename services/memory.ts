@@ -9,6 +9,7 @@ import { vectorDB } from "./vectorDB";
 import { vectorDBSync } from "./vectorDBSyncService";
 import { logger } from "./logger";
 import { eventSourcing, EventSourcingStats, ReplayResult, MemoryEvent } from "./eventSourcing";
+import { safeLocalStorageSet, estimateLocalStorageUsage } from './safeUtils';
 import { memoryCompression, CompressionStats } from "./memoryCompression";
 
 // Simulated "Pre-existing" Long Term Memory
@@ -242,9 +243,46 @@ export class MemoryCoreOptimized {
   private persist(): void {
     try {
       const nodesArray = Array.from(this.nodes.values());
-      localStorage.setItem(this.storageKey, JSON.stringify(nodesArray));
+      const result = safeLocalStorageSet(this.storageKey, nodesArray);
+      
+      if (!result.success) {
+        if (result.quotaExceeded) {
+          logger.log('MEMORY', 'Storage quota exceeded, attempting cleanup...', 'warning');
+          this.handleStorageQuotaExceeded();
+        } else {
+          logger.log('MEMORY', `Failed to persist: ${result.error}`, 'error');
+        }
+      }
     } catch (e) {
-      console.error('[MEMORY] Failed to persist:', e);
+      logger.log('MEMORY', `Failed to persist: ${e instanceof Error ? e.message : 'Unknown error'}`, 'error');
+    }
+  }
+
+  private handleStorageQuotaExceeded(): void {
+    // Remove 20% of oldest memories to free up space
+    const nodesToRemove = Math.floor(this.nodes.size * 0.2);
+    const sortedNodes = Array.from(this.nodes.values()).sort((a, b) => a.created - b.created);
+    
+    let removed = 0;
+    for (let i = 0; i < nodesToRemove && i < sortedNodes.length; i++) {
+      const node = sortedNodes[i];
+      this.nodes.delete(node.id);
+      this.removeFromIndex(node.id);
+      // Record deletion event for audit trail
+      eventSourcing.recordDeleted(node, 'SYSTEM').catch(() => {});
+      removed++;
+    }
+    
+    logger.log('MEMORY', `Removed ${removed} oldest memories to free space`, 'warning');
+    
+    // Try to persist again
+    const nodesArray = Array.from(this.nodes.values());
+    const result = safeLocalStorageSet(this.storageKey, nodesArray);
+    
+    if (result.success) {
+      logger.log('MEMORY', 'Successfully persisted after cleanup', 'success');
+    } else {
+      logger.log('MEMORY', 'Still cannot persist after cleanup. Data will be lost on refresh.', 'error');
     }
   }
 
@@ -852,7 +890,7 @@ export class MemoryCoreOptimized {
   }> {
     await this.ensureLoaded();
     
-    const byType: Record<MemoryType, number> = { FACT: 0, PREFERENCE: 0, EPISODE: 0, SUMMARY: 0 };
+    const byType: Record<MemoryType, number> = { FACT: 0, PREFERENCE: 0, EPISODE: 0, SUMMARY: 0, SEARCH: 0 };
     let oldest = Date.now();
     let newest = 0;
 
@@ -1118,3 +1156,4 @@ export type { CompressionStats, MemoryCompressionConfig } from './memoryCompress
 // Export both the class (for testing) and the singleton instance (for app use)
 export const memory = new MemoryCoreOptimized();
 export { MemoryCoreOptimized as MemoryService };
+

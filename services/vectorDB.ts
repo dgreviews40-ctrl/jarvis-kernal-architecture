@@ -157,7 +157,11 @@ export class VectorDB {
 
   /**
    * Initialize the embedding pipeline with fallback chain
-   * Priority: Embedding Server (CUDA) > API > Transformers.js > Hash
+   * Priority: Embedding Server (CUDA) > API > Hash (Transformers.js loaded on-demand)
+   * 
+   * PERFORMANCE OPTIMIZATION: Transformers.js is NOT loaded at initialization.
+   * It's only loaded when generateEmbedding() is first called, to avoid 
+   * blocking initial page load with an 800KB+ library.
    */
   private async initializeEmbedder(): Promise<void> {
     // Try local embedding server first (CUDA on GPU)
@@ -222,7 +226,20 @@ export class VectorDB {
       }
     }
 
-    // Try Transformers.js with a strict timeout
+    // PERFORMANCE OPTIMIZATION: Skip Transformers.js at boot time
+    // Use hash-based embeddings initially, upgrade to Transformers.js on first use
+    this.embeddingBackend = 'hash';
+    this.embedder = null;
+    logger.log('VECTOR_DB', 'Using hash-based embeddings (Transformers.js will load on-demand)', 'info');
+  }
+
+  /**
+   * Try to upgrade from hash embeddings to Transformers.js
+   * Called lazily when embeddings are actually needed
+   */
+  private async tryUpgradeToTransformers(): Promise<boolean> {
+    if (this.embeddingBackend === 'transformers') return true;
+    
     try {
       const transformersPromise = this.loadTransformersJs();
       const timeoutPromise = new Promise<void>((_, reject) => {
@@ -230,16 +247,13 @@ export class VectorDB {
       });
       
       await Promise.race([transformersPromise, timeoutPromise]);
-      return;
+      logger.log('VECTOR_DB', 'Upgraded to Transformers.js embeddings', 'success');
+      return true;
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      logger.log('VECTOR_DB', `Transformers.js failed: ${errMsg}`, 'warning');
+      logger.log('VECTOR_DB', `Transformers.js upgrade failed: ${errMsg}`, 'warning');
+      return false;
     }
-
-    // Fallback to hash-based embeddings
-    this.embeddingBackend = 'hash';
-    this.embedder = null;
-    logger.log('VECTOR_DB', 'Using hash-based embeddings (fallback)', 'warning');
   }
 
   /**
@@ -311,6 +325,7 @@ export class VectorDB {
 
   /**
    * Generate embedding for text with caching
+   * PERFORMANCE: Will lazily try to upgrade to Transformers.js if using hash backend
    */
   public async generateEmbedding(text: string): Promise<Float32Array> {
     // Check cache first
@@ -318,6 +333,14 @@ export class VectorDB {
     const cached = this.embeddingCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < 3600000) { // 1 hour cache
       return cached.vector;
+    }
+
+    // PERFORMANCE: Try to upgrade to Transformers.js on first use
+    if (this.embeddingBackend === 'hash') {
+      const upgraded = await this.tryUpgradeToTransformers();
+      if (upgraded) {
+        return this.generateTransformersEmbedding(text);
+      }
     }
 
     let vector: Float32Array;

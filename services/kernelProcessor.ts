@@ -1,5 +1,5 @@
 /**
- * Kernel Request Processor - Refactored Service for JARVIS Kernel v1.5.0
+ * Kernel Request Processor - Refactored Service for JARVIS Kernel v1.5.1
  * 
  * This service breaks down the monolithic processKernelRequest function
  * into smaller, focused modules for better maintainability and testability.
@@ -35,7 +35,7 @@ import { visionHACamera } from './vision_ha_camera';
 import { vectorMemoryService } from './vectorMemoryService';
 import { localVectorDB } from './localVectorDB';
 import { contextWindowService } from './contextWindowService';
-import { memoryConsolidationService } from './memoryConsolidationService';
+
 import { agentOrchestrator } from './agentOrchestrator';
 import { logger } from './logger';
 import { conversation } from './conversation';
@@ -62,8 +62,9 @@ import { visionMemory } from './visionMemory';
 import { proactiveEventHandler } from './proactiveEventHandler';
 import { thinkingSounds } from './thinkingSounds';
 import { haShoppingList } from './haShoppingList';
-import { runDiagnostics, getActiveAlerts, clearAcknowledgedAlerts } from './coreOs';
 import { memoryConsolidationService } from './memoryConsolidationService';
+import { runDiagnostics, getActiveAlerts, clearAcknowledgedAlerts, getNetworkInfo } from './coreOs';
+
 
 interface ProcessorContext {
   forcedMode: AIProvider | null;
@@ -465,6 +466,8 @@ export class KernelProcessor {
    * Module 6: Intent Analysis
    */
   private async analyzeIntent(input: string, context: ProcessorContext): Promise<any> {
+    logger.log('KERNEL', `Analyzing intent for: "${input}"`, 'debug');
+    
     // Check if similar query was corrected before
     const relevantCorrection = learningService.findRelevantCorrection(input);
 
@@ -477,13 +480,23 @@ export class KernelProcessor {
                                 /\b(do you remember|recall)\s+(the|that|my|seeing|any)?\s*(image|photo|picture|snapshot|garage|photos)\b/i.test(input) ||
                                 /\b(current|previous|last|stored|saved)\s+(image|photo|picture|snapshot|photos)\b/i.test(input) ||
                                 /\bimage\s+of\s+(my|the)\s+(garage|house|room|office|person|me)\b/i.test(input) ||
-                                /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input);
+                                /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input) ||
+                                // "look at my garage image" type queries
+                                /\b(look|show|see)\s+(at|in)?\s*(my|the)?\s*(garage|house|room|office|workshop)\s*(image|photo|picture)\b/i.test(input) ||
+                                /\b(my|the)\s*(garage|house|room|office)\s*(image|photo|picture)\b/i.test(input) ||
+                                // Simple fallback patterns for garage image queries
+                                /look.*my.*garage/i.test(input) ||
+                                /show.*my.*garage/i.test(input);
     
     // EXCLUDE ownership/identification statements - should go to MEMORY_WRITE
     const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(input) ||
                                  /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(of|showing)\s+(my|our)\b/i.test(input);
     
-    if (isVisionMemoryQuery && !isOwnershipStatement) {
+    // EXCLUDE image generation requests - if user wants to generate/create, don't treat as memory query
+    const isAlsoImageGeneration = /\b(generate|create|make|draw|paint|render|envision)\s+(an?|the|me)?\s*(image|photo|picture|drawing)\b/i.test(input) ||
+                                  /\b(image|photo|picture)\s+(generation|creation|drawing)\b/i.test(input);
+    
+    if (isVisionMemoryQuery && !isOwnershipStatement && !isAlsoImageGeneration) {
       logger.log('KERNEL', 'Detected vision memory recall query, forcing MEMORY_READ intent', 'info');
       return {
         analysis: {
@@ -494,6 +507,8 @@ export class KernelProcessor {
         selectedProvider: AIProvider.OLLAMA,
         relevantCorrection
       };
+    } else if (isVisionMemoryQuery) {
+      logger.log('KERNEL', `Vision memory query matched but excluded: ownership=${isOwnershipStatement}, imgGen=${isAlsoImageGeneration}`, 'debug');
     }
     
     const isImageCreationRequest =
@@ -506,10 +521,10 @@ export class KernelProcessor {
     let analysis: { type: IntentType; entities: string[]; suggestedProvider: string } | null = null;
 
     if (isImageCreationRequest) {
-      // Classify as QUERY to route to handleQuery which has our custom image generation
-      logger.log('KERNEL', 'Detected image creation request, routing to custom handler', 'info');
+      // Route to dedicated image generation handler
+      logger.log('KERNEL', 'Detected image creation request, routing to image generation handler', 'info');
       analysis = {
-        type: IntentType.QUERY,
+        type: IntentType.IMAGE_GENERATION,
         entities: [],
         suggestedProvider: 'GEMINI'
       };
@@ -586,60 +601,80 @@ export class KernelProcessor {
     try {
       // Check for voice reset command
       const lowerInput = input.toLowerCase();
-      if (/\b(reset|restart|fix)\s+(voice|microphone|listening|hearing)\b/i.test(input)) {
+      const isVoiceReset = /\b(reset|restart|fix)\s+(voice|microphone|listening|hearing)\b/i.test(input);
+      const isVoiceDiagnostic = /\b(voice|microphone)\s+(status|diagnostic|info|state)\b/i.test(input) || 
+          /\bis\s+(voice|microphone)\s+working\b/i.test(input);
+      const isClearImageCache = /\b(clear|reset|empty)\s+(image|the image)\s*(cache)?\b/i.test(input) ||
+                                 /\b(clear|reset)\s+(cache)\b/i.test(input);
+      
+      if (isVoiceReset) {
         logger.log('VOICE', 'Voice reset command detected', 'info');
         voice.reset();
-        return "Voice service has been reset. You should be able to speak to me now. Try saying 'Hey JARVIS' or click the microphone button.";
-      }
-      
-      // Check for voice diagnostics
-      if (/\b(voice|microphone)\s+(status|diagnostic|info|state)\b/i.test(input) || 
-          /\bis\s+(voice|microphone)\s+working\b/i.test(input)) {
+        outputText = "Voice service has been reset. You should be able to speak to me now. Try saying 'Hey JARVIS' or click the microphone button.";
+      } else if (isVoiceDiagnostic) {
         const diag = voice.getDiagnostics();
         logger.log('VOICE', `Voice diagnostics: ${JSON.stringify(diag)}`, 'info');
-        return `Voice status: ${diag.state}. Listening: ${diag.isListening ? 'Yes' : 'No'}. Recognition active: ${diag.recognitionActive ? 'Yes' : 'No'}. Errors: ${diag.errorCount}. If you're having issues, say "reset voice" to fix it.`;
-      }
-      
-      // v1.4.2: Check if this should be handled by the Agent System
-      const shouldUseAgent = this.shouldUseAgent(input, analysis);
-      
-      if (shouldUseAgent) {
-        outputText = await this.handleAgentExecution(input, context);
+        outputText = `Voice status: ${diag.state}. Listening: ${diag.isListening ? 'Yes' : 'No'}. Recognition active: ${diag.recognitionActive ? 'Yes' : 'No'}. Errors: ${diag.errorCount}. If you're having issues, say "reset voice" to fix it.`;
+      } else if (isClearImageCache) {
+        logger.log('IMAGE_GENERATOR', 'Clear image cache command detected', 'info');
+        const { imageGenerator } = await import('./imageGenerator');
+        imageGenerator.clearCache();
+        outputText = "Image cache cleared. The next image generation will create a fresh image.";
       } else {
-        switch (analysis.type) {
-          case IntentType.VISION_ANALYSIS:
-            outputText = await this.handleVisionAnalysis(input, context, correctionContext, selectedProvider);
-            break;
-            
-          case IntentType.MEMORY_READ:
-            outputText = await this.handleMemoryRead(input, context, correctionContext, selectedProvider, analysis);
-            break;
-            
-          case IntentType.MEMORY_WRITE:
-            outputText = await this.handleMemoryWrite(input, analysis, context);
-            break;
-            
-          case IntentType.TIMER_REMINDER:
-            // Acknowledge quick command with subtle click
-            thinkingSounds.play('click');
-            outputText = await this.handleTimerReminder(input, context);
-            break;
-            
-          case IntentType.COMMAND:
-            // Acknowledge quick command with subtle click
-            thinkingSounds.play('click');
-            outputText = await this.handleCommand(input, analysis, context, correctionContext, selectedProvider, intelligenceResult);
-            break;
-            
-          case IntentType.SOCIAL:
-            // Social interactions get natural conversational responses
-            outputText = await this.handleSocial(input, context, intelligenceResult);
-            break;
-            
-          case IntentType.QUERY:
-          default:
-            outputText = await this.handleQuery(input, context, correctionContext, selectedProvider, intelligenceResult, analysis);
-            break;
+        // v1.4.2: Check if this should be handled by the Agent System
+        const shouldUseAgent = this.shouldUseAgent(input, analysis);
+        
+        if (shouldUseAgent) {
+          outputText = await this.handleAgentExecution(input, context);
+        } else {
+          switch (analysis.type) {
+            case IntentType.VISION_ANALYSIS:
+              outputText = await this.handleVisionAnalysis(input, context, correctionContext, selectedProvider);
+              break;
+              
+            case IntentType.ENVISION:
+              outputText = await this.handleEnvision(input, context, correctionContext, selectedProvider);
+              break;
+
+            case IntentType.IMAGE_GENERATION:
+              outputText = await this.handleImageGeneration(input, context);
+              break;
+              
+            case IntentType.MEMORY_READ:
+              outputText = await this.handleMemoryRead(input, context, correctionContext, selectedProvider, analysis);
+              break;
+              
+            case IntentType.MEMORY_WRITE:
+              outputText = await this.handleMemoryWrite(input, analysis, context);
+              break;
+              
+            case IntentType.TIMER_REMINDER:
+              // Acknowledge quick command with subtle click
+              thinkingSounds.play('click');
+              outputText = await this.handleTimerReminder(input, context);
+              break;
+              
+            case IntentType.COMMAND:
+              // Acknowledge quick command with subtle click
+              thinkingSounds.play('click');
+              outputText = await this.handleCommand(input, analysis, context, correctionContext, selectedProvider, intelligenceResult);
+              break;
+              
+            case IntentType.SOCIAL:
+              // Social interactions get natural conversational responses
+              outputText = await this.handleSocial(input, context, intelligenceResult);
+              break;
+              
+            case IntentType.SEARCH:
+              // Web search queries
+              outputText = await this.handleSearch(input, context, correctionContext, selectedProvider, intelligenceResult);
+              break;
+              
+            case IntentType.QUERY:
+            default:
+              outputText = await this.handleQuery(input, context, correctionContext, selectedProvider, intelligenceResult, analysis);
+              break;
+          }
         }
       }
     } catch (e: unknown) {
@@ -676,14 +711,21 @@ export class KernelProcessor {
     
     // Check if user explicitly wants HA camera
     const wantsHACamera = /\b(home assistant|ha)\s*(camera|cam)\b/.test(lowerInput) ||
-                          /\btapo|wyze|reolink|hikvision\b/.test(lowerInput);
+                          /\btapo|wyze|reolink|hikvision\b/.test(lowerInput) ||
+                          /\brunning\s+(camera|cam)\b/.test(lowerInput) ||
+                          /\bactive\s+(camera|cam)\b/.test(lowerInput);
     
     // Extract specific camera name from input (e.g., "garage cam", "front door")
-    const cameraNameMatch = lowerInput.match(/\b(garage|front|back|rear|side|door| porch| deck| yard| room| office| kitchen| living)\s*(?:cam|camera|door)?\b/);
+    // Expanded to catch more location patterns
+    const cameraNameMatch = lowerInput.match(/\b(garage|front|back|rear|side|door|porch|deck|yard|room|office|kitchen|living|optical)\s*(?:cam|camera|feed)?\b/);
     const requestedCameraName = cameraNameMatch ? cameraNameMatch[0] : '';
+    
+    // Check if user is requesting ANY camera (not just data about cameras)
+    const isCameraViewRequest = /\b(look|see|view|check|show)\b/.test(lowerInput) && 
+                                 /\b(camera|cam|webcam|feed)\b/.test(lowerInput);
 
     // Prioritize based on user intent
-    if (wantsHACamera || requestedCameraName) {
+    if (wantsHACamera || requestedCameraName || isCameraViewRequest) {
       // User wants HA camera - try to find and use specific camera
       const haCameras = visionHACamera.getHACameras();
       
@@ -694,7 +736,7 @@ export class KernelProcessor {
         if (requestedCameraName) {
           const matchingCamera = haCameras.find(cam => 
             cam.friendly_name.toLowerCase().includes(requestedCameraName) ||
-            cam.entity_id.toLowerCase().includes(requestedCameraName)
+            cam.entity_id.toLowerCase().includes(requestedCameraName.replace(' ', '_'))
           );
           if (matchingCamera) {
             targetCamera = matchingCamera.entity_id;
@@ -712,12 +754,31 @@ export class KernelProcessor {
         await visionHACamera.switchToHACamera(targetCamera);
         imageBase64 = await visionHACamera.captureHACamera(targetCamera);
         captureSource = 'ha_camera';
+        
+        // If HA camera capture failed, give specific error instead of silently falling back
+        if (!imageBase64 || imageBase64.length < 100) {
+          logger.log('VISION', `HA camera ${selectedCameraName} failed to capture`, 'error');
+          return `I found your ${selectedCameraName} but couldn't capture an image. The camera may be offline or not responding. Please check if the camera is active in Home Assistant.`;
+        }
       } else {
-        return "Home Assistant camera is not available. Please check your camera configuration.";
+        // No HA cameras available - check if we should fall back or error
+        if (wantsLocalCamera) {
+          // User is okay with local camera, proceed to fallback below
+          logger.log('VISION', 'No HA cameras available, falling back to local', 'info');
+        } else if (isCameraViewRequest && !wantsHACamera) {
+          // User just said "look at camera" without specifying HA - try local as fallback
+          logger.log('VISION', 'No HA cameras, will try local camera as fallback', 'info');
+        } else {
+          // User explicitly wanted HA camera - don't silently fall back
+          return "I don't see any Home Assistant cameras available. Please check that:\n1. Home Assistant is connected\n2. Cameras are configured and online\n3. Camera entities are not hidden from JARVIS in the whitelist settings.";
+        }
       }
-    } else if (wantsLocalCamera) {
+    }
+    
+    // Local camera handling - either explicit request or fallback
+    if (!imageBase64 && (wantsLocalCamera || !isCameraViewRequest || !wantsHACamera)) {
       // User explicitly wants local camera - skip HA camera check
-      logger.log('VISION', 'User requested local camera, skipping HA camera', 'info');
+      logger.log('VISION', 'Using local camera', 'info');
       if (vision.getState() !== 'ACTIVE') {
         try {
           await vision.startCamera();
@@ -728,40 +789,6 @@ export class KernelProcessor {
       }
       imageBase64 = vision.captureFrame();
       captureSource = 'local';
-    } else {
-      // Default: Try HA cameras first, then fall back to local
-      const haCameras = visionHACamera.getHACameras();
-      
-      if (haCameras.length > 0) {
-        // Use first available HA camera
-        const targetCamera = haCameras[0].entity_id;
-        selectedCameraName = haCameras[0].friendly_name;
-        logger.log('VISION', `Using HA camera: ${selectedCameraName}`, 'info');
-        
-        await visionHACamera.switchToHACamera(targetCamera);
-        imageBase64 = await visionHACamera.captureHACamera(targetCamera);
-        captureSource = 'ha_camera';
-      } else if (visionHACamera.getState().type === 'home_assistant' && visionHACamera.getState().currentCamera) {
-        // Use currently active HA camera
-        const currentCamera = visionHACamera.getState().currentCamera;
-        logger.log('VISION', `Using active HA camera: ${currentCamera}`, 'info');
-        imageBase64 = await visionHACamera.captureCurrentFeed();
-        captureSource = 'ha_camera';
-      }
-
-      // Fall back to local camera if HA camera not available
-      if (!imageBase64) {
-        if (vision.getState() !== 'ACTIVE') {
-          try {
-            await vision.startCamera();
-            await new Promise(r => setTimeout(r, 300));
-          } catch (error) {
-            return "Could not access camera. Please ensure camera permissions are granted.";
-          }
-        }
-        imageBase64 = vision.captureFrame();
-        captureSource = 'local';
-      }
     }
     if (imageBase64 && imageBase64.length > 100) {
       logger.log('VISION', `Frame captured from ${captureSource}. Size: ${imageBase64.length} chars`, 'success');
@@ -783,14 +810,14 @@ export class KernelProcessor {
         sourceContext = '[Using Home Assistant camera] ';
       }
       
-      // Check if we should use Gemini for better vision (if API key available)
-      const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      const useGeminiForVision = geminiKey && geminiKey.length > 10;
+      // SECURITY FIX: Check proxy availability instead of direct API key
+      const { isGeminiProxyAvailable } = await import('./geminiProxyClient');
+      const geminiAvailable = await isGeminiProxyAvailable();
       
-      // Use Gemini for vision if available, otherwise Ollama
-      const visionProvider = useGeminiForVision ? AIProvider.GEMINI : selectedProvider;
+      // Use Gemini for vision if proxy available, otherwise Ollama
+      const visionProvider = geminiAvailable ? AIProvider.GEMINI : selectedProvider;
       
-      if (useGeminiForVision) {
+      if (geminiAvailable) {
         logger.log('VISION', 'Using Gemini for vision analysis (better accuracy)', 'info');
       }
       
@@ -856,6 +883,303 @@ export class KernelProcessor {
     }
   }
 
+  private async handleEnvision(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider): Promise<string> {
+    context.setActiveModule('VISION');
+    context.setActiveModule('IMAGE_GENERATION');
+    logger.log('KERNEL', 'Initiating Envision Protocol - capturing current view and generating redesign...', 'info');
+
+    // First, try to get image from various sources
+    let imageBase64: string | null = null;
+    let captureSource = 'local';
+    let selectedCameraName = '';
+    
+    const lowerInput = input.toLowerCase();
+    
+    // Check if user is referring to a stored image (e.g., "my garage image", "image of my garage")
+    const storedImageMatch = lowerInput.match(/\b(my|the|stored|saved)\s+(?:image|photo|picture)\s+(?:of\s+)?(?:my\s+)?(garage|house|room|office|kitchen|living|workshop|space)\b/) ||
+                            lowerInput.match(/\b(?:image|photo|picture)\s+(?:of\s+)?(?:my\s+)?(garage|house|room|office|kitchen|living|workshop|space)\b/);
+    const requestedStoredImage = storedImageMatch ? storedImageMatch[1] || storedImageMatch[2] : '';
+    
+    if (requestedStoredImage) {
+      // Search vision memory for the stored image
+      logger.log('VISION', `Searching vision memory for: ${requestedStoredImage}`, 'info');
+      try {
+        const searchResults = await visionMemory.searchMemories(requestedStoredImage, 5);
+        if (searchResults.length > 0) {
+          // Get the best match
+          const bestMatch = searchResults[0].entry;
+          imageBase64 = bestMatch.imageUrl.replace(/^data:image\/\w+;base64,/, ''); // Remove data URL prefix if present
+          captureSource = 'vision_memory';
+          selectedCameraName = `Stored image: ${bestMatch.description.slice(0, 50)}...`;
+          logger.log('VISION', `Found stored image: ${bestMatch.description}`, 'success');
+        } else {
+          logger.log('VISION', `No stored image found for: ${requestedStoredImage}`, 'warning');
+        }
+      } catch (error) {
+        logger.log('VISION', `Failed to search vision memory: ${(error as Error).message}`, 'error');
+      }
+    }
+    
+    // If no stored image found, try camera sources
+    if (!imageBase64) {
+      // Check for specific camera mentions
+      const cameraNameMatch = lowerInput.match(/\b(garage|front|back|rear|side|door|porch|deck|yard|room|office|kitchen|living)\s*(?:cam|camera|feed)?\b/);
+      const requestedCameraName = cameraNameMatch ? cameraNameMatch[0] : '';
+      
+      // Capture from HA camera if available and matches request
+      const haCameras = visionHACamera.getHACameras();
+      if (haCameras.length > 0) {
+        let targetCamera = haCameras[0].entity_id;
+        
+        if (requestedCameraName) {
+          const matchingCamera = haCameras.find(cam => 
+            cam.friendly_name.toLowerCase().includes(requestedCameraName) ||
+            cam.entity_id.toLowerCase().includes(requestedCameraName.replace(' ', '_'))
+          );
+          if (matchingCamera) {
+            targetCamera = matchingCamera.entity_id;
+            selectedCameraName = matchingCamera.friendly_name;
+          } else {
+            selectedCameraName = haCameras[0].friendly_name;
+          }
+        } else {
+          selectedCameraName = haCameras[0].friendly_name;
+        }
+        
+        await visionHACamera.switchToHACamera(targetCamera);
+        imageBase64 = await visionHACamera.captureHACamera(targetCamera);
+        captureSource = 'ha_camera';
+      } else if (vision.getState() === 'ACTIVE') {
+        imageBase64 = vision.captureFrame();
+        captureSource = 'local';
+      } else {
+        // Try to start local camera
+        try {
+          await vision.startCamera();
+          await new Promise(r => setTimeout(r, 500));
+          imageBase64 = vision.captureFrame();
+          captureSource = 'local';
+        } catch (error) {
+          return "Could not access any camera or stored images. Please ensure a camera is available or you've previously shared an image of your space.";
+        }
+      }
+    }
+
+    if (!imageBase64 || imageBase64.length < 100) {
+      return "I couldn't find or capture an image. Please check that your camera is working or that you've previously shared an image of your space.";
+    }
+
+    logger.log('VISION', `Captured current view from ${captureSource} for envisioning`, 'success');
+    
+    // Display the current view
+    setKernelDisplay('IMAGE', {
+      type: 'IMAGE',
+      title: `Current View - ${selectedCameraName || 'Camera'}`,
+      description: 'Original space before redesign',
+      image: {
+        src: `data:image/jpeg;base64,${imageBase64}`,
+        title: 'Current Space',
+        alt: 'Current camera view',
+        fit: 'contain'
+      }
+    });
+
+    // Extract what the user wants to envision
+    // Default to woodworking if not specified
+    const isWoodworking = /\b(woodworking|wood|shop|workshop|tools?)\b/i.test(input);
+    const isEmptySpace = /\b(empty|clear|clean\s+slate)\b/i.test(input);
+    const wantsDiagram = /\b(diagram|schematic|layout|plan|blueprint)\b/i.test(input);
+    
+    let redesignPrompt = '';
+    if (isWoodworking) {
+      redesignPrompt = 'a professional woodworking workshop with organized tools, workbenches, pegboards with hand tools, power tool stations, lumber storage racks, dust collection system, and proper lighting. Clean, organized, and functional layout';
+    } else {
+      // Extract the specific setup from the input
+      const setupMatch = input.match(/(?:with|as|for)\s+(.+?)(?:\.|$)/i);
+      const setup = setupMatch ? setupMatch[1] : 'an organized workspace';
+      redesignPrompt = `${setup} with professional organization, clean layout, and optimal use of space`;
+    }
+
+    // Generate the envisioned image
+    try {
+      logger.log('IMAGE_GENERATOR', `Generating ${wantsDiagram ? 'diagram' : 'image'}: ${redesignPrompt}`, 'info');
+      
+      const { imageGenerator } = await import('./imageGenerator');
+      
+      // Create prompt for local image generation
+      const generationPrompt = wantsDiagram 
+        ? `Technical floor plan diagram, top-down view, ${redesignPrompt}, architectural blueprint style with grid lines, measurements, labels for each area, clean lines, professional schematic`
+        : `Photorealistic interior design, ${redesignPrompt}, professional photography, bright lighting, clean and organized, high detail, 8k quality`; 
+
+      // Use img2img if we have a stored image, otherwise txt2img
+      const useImg2Img = captureSource === 'vision_memory';
+      logger.log('IMAGE_GENERATOR', `Using ${useImg2Img ? 'img2img' : 'txt2img'} generation, imageBase64 length: ${imageBase64?.length || 0}`);
+      
+      if (useImg2Img && imageBase64) {
+        logger.log('IMAGE_GENERATOR', `First 100 chars of image: ${imageBase64.substring(0, 100)}...`);
+      }
+      
+      const generatedImage = await imageGenerator.generateImage(generationPrompt, {
+        width: 1024,
+        height: 1024,
+        quality: 'hd',
+        style: 'vivid',
+        ...(useImg2Img && imageBase64 && { imageInput: imageBase64, seed: 0 })  // Pass image for img2img, random seed
+      } as any);
+
+      // Display the generated image
+      setKernelDisplay('IMAGE', {
+        type: 'IMAGE',
+        title: `Envisioned Design - ${isWoodworking ? 'Woodworking Workshop' : 'Redesigned Space'}`,
+        description: `Generated ${wantsDiagram ? 'layout diagram' : 'visualization'} based on your current space`,
+        image: {
+          src: generatedImage.url,
+          title: 'Envisioned Design',
+          alt: 'AI-generated redesign of the space',
+          fit: 'contain'
+        }
+      });
+
+      // Provide context-aware response
+      let responseText = '';
+      const sourceDescription = captureSource === 'vision_memory' ? 'stored image' : 
+                               captureSource === 'ha_camera' ? 'Home Assistant camera' : 
+                               'local camera';
+      
+      if (isWoodworking) {
+        responseText = `I've analyzed your ${sourceDescription} and generated a ${wantsDiagram ? 'layout diagram' : 'visualization'} of how it could look as a woodworking workshop. `;
+        responseText += `The design includes organized tool storage, workbenches, pegboards for hand tools, power tool stations, and lumber storage. `;
+      } else {
+        responseText = `I've analyzed your ${sourceDescription} and generated a ${wantsDiagram ? 'diagram' : 'visualization'} showing ${redesignPrompt}. `;
+      }
+      
+      if (generatedImage.format === 'svg') {
+        responseText += `I'm displaying a detailed SVG diagram. For photorealistic AI-generated images, install ComfyUI or AUTOMATIC1111 with FLUX or Stable Diffusion 3.5 models. See docs/LOCAL_IMAGE_GENERATION.md for setup instructions.`;
+      } else {
+        responseText += `This was generated locally using your installed AI image model. The layout optimizes workflow and storage for your space.`;
+      }
+
+      return responseText;
+
+    } catch (error) {
+      logger.log('IMAGE_GENERATOR', `Failed to generate image: ${(error as Error).message}`, 'error');
+      return `I captured your current space but couldn't generate the redesign image. ${(error as Error).message}`;
+    }
+  }
+
+  private async handleImageGeneration(input: string, context: ProcessorContext): Promise<string> {
+    context.setActiveModule('IMAGE_GENERATION');
+    logger.log('KERNEL', `Initiating Image Generation Protocol: "${input}"`, 'info');
+
+    // Extract the image description from the input
+    // Remove command words to get the actual image description
+    const lowerInput = input.toLowerCase();
+    
+    // Check if user is referring to a stored image (e.g., "image of my garage", "my garage image")
+    const storedImageMatch = lowerInput.match(/\b(my|the|stored|saved)\s+(?:image|photo|picture)\s+(?:of\s+)?(?:my\s+)?(garage|house|room|office|kitchen|living|workshop|space)\b/) ||
+                            lowerInput.match(/\b(?:image|photo|picture)\s+(?:of\s+)?(?:my\s+)?(garage|house|room|office|kitchen|living|workshop|space)\b/);
+    const requestedStoredImage = storedImageMatch ? storedImageMatch[1] || storedImageMatch[2] : '';
+    
+    let imageBase64: string | null = null;
+    let useImg2Img = false;
+    
+    if (requestedStoredImage) {
+      // Search vision memory for the stored image
+      logger.log('VISION', `Searching vision memory for: ${requestedStoredImage}`, 'info');
+      try {
+        const searchResults = await visionMemory.searchMemories(requestedStoredImage, 5);
+        if (searchResults.length > 0) {
+          const bestMatch = searchResults[0].entry;
+          imageBase64 = bestMatch.imageUrl.replace(/^data:image\/\w+;base64,/, '');
+          useImg2Img = true;
+          logger.log('VISION', `Found stored image for img2img: ${bestMatch.description}`, 'success');
+        } else {
+          logger.log('VISION', `No stored image found for: ${requestedStoredImage}`, 'warning');
+        }
+      } catch (error) {
+        logger.log('VISION', `Failed to search vision memory: ${(error as Error).message}`, 'error');
+      }
+    }
+    
+    // Clean up the prompt by removing command words
+    let imageDescription = input
+      .replace(/\b(generate|create|make|draw|paint|render|show me|give me|visualize|imagine|use|want|wants|you|to)\b/gi, '')
+      .replace(/\b(a|an|the|me|of)\b/gi, '')
+      .replace(/\b(photo|image|picture|drawing|painting|render|artwork)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // If we stripped too much, use the original input
+    if (imageDescription.length < 5) {
+      imageDescription = input.replace(/^(generate|create|make|draw|paint|render|jarvis)\s+/i, '').trim();
+    }
+
+    logger.log('IMAGE_GENERATOR', `Generating image: "${imageDescription}" (useImg2Img=${useImg2Img})`, 'info');
+
+    try {
+      const { imageGenerator } = await import('./imageGenerator');
+      
+      // Check if ComfyUI is available
+      const providers = imageGenerator.getProviders();
+      const hasComfyUI = providers.some(p => p.type === 'comfyui' && p.available);
+      
+      // Enhance prompt for better quality
+      const enhancedPrompt = `Photorealistic, highly detailed, 8k quality, professional photography, ${imageDescription}`;
+
+      logger.log('IMAGE_GENERATOR', `Calling imageGenerator.generateImage()...`);
+      const generatedImage = await imageGenerator.generateImage(enhancedPrompt, {
+        width: 768,
+        height: 768,
+        quality: 'hd',
+        style: 'vivid',
+        steps: 20, // Good quality/speed balance
+        seed: 0, // Always generate new image (random seed)
+        ...(useImg2Img && imageBase64 && { imageInput: imageBase64 })  // Pass image for img2img
+      } as any);
+      logger.log('IMAGE_GENERATOR', `Image returned: ${generatedImage.url.length} chars, format: ${generatedImage.format}`);
+
+      // Display the generated image
+      logger.log('IMAGE_GENERATOR', `Setting kernel display...`);
+      setKernelDisplay('IMAGE', {
+        type: 'IMAGE',
+        title: `Generated Image - ${imageDescription.slice(0, 40)}...`,
+        description: `AI-generated image: ${imageDescription}`,
+        image: {
+          src: generatedImage.url,
+          title: 'Generated Image',
+          alt: imageDescription,
+          fit: 'contain'
+        }
+      });
+      logger.log('IMAGE_GENERATOR', `Kernel display set successfully`);
+
+      // Provide response based on whether ComfyUI was used
+      if (generatedImage.format === 'svg') {
+        return `I've created a diagram-style visualization of "${imageDescription}". ` +
+          `For photorealistic AI-generated images, please ensure ComfyUI is running with a model like SD 3.5 Medium. ` +
+          `ComfyUI should be running on port 8188 with CORS enabled (--enable-cors-header).`;
+      } else if (useImg2Img) {
+        return `I've transformed your stored garage image to show what it would look like cleaned up and organized. ` +
+          `The image was generated using img2img at 768x768 resolution, keeping the structure of your actual garage.`;
+      } else {
+        return `I've generated a photorealistic image of "${imageDescription}" using your local ComfyUI. ` +
+          `The image was created at 768x768 resolution.`;
+      }
+
+    } catch (error) {
+      logger.log('IMAGE_GENERATOR', `Image generation failed: ${(error as Error).message}`, 'error');
+      const errorMsg = (error as Error).message;
+      
+      if (errorMsg.includes('timed out')) {
+        return `The image generation is taking longer than expected. Your GTX 1080 Ti is still working on it - this can take 1-2 minutes for 1024x1024 images. ` +
+          `Please wait and check the ComfyUI window for progress. The image will appear when complete.`;
+      }
+      
+      return `I couldn't generate the image. Error: ${errorMsg}. ` +
+        `Please check that ComfyUI is running on http://localhost:8188 with CORS enabled.`;
+    }
+  }
+
   private async handleMemoryRead(input: string, context: ProcessorContext, correctionContext: string, selectedProvider: AIProvider, analysis: ParsedIntent): Promise<string> {
     context.setActiveModule('MEMORY');
     const lowerInput = input.toLowerCase();
@@ -867,7 +1191,13 @@ export class KernelProcessor {
                                    /\b(show me|find|search|look|check)\s+(in|at|through|for|my|the|past)?\s*(images|photos|pictures|vision memory|vision)\b/i.test(input) ||
                                    /\b(see|look at|check)\s+(the|my)?\s*(current|previous|last|stored|saved)?\s*(image|photo|picture|snapshot)\b/i.test(input) ||
                                    /\b(image|photo|picture|snapshot)\s+(of|from|in|my)\s+(garage|house|room|the garage|person|me|someone)\b/i.test(input) ||
-                                   /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input);
+                                   /\b(who|what|which)\s+(is|was)\s+(the person|that person|in|the)\s+(image|photo|picture|snapshot)\b/i.test(input) ||
+                                   // Additional patterns for "look at my garage image" type queries
+                                   /\b(look|show|see)\s+(at|in)?\s*(my|the)?\s*(garage|house|room|office|workshop)\s*(image|photo|picture|images)\b/i.test(input) ||
+                                   /\b(look|search|find)\s+(in|through)?\s*(your|my)?\s*(vision memory|memory|memories)\s*(for|of)?\b/i.test(input) ||
+                                   // Simple fallback patterns
+                                   /look.*my.*garage/i.test(input) ||
+                                   /show.*my.*garage/i.test(input);
     
     // EXCLUDE ownership/identification statements - these should be stored as memory, not searched
     const isOwnershipStatement = /\b(this|that|the)\s+(image|photo|picture|snapshot)\s+(is|was|shows)\s+(my|our)\s+(garage|house|room|office|workshop)\b/i.test(input) ||
@@ -1262,7 +1592,6 @@ export class KernelProcessor {
         /\binitiate\s+network\s+latency\s+probe\b/i.test(input)) {
       logger.log('KERNEL', 'Running network probe', 'info');
       try {
-        const { getNetworkInfo } = await import('./coreOs');
         const network = getNetworkInfo();
         const testStart = performance.now();
         // Simple latency test by fetching a small resource
@@ -1583,73 +1912,6 @@ export class KernelProcessor {
         return synthesis.text;
       } else {
         return "Memory banks returned no relevant records about your location.";
-      }
-    } else if ((lowerInput.includes('show') && (lowerInput.includes('image') || lowerInput.includes('picture') || lowerInput.includes('photo'))) ||
-               ((lowerInput.includes('create') || lowerInput.includes('crete') || lowerInput.includes('draw') || lowerInput.includes('make')) && 
-                (lowerInput.includes('image') || lowerInput.includes('picture') || lowerInput.includes('photo') || lowerInput.includes('drawing'))) ||
-               (lowerInput.includes('3d printer') && (lowerInput.includes('image') || lowerInput.includes('diagram') || lowerInput.includes('photo'))) ||
-               // Also route schematic requests to image generation for high-quality output
-               (lowerInput.includes('schematic') && (lowerInput.includes('create') || lowerInput.includes('generate') || lowerInput.includes('make')))) {
-      // Handle requests to display images using the new file generator service
-      context.setActiveModule('DISPLAY');
-      try {
-        logger.log('DISPLAY', 'Generating image using FileGenerator service', 'info');
-
-        // Import the new file generator service
-        const { fileGeneratorService } = await import('./fileGenerator');
-        type FileFormat = import('./fileGenerator').FileFormat;
-
-        try {
-          // Determine format and style from input
-          // Default to PNG for photorealistic images, SVG only when explicitly requested
-          const format: 'png' | 'jpeg' | 'svg' = 
-            lowerInput.includes('svg') ? 'svg' :
-            lowerInput.includes('png') ? 'png' :
-            lowerInput.includes('jpeg') || lowerInput.includes('jpg') ? 'jpeg' : 
-            'png'; // Default to PNG for best quality photorealistic images
-          
-          const style = lowerInput.includes('realistic') ? 'realistic' :
-                       lowerInput.includes('artistic') ? 'artistic' :
-                       lowerInput.includes('diagram') ? 'diagram' :
-                       lowerInput.includes('schematic') ? 'schematic' :
-                       'realistic';
-
-          logger.log('DISPLAY', `Generating ${format} image with ${style} style`, 'info');
-          
-          const generatedFile = await fileGeneratorService.generateFile(input, format, {
-            style: style as any,
-            width: 800,
-            height: 600
-          });
-
-          // Update the store with the generated image
-          const displayContent = {
-            type: 'IMAGE' as const,
-            title: generatedFile.filename.replace(/\.[^/.]+$/, '').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            description: `AI-generated ${format.toUpperCase()} image based on your request`,
-            image: {
-              src: generatedFile.dataUrl || '',
-              title: generatedFile.filename,
-              alt: `Generated image: ${input}`,
-              fit: 'contain' as const
-            }
-          };
-
-          setKernelDisplay('IMAGE', displayContent);
-          logger.log('DISPLAY', `Successfully displayed ${format} image`, 'success');
-          
-          const responseMessage = lowerInput.includes('3d printer') || lowerInput.includes('printer')
-            ? `I've generated a ${style} ${format.toUpperCase()} image of the 3D printer. You can see it in the display area and download it using the download button.`
-            : `I've created a ${style} ${format.toUpperCase()} image based on your request. You can view it in the center display and download it if you'd like.`;
-          return responseMessage;
-          
-        } catch (error: unknown) {
-          logger.log('DISPLAY', `Failed to generate image: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-          return "I encountered an error while generating the image. Please try again.";
-        }
-      } catch (error: unknown) {
-        logger.log('DISPLAY', `Failed to display image: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-        return "I encountered an error while retrieving the image. Please try again.";
       }
     } else if ((lowerInput.includes('create') || lowerInput.includes('generate')) && 
                (lowerInput.includes('pdf') || lowerInput.includes('document'))) {
@@ -2043,11 +2305,140 @@ export class KernelProcessor {
       
       // Fallback: If social handler doesn't produce a response, treat as simple query
       logger.log('KERNEL', 'Social handler returned no response, falling back to query handling', 'warning');
-      return this.handleQuery(input, context, '', AIProvider.GEMINI, intelligenceResult, { type: IntentType.QUERY, entities: [], confidence: 0.7 } as ParsedIntent);
+      const defaultParsedIntent: ParsedIntent = {
+        type: IntentType.QUERY,
+        confidence: 0.7,
+        complexity: 0.5,
+        suggestedProvider: 'GEMINI',
+        entities: [],
+        reasoning: 'Social handler fallback - treating as query'
+      };
+      return this.handleQuery(input, context, '', AIProvider.GEMINI, intelligenceResult, defaultParsedIntent);
     } catch (error) {
       logger.log('KERNEL', `Social handling error: ${(error as Error).message}`, 'error');
       // Fallback to ensure we always respond
-      return this.handleQuery(input, context, '', AIProvider.GEMINI, intelligenceResult, { type: IntentType.QUERY, entities: [], confidence: 0.7 } as ParsedIntent);
+      const defaultParsedIntent: ParsedIntent = {
+        type: IntentType.QUERY,
+        confidence: 0.7,
+        complexity: 0.5,
+        suggestedProvider: 'GEMINI',
+        entities: [],
+        reasoning: 'Social handler fallback - treating as query'
+      };
+      return this.handleQuery(input, context, '', AIProvider.GEMINI, intelligenceResult, defaultParsedIntent);
+    }
+  }
+
+  private async handleSearch(
+    input: string, 
+    context: ProcessorContext, 
+    correctionContext: string,
+    selectedProvider: AIProvider,
+    intelligenceResult: IntelligenceResult
+  ): Promise<string> {
+    context.setActiveModule('SEARCH');
+    logger.log('KERNEL', 'Initiating Web Search Protocol...', 'info');
+
+    try {
+      // Dynamically import search service to avoid loading at boot
+      const { searchService } = await import('./search');
+      
+      // Extract search query from input
+      let searchQuery = input;
+      
+      // Remove common search prefixes to clean up the query
+      const prefixes = [
+        /^(can you |could you )?(please )?search\s+(the\s+web\s+)?(for\s+)?/i,
+        /^(can you |could you )?(please )?google\s+/i,
+        /^(can you |could you )?(please )?look\s+up\s+/i,
+        /^find\s+(me\s+)?(information\s+(about|on)\s+)?/i,
+      ];
+      
+      for (const prefix of prefixes) {
+        searchQuery = searchQuery.replace(prefix, '');
+      }
+      searchQuery = searchQuery.trim();
+      
+      if (!searchQuery) {
+        searchQuery = input; // Fallback to full input
+      }
+
+      logger.log('KERNEL', `Searching for: "${searchQuery}"`, 'info');
+      
+      // Perform the search
+      const searchResults = await searchService.search(searchQuery);
+      
+      if (!searchResults || searchResults.results.length === 0) {
+        logger.log('KERNEL', 'No search results found', 'warning');
+        // Fall back to AI query without search results
+        const defaultParsedIntent: ParsedIntent = {
+          type: IntentType.QUERY,
+          confidence: 0.7,
+          complexity: 0.6,
+          suggestedProvider: selectedProvider,
+          entities: [],
+          reasoning: 'Search returned no results, falling back to query'
+        };
+        return this.handleQuery(input, context, correctionContext, selectedProvider, intelligenceResult, defaultParsedIntent);
+      }
+
+      // Check if search returned a CORS/proxy error
+      const firstResult = searchResults.results[0];
+      if (firstResult?.title === 'Web Search Temporarily Unavailable') {
+        logger.log('KERNEL', 'Search unavailable - proxy may not be running', 'warning');
+        return "I apologize, but web search is temporarily unavailable. The proxy server should auto-start when you run JARVIS.bat. If you're running JARVIS components manually, please start the proxy with 'npm run proxy' in a terminal, then try your search again.";
+      }
+
+      // Format search results for AI
+      const formattedResults = searchService.formatResultsForAI(searchResults);
+      
+      // Log search success
+      logger.log('KERNEL', `Search completed: ${searchResults.results.length} results found`, 'success');
+      
+      // Create search context for AI
+      const searchContext = `
+Based on the following web search results, please provide a comprehensive answer:
+
+${formattedResults}
+
+User's original question: "${input}"
+
+Please synthesize this information into a clear, helpful response. Cite sources naturally (e.g., "According to [source]..."). If the search results don't fully answer the question, acknowledge this and provide the best available information.`;
+
+      // Send to AI with search context
+      const systemInstruction = intelligenceResult?.systemPrompt || "You are JARVIS, an advanced AI assistant. Use the provided search results to answer the user's question.";
+      const response = await providerManager.route({
+        prompt: searchContext,
+        systemInstruction
+      }, selectedProvider);
+      const aiResponse = response.text;
+
+      // Store search in memory for context
+      try {
+        const { memory } = await import('./memory');
+        const searchRecord = `Search query: "${searchQuery}" - Found ${searchResults.results.length} results. Top result: ${searchResults.results[0]?.title || 'N/A'}`;
+        await memory.store(searchRecord, 'SEARCH', ['web_search', 'search_history']);
+      } catch (memError) {
+        logger.log('KERNEL', `Failed to store search history: ${(memError as Error).message}`, 'warning');
+      }
+
+      return aiResponse;
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      logger.log('KERNEL', `Search error: ${errorMessage}`, 'error');
+      
+      // Fallback to regular query handling
+      logger.log('KERNEL', 'Search failed, falling back to standard query', 'warning');
+      const defaultParsedIntent: ParsedIntent = {
+        type: IntentType.QUERY,
+        confidence: 0.7,
+        complexity: 0.6,
+        suggestedProvider: selectedProvider,
+        entities: [],
+        reasoning: 'Search error fallback'
+      };
+      return this.handleQuery(input, context, correctionContext, selectedProvider, intelligenceResult, defaultParsedIntent);
     }
   }
 
@@ -2129,6 +2520,15 @@ export class KernelProcessor {
    * Determine if a request should use the Agent System
    */
   private shouldUseAgent(input: string, analysis: ParsedIntent): boolean {
+    // NEVER use agent for specific intents that have dedicated handlers
+    if (analysis.type === IntentType.IMAGE_GENERATION ||
+        analysis.type === IntentType.VISION_ANALYSIS ||
+        analysis.type === IntentType.ENVISION ||
+        analysis.type === IntentType.MEMORY_READ ||
+        analysis.type === IntentType.MEMORY_WRITE) {
+      return false;
+    }
+    
     const lowerInput = input.toLowerCase();
     
     // Keywords that suggest complex multi-step tasks

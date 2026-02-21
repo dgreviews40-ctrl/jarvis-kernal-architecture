@@ -39,6 +39,10 @@ export const LazyDevDashboard = lazy(() =>
   import('./DevDashboard').then(m => ({ default: m.DevDashboard }))
 );
 
+export const LazyLoRADashboard = lazy(() => 
+  import('./LoRADashboard').then(m => ({ default: m.default }))
+);
+
 // Wrapper with suspense
 export function withLazyLoad<P extends object>(
   Component: ComponentType<P>,
@@ -66,6 +70,7 @@ export function preloadAllHeavyComponents(): void {
       import('./DependencyGraph');
       import('./HealthDashboard');
       import('./HomeAssistantDashboard');
+      import('./LoRADashboard');
     }, { timeout: 5000 });
   }
 }

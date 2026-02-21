@@ -14,26 +14,81 @@ OPTIMIZATIONS:
 - Improved audio format compatibility
 - Enhanced debugging for transcription issues
 - Proper temporary file cleanup
+- Input validation and security
 """
 
-import whisper
-import flask
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import sys
 import tempfile
 import os
-import torch
 import time
-import numpy as np
+import hashlib
 from werkzeug.utils import secure_filename
+
+# Dependency verification
+def check_dependencies():
+    """Verify all required dependencies are installed."""
+    missing = []
+    
+    try:
+        import whisper
+    except ImportError:
+        missing.append("openai-whisper")
+    
+    try:
+        import flask
+    except ImportError:
+        missing.append("flask")
+    
+    try:
+        import flask_cors
+    except ImportError:
+        missing.append("flask-cors")
+    
+    try:
+        import torch
+    except ImportError:
+        missing.append("torch")
+    
+    try:
+        import numpy
+    except ImportError:
+        missing.append("numpy")
+    
+    if missing:
+        print("=" * 60)
+        print("ERROR: Missing required dependencies:")
+        for dep in missing:
+            print(f"  - {dep}")
+        print("\nInstall with: pip install " + " ".join(missing))
+        print("=" * 60)
+        sys.exit(1)
+    
+    return True
+
+# Run dependency check
+check_dependencies()
+
+# Now import after verification
+import whisper
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import torch
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
 
-# Configuration - OPTIMIZED for speed
+# Configuration - OPTIMIZED for speed with security
 MODEL_SIZE = "small"  # Options: tiny, base, small, medium, large
-# 'small' provides better accuracy for wake word detection while still being fast on GPU
 PORT = 5001
+MAX_FILE_SIZE_MB = 50  # Maximum upload size in MB
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+ALLOWED_EXTENSIONS = {'.wav', '.mp3', '.flac', '.webm', '.m4a', '.ogg', '.aac'}
+ALLOWED_MIME_TYPES = {
+    'audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3', 
+    'audio/flac', 'audio/webm', 'audio/mp4', 'audio/x-m4a', 
+    'audio/ogg', 'audio/aac'
+}
 
 # Check for CUDA
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -87,10 +142,38 @@ def health():
         "cuda_available": torch.cuda.is_available()
     })
 
+def validate_audio_file(audio_file):
+    """Validate uploaded audio file for security."""
+    # Check filename
+    if not audio_file or not audio_file.filename:
+        return False, "No file provided"
+    
+    filename = secure_filename(audio_file.filename)
+    
+    # Check file extension
+    file_ext = os.path.splitext(filename)[1].lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        return False, f"Invalid file extension: {file_ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+    
+    # Check content type
+    content_type = audio_file.content_type
+    if content_type and content_type not in ALLOWED_MIME_TYPES:
+        return False, f"Invalid content type: {content_type}"
+    
+    return True, filename
+
 @app.route('/transcribe', methods=['POST'])
 def transcribe():
     if model is None:
         return jsonify({"error": "Model not loaded"}), 500
+    
+    # Check content length
+    content_length = request.content_length
+    if content_length and content_length > MAX_FILE_SIZE_BYTES:
+        return jsonify({
+            "error": f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB",
+            "max_size_mb": MAX_FILE_SIZE_MB
+        }), 413
         
     start_time = time.time()
     
@@ -99,28 +182,44 @@ def transcribe():
         return jsonify({"error": "No audio file provided"}), 400
     
     audio_file = request.files['audio']
-    if audio_file.filename == '':
-        return jsonify({"error": "No audio file selected"}), 400
     
-    # Validate file type
-    filename = secure_filename(audio_file.filename)
-    if not filename.lower().endswith(('.wav', '.mp3', '.flac', '.webm', '.m4a', '.ogg')):
-        return jsonify({"error": f"Unsupported file type: {filename}"}), 400
+    # Validate file
+    is_valid, message = validate_audio_file(audio_file)
+    if not is_valid:
+        return jsonify({"error": message}), 400
     
+    filename = message
     language = request.form.get('language', 'en')
     partial = request.form.get('partial', 'false').lower() == 'true'
+    
+    # Validate language parameter
+    if not isinstance(language, str) or len(language) > 10:
+        return jsonify({"error": "Invalid language parameter"}), 400
+    
+    # Sanitize language (only allow alphabetic characters and hyphens)
+    if not all(c.isalpha() or c == '-' for c in language):
+        return jsonify({"error": "Invalid characters in language parameter"}), 400
     
     # Save to temp file with proper extension
     file_ext = os.path.splitext(filename)[1]
     tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext, dir=tempfile.gettempdir()) as tmp:
             audio_file.save(tmp.name)
             tmp_path = tmp.name
         
         # Check if file exists and has content
         if not tmp_path or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
             return jsonify({"error": "Uploaded file is empty"}), 400
+        
+        # Check file size on disk (in case content-length was spoofed)
+        file_size = os.path.getsize(tmp_path)
+        if file_size > MAX_FILE_SIZE_BYTES:
+            os.unlink(tmp_path)
+            return jsonify({
+                "error": f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB",
+                "max_size_mb": MAX_FILE_SIZE_MB
+            }), 413
         
         # IMPROVED: Transcribe with accuracy-focused parameters for wake word detection
         result = model.transcribe(

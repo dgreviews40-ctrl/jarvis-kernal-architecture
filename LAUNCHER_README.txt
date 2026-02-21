@@ -1,5 +1,5 @@
 ================================================================================
-                    J.A.R.V.I.S. UNIFIED LAUNCHER v2.0
+                    J.A.R.V.I.S. UNIFIED LAUNCHER v2.1
 ================================================================================
 
 Welcome to J.A.R.V.I.S. - Just A Rather Very Intelligent System
@@ -18,6 +18,7 @@ QUICK START
       * Embedding Server (Vector DB)
       * GPU Monitor
       * Vision Server
+      * ComfyUI Image Generation (if installed)
     - Open the loading animation screen
     - Launch your browser with the dashboard
     
@@ -26,7 +27,7 @@ QUICK START
     Run this to create a professional desktop shortcut with icon.
 
 ================================================================================
-WHAT'S NEW IN v2.0
+WHAT'S NEW IN v2.1
 ================================================================================
 
 * ONE file to launch everything - no more confusion!
@@ -35,7 +36,8 @@ WHAT'S NEW IN v2.0
 * Automatic dependency checking
 * Clean shutdown handling
 * Desktop shortcut with custom icon support
-* Archived old batch files to reduce clutter
+* ComfyUI integration for AI image generation
+* Archived old files to reduce clutter
 
 ================================================================================
 REQUIREMENTS
@@ -98,15 +100,28 @@ Python Services (manual):
 FILE STRUCTURE
 ================================================================================
 
-JARVIS.bat                    <-- START HERE - Main launcher
-Create-Desktop-Shortcut.bat   <-- Create desktop shortcut with icon
-Create-Shortcut.ps1           <-- PowerShell script for shortcut creation
-loading.html                  <-- Boot animation screen
+ROOT FOLDER (Launchers):
+  JARVIS.bat                    <-- START HERE - Main launcher
+  JARVIS-with-LoRA.bat          <-- JARVIS + LoRA training server
+  Create-Desktop-Shortcut.bat   <-- Create desktop shortcut with icon
+  Install-JARVIS-Voice.bat      <-- Install Piper TTS voice
+  Reinstall-Piper.bat           <-- Reinstall Piper TTS
+  Download-SDXL-Model.bat       <-- Download SDXL for image generation
+  Start-LoRA-Server.bat         <-- Start LoRA server (minimal)
+  Start-LoRA-Visible.bat        <-- Start LoRA server (visible window)
 
-installer/
-  old-batch-files/            <-- Old batch files archived here
-  Install-JARVIS-Voice.bat    <-- Install Piper TTS voice
-  Install-Python-Deps.bat     <-- Install Python dependencies
+PYTHON SERVERS (Auto-started by JARVIS.bat):
+  whisper_server.py             <-- Speech-to-Text
+  embedding_server.py           <-- AI embeddings for Vector DB
+  gpu_monitor.py                <-- GPU statistics
+  vision_server.py              <-- Image analysis
+  lora_server.py                <-- LoRA fine-tuning server
+
+ARCHIVE (Old/unused files):
+  archive/launcher.cjs          <-- Old Node.js launcher (replaced)
+  archive/JARVIS.vbs            <-- Old VBScript wrapper
+  archive/test_embedding_server.py <-- Test script
+  archive/Install-Python-Deps.bat <-- Replaced by auto-install
 
 ================================================================================
 SUPPORT

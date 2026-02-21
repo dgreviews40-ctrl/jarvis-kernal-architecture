@@ -12,7 +12,7 @@ import { LogEntry } from "../types";
 import { cortex } from "./cortex";
 import { HealthEventType, ImpactLevel } from "../types";
 
-export type LogLevel = 'all' | 'info' | 'success' | 'warning' | 'error';
+export type LogLevel = 'all' | 'debug' | 'info' | 'success' | 'warning' | 'error';
 export type LogSource = 'all' | LogEntry['source'];
 
 export interface LogFilter {

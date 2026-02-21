@@ -186,6 +186,54 @@ Respond naturally, taking into account the conversation history above. If the us
   private notify() {
     this.observers.forEach(cb => cb());
   }
+
+  /**
+   * Extract training data for LoRA fine-tuning
+   * Returns User/Assistant pairs from conversation history
+   */
+  public extractTrainingData(limit: number = 100): Array<{input: string; output: string}> {
+    if (!this.currentSession || this.currentSession.turns.length === 0) {
+      return [];
+    }
+
+    const trainingData: Array<{input: string; output: string}> = [];
+    const turns = this.currentSession.turns;
+
+    // Pair up USER inputs with JARVIS responses
+    for (let i = 0; i < turns.length - 1; i++) {
+      if (turns[i].speaker === 'USER' && turns[i + 1].speaker === 'JARVIS') {
+        // Skip if either is empty or too short
+        if (turns[i].text.length < 3 || turns[i + 1].text.length < 3) continue;
+        
+        // Skip if interrupted
+        if (turns[i + 1].interrupted) continue;
+
+        trainingData.push({
+          input: turns[i].text,
+          output: turns[i + 1].text
+        });
+      }
+    }
+
+    // Return last N pairs (most recent conversations)
+    return trainingData.slice(-limit);
+  }
+
+  /**
+   * Get total conversation stats
+   */
+  public getStats(): { totalTurns: number; userMessages: number; jarvisResponses: number } {
+    if (!this.currentSession) {
+      return { totalTurns: 0, userMessages: 0, jarvisResponses: 0 };
+    }
+
+    const turns = this.currentSession.turns;
+    return {
+      totalTurns: turns.length,
+      userMessages: turns.filter(t => t.speaker === 'USER').length,
+      jarvisResponses: turns.filter(t => t.speaker === 'JARVIS').length
+    };
+  }
 }
 
 export const conversation = new ConversationService();

@@ -18,11 +18,59 @@ import io
 import base64
 import time
 import json
+import re
+import hashlib
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, asdict
 from collections import deque
 
+# Dependency verification
+def check_dependencies():
+    """Verify all required dependencies are installed with minimum versions."""
+    missing = []
+    
+    try:
+        import numpy
+    except ImportError:
+        missing.append("numpy")
+    
+    try:
+        from PIL import Image
+    except ImportError:
+        missing.append("pillow")
+    
+    try:
+        from flask import Flask, request, jsonify
+        from flask_cors import CORS
+    except ImportError:
+        missing.append("flask flask-cors")
+    
+    try:
+        import torch
+    except ImportError:
+        missing.append("torch")
+    
+    try:
+        import transformers
+    except ImportError:
+        missing.append("transformers")
+    
+    if missing:
+        print("=" * 60)
+        print("ERROR: Missing required dependencies:")
+        for dep in missing:
+            print(f"  - {dep}")
+        print("\nInstall with: pip install " + " ".join(missing))
+        print("=" * 60)
+        sys.exit(1)
+    
+    return True
+
+# Run dependency check
+check_dependencies()
+
+# Now import after verification
 import numpy as np
 from PIL import Image
 from flask import Flask, request, jsonify
@@ -50,6 +98,9 @@ CAPTION_MODEL = "microsoft/git-base-coco"  # Image captioning
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PORT = 5004
 MAX_IMAGE_SIZE = 1024  # Max dimension for input images
+MAX_IMAGE_SIZE_MB = 10  # Maximum upload size in MB
+MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
+ALLOWED_IMAGE_FORMATS = {'JPEG', 'JPG', 'PNG', 'GIF', 'WEBP', 'BMP'}
 CACHE_SIZE = 1000
 
 # ASCII art header (no Unicode)
@@ -81,6 +132,7 @@ class VisionServer:
     
     def __init__(self):
         self.app = Flask(__name__)
+        self.app.config['MAX_CONTENT_LENGTH'] = MAX_IMAGE_SIZE_BYTES
         CORS(self.app)
         
         self.clip_model = None
@@ -112,13 +164,24 @@ class VisionServer:
             """Generate embedding for an image"""
             start_time = time.time()
             
+            # Check content type
+            if not request.is_json:
+                return jsonify({"error": "Content-Type must be application/json"}), 415
+            
             try:
-                data = request.json
+                data = request.get_json(silent=True)
+                if not isinstance(data, dict):
+                    return jsonify({"error": "Invalid JSON payload"}), 400
+                
                 image_data = data.get('image', '')
                 use_cache = data.get('use_cache', True)
                 
                 if not image_data:
                     return jsonify({"error": "No image provided"}), 400
+                
+                # Validate cache parameter
+                if not isinstance(use_cache, bool):
+                    return jsonify({"error": "use_cache must be a boolean"}), 400
                 
                 # Check cache
                 cache_key = self.get_cache_key(image_data)
@@ -132,7 +195,11 @@ class VisionServer:
                     })
                 
                 # Process image
-                image = self.decode_image(image_data)
+                try:
+                    image = self.decode_image(image_data)
+                except ValueError as e:
+                    return jsonify({"error": str(e)}), 400
+                
                 embedding = self.get_image_embedding(image)
                 
                 # Cache result
@@ -153,7 +220,7 @@ class VisionServer:
                 
             except Exception as e:
                 print(f"[ERROR] embed_image: {e}")
-                return jsonify({"error": str(e)}), 500
+                return jsonify({"error": "Internal server error"}), 500
         
         @self.app.route('/embed/text', methods=['POST'])
         def embed_text():
@@ -354,15 +421,69 @@ class VisionServer:
             print(f"[Vision] Caption model failed: {e}")
             self.caption_model = None
     
+    def validate_image_data(self, image_data: str) -> tuple[bool, str]:
+        """Validate image data before processing."""
+        # Check if empty
+        if not image_data or not isinstance(image_data, str):
+            return False, "No image data provided"
+        
+        # Check data length (base64 is ~4/3 the size of binary)
+        max_base64_len = MAX_IMAGE_SIZE_BYTES * 4 // 3
+        if len(image_data) > max_base64_len:
+            return False, f"Image data too large. Maximum: {MAX_IMAGE_SIZE_MB}MB"
+        
+        return True, ""
+    
+    def validate_image(self, image: Image.Image) -> tuple[bool, str]:
+        """Validate decoded image."""
+        # Check format
+        if image.format and image.format.upper() not in ALLOWED_IMAGE_FORMATS:
+            return False, f"Unsupported image format: {image.format}. Allowed: {', '.join(ALLOWED_IMAGE_FORMATS)}"
+        
+        # Check dimensions
+        width, height = image.size
+        if width <= 0 or height <= 0:
+            return False, "Invalid image dimensions"
+        
+        if width > MAX_IMAGE_SIZE * 2 or height > MAX_IMAGE_SIZE * 2:
+            return False, f"Image dimensions too large. Max: {MAX_IMAGE_SIZE * 2}x{MAX_IMAGE_SIZE * 2}"
+        
+        return True, ""
+    
     def decode_image(self, image_data: str) -> Image.Image:
-        """Decode base64 image data to PIL Image"""
+        """Decode base64 image data to PIL Image with validation"""
+        # Validate input
+        is_valid, error_msg = self.validate_image_data(image_data)
+        if not is_valid:
+            raise ValueError(error_msg)
+        
         # Remove data URL prefix if present
         if ',' in image_data:
             image_data = image_data.split(',')[1]
         
         # Decode base64
-        image_bytes = base64.b64decode(image_data)
-        image = Image.open(io.BytesIO(image_bytes))
+        try:
+            image_bytes = base64.b64decode(image_data, validate=True)
+        except Exception as e:
+            raise ValueError(f"Invalid base64 data: {str(e)}")
+        
+        # Check decoded size
+        if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+            raise ValueError(f"Image too large. Maximum: {MAX_IMAGE_SIZE_MB}MB")
+        
+        # Open image
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            image.verify()  # Verify image integrity
+            # Need to reopen after verify
+            image = Image.open(io.BytesIO(image_bytes))
+        except Exception as e:
+            raise ValueError(f"Invalid image file: {str(e)}")
+        
+        # Validate image
+        is_valid, error_msg = self.validate_image(image)
+        if not is_valid:
+            raise ValueError(error_msg)
         
         # Convert to RGB if needed
         if image.mode != 'RGB':

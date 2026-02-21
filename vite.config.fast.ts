@@ -19,6 +19,14 @@ export default defineConfig(({ mode }) => {
         watch: {
           ignored: ['**/node_modules/**', '**/.git/**'],
         },
+        proxy: {
+          // Proxy ComfyUI requests to avoid CORS issues
+          '/comfyui': {
+            target: 'http://127.0.0.1:8188',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/comfyui/, ''),
+          },
+        },
       },
       plugins: [
         react(),

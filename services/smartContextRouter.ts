@@ -54,8 +54,11 @@ const DEVICE_KEYWORDS = {
 };
 
 // Keywords that indicate this is NOT a device/sensor query (general knowledge topics)
+// NOTE: These patterns are checked BEFORE camera/vision patterns, so they must not overlap
 const GENERAL_KNOWLEDGE_PATTERNS = [
-  /\b(growing|plant|hydroponic|aquaponic|garden|crop|seedling|nutrient)\b/i,
+  // Gardening/plants - but NOT when asking about cameras or visual feed
+  /\b(growing|hydroponic|aquaponic|crop|seedling|nutrient)\b/i,
+  /\b(plant(ing|ed)?\s+(tomato|lettuce|herb|vegetable|flower))\b/i,
   /\b(weather forecast|climate zone|hardiness zone|growing zone)\b/i,
   /\b(recipe|cooking|bake|cook|ingredient|cuisine)\b/i,
   /\b(exercise|workout|fitness|health tip|nutrition|diet)\b/i,
@@ -70,7 +73,23 @@ export function classifyQuery(input: string): QueryClassification {
   const lowerInput = input.toLowerCase();
   const words = lowerInput.split(/\s+/);
   
-  // First check if this is clearly a general knowledge query
+  // FIRST: Check for camera/vision commands - these should NEVER be classified as general knowledge
+  // This prevents "look at the camera" from being classified as gardening due to "garden" in "camera"
+  const isCameraVisionCommand = /\b(look|see|view|check|show)\s+(at|at the|at my|the|my)?\s*(camera|webcam|live feed|optical feed|video feed|cam)\b/i.test(input) ||
+                                 /\b(garage|front|back|door)\s*(cam|camera)\b/i.test(input) ||
+                                 /\b(optical|live|video)\s+(feed|camera|cam)\b/i.test(input);
+  
+  if (isCameraVisionCommand) {
+    return {
+      domain: 'DEVICE',
+      confidence: 0.95,
+      reasoning: 'Camera/vision command detected - routing to vision analysis, not general knowledge',
+      suggestedAction: 'CHECK_HA',
+      keyTerms: ['camera', 'vision', 'look']
+    };
+  }
+  
+  // Then check if this is clearly a general knowledge query
   for (const pattern of GENERAL_KNOWLEDGE_PATTERNS) {
     if (pattern.test(input)) {
       return {

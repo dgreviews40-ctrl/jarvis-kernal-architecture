@@ -5,7 +5,7 @@
 
 import { VoiceState, VoiceConfig, VoiceType, SpeechRecognition, SpeechRecognitionEvent, SpeechRecognitionErrorEvent } from "../types";
 import { conversation } from "./conversation";
-import { GoogleGenAI, Modality } from "@google/genai";
+
 import { geminiRateLimiter } from "./rateLimiter";
 import { piperTTS } from "./piperTTS";
 import { piperLauncher } from "./piperLauncher";
@@ -21,7 +21,8 @@ const DEFAULT_CONFIG: VoiceConfig = {
   voiceName: 'Kore',
   rate: 1.0,
   pitch: 1.0,
-  sttProvider: 'AUTO' // Default to auto (try Whisper first, fallback to browser)
+  sttProvider: 'AUTO', // Default to auto (try Whisper first, fallback to browser)
+  allowInterruption: true // Enable barge-in by default
 };
 
 // Audio processing constants - IMPROVED for better wake word detection
@@ -627,7 +628,7 @@ class VoiceCoreOptimized {
       state: this.state,
       isListening: this.state === VoiceState.LISTENING || this.state === VoiceState.IDLE,
       recognitionActive: !!this.recognition,
-      whisperActive: this.isWhisperActive(),
+      whisperActive: this.isUsingWhisper(),
       errorCount: this.errorCount
     };
   }
@@ -639,6 +640,20 @@ class VoiceCoreOptimized {
 
   public getConfig(): VoiceConfig {
     return this.config;
+  }
+
+  /**
+   * Toggle voice interruption (barge-in) feature
+   * When enabled, user can interrupt JARVIS by saying the wake word or "stop"
+   */
+  public setInterruptionEnabled(enabled: boolean): void {
+    this.config.allowInterruption = enabled;
+    localStorage.setItem('jarvis_voice_config', JSON.stringify(this.config));
+    console.log(`[VOICE] Interruption ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  public isInterruptionEnabled(): boolean {
+    return this.config.allowInterruption !== false; // Default to true
   }
 
   /**
@@ -1281,25 +1296,19 @@ class VoiceCoreOptimized {
     }
 
     try {
-      let apiKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
-
-      if (!apiKey) {
-        const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
-        if (storedKey) {
-          try {
-            apiKey = atob(storedKey);
-          } catch (decodeError) {
-            throw new Error("Invalid API Key format");
-          }
-        }
-      }
-
-      if (!apiKey) {
+      // SECURITY FIX: Use proxy instead of direct API key
+      // Import the proxy client to check availability
+      const { isGeminiProxyAvailable } = await import('./geminiProxyClient');
+      const proxyAvailable = await isGeminiProxyAvailable();
+      
+      if (!proxyAvailable) {
+        console.warn('[VOICE] Gemini proxy not available. Using system voice.');
         await this.speakWithSystemVoice(chunks);
         return;
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      // Use proxy for TTS - import dynamically to avoid circular deps
+      const { generateViaProxy } = await import('./geminiProxyClient');
 
       for (const chunk of chunks) {
         // Enhance the text for more natural speech
@@ -1308,22 +1317,26 @@ class VoiceCoreOptimized {
         // Clean SSML tags to prevent them from being read literally
         const cleanText = enhancedTTS.cleanSSML(enhancedText);
 
-        const response = await ai.models.generateContent({
+        // SECURITY FIX: Use proxy instead of direct API call
+        const proxyResponse = await generateViaProxy({
           model: "gemini-2.5-flash-preview-tts",
           contents: [{ parts: [{ text: `Say naturally with emotion: ${cleanText}` }] }],
           config: {
-            responseModalities: [Modality.AUDIO],
+            responseModalities: ["AUDIO"],
             speechConfig: {
               voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: this.config.voiceName as any },
+                prebuiltVoiceConfig: { voiceName: this.config.voiceName },
               },
             },
           },
         });
 
-        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!base64Audio) continue;
+        if (!proxyResponse.success || !proxyResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+          console.warn('[VOICE] TTS proxy response invalid, skipping chunk');
+          continue;
+        }
 
+        const base64Audio = proxyResponse.candidates[0].content.parts[0].inlineData.data;
         geminiRateLimiter.trackRequest(1000);
 
         const audioCtx = this.getAudioContext();
@@ -1405,12 +1418,6 @@ class VoiceCoreOptimized {
   // ==================== SPEECH RECOGNITION ====================
 
   private handleResult(event: SpeechRecognitionEvent | any) {
-    // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
-    if (this.isCurrentlySpeaking || Date.now() < this.ignoreInputUntil) {
-      console.log('[VOICE] Ignoring audio input - JARVIS is currently speaking or in deaf period');
-      return;
-    }
-
     this.hasProcessedSpeech = true;
     this.errorCount = 0;
     this.consecutiveShortSessions = 0;
@@ -1429,36 +1436,45 @@ class VoiceCoreOptimized {
 
     this.emitTranscript(transcript, !!finalTranscript);
 
-    // Handle interruptions
-    // IMPORTANT: Don't process interrupt phrases when JARVIS is speaking to avoid audio feedback
-    // If JARVIS is speaking, any transcript is likely audio feedback of its own voice
-    if (this.state === VoiceState.SPEAKING && finalTranscript) {
-      console.log('[VOICE] Audio feedback detected - ignoring transcript while speaking:', transcript);
+    // INTERRUPTION LOGIC: Check for wake word or interrupt phrases FIRST
+    // This allows the user to interrupt JARVIS even when he's speaking
+    const interruptionEnabled = this.config.allowInterruption !== false; // Default to true
+    const interruptPhrases = [
+      'stop', 'cancel', 'shut up', 'be quiet', 'enough',
+      'okay stop', 'jarvis stop', 'jarvis cancel', 'cancel that',
+      'never mind', 'stop talking', 'hold on', 'wait', 'pause'
+    ];
+    
+    const isWakeWord = this.detectWakeWord(transcript);
+    const isInterruptPhrase = interruptPhrases.some(phrase => transcript.includes(phrase));
+    const shouldAllowInterruption = interruptionEnabled && (isWakeWord || isInterruptPhrase);
+
+    // If user says wake word or interrupt phrase while JARVIS is speaking, INTERRUPT immediately
+    if (this.isCurrentlySpeaking && finalTranscript && shouldAllowInterruption) {
+      console.log(`[VOICE] INTERRUPTION: User said "${transcript}" while JARVIS was speaking`);
+      this.interrupt();
+      // After interrupting, if it was just a wake word, stay in LISTENING to get the next command
+      if (isWakeWord && !isInterruptPhrase) {
+        this.setState(VoiceState.LISTENING);
+        console.log('[VOICE] Interrupted by wake word - listening for command');
+      } else {
+        // If it was an interrupt phrase like "stop", go back to IDLE
+        this.setState(VoiceState.IDLE);
+        console.log('[VOICE] Interrupted by stop command');
+      }
       return;
     }
 
-    // Only process interrupt phrases when not speaking
+    // NEW: Prevent processing audio when JARVIS is speaking to avoid feedback loop
+    // (But we already checked for wake word/interrupt phrases above, so this is safe)
+    if (this.isCurrentlySpeaking || Date.now() < this.ignoreInputUntil) {
+      console.log('[VOICE] Ignoring audio input - JARVIS is currently speaking or in deaf period');
+      return;
+    }
+
+    // Handle interruptions when NOT speaking (e.g., while in LISTENING state)
     if (this.state !== VoiceState.SPEAKING && finalTranscript) {
-      const interruptPhrases = [
-        'stop',
-        'cancel',
-        'shut up',
-        'be quiet',
-        'enough',
-        'okay stop',
-        'jarvis stop',
-        'jarvis cancel',
-        'cancel that',
-        'never mind',
-        'stop talking',
-        'hold on'
-      ];
-
-      // Convert transcript to lowercase for case-insensitive matching
-      const lowerTranscript = transcript.toLowerCase();
-      const shouldInterrupt = interruptPhrases.some(phrase => lowerTranscript.includes(phrase.toLowerCase()));
-
-      if (shouldInterrupt) {
+      if (isInterruptPhrase) {
         this.interrupt();
         this.setState(VoiceState.LISTENING);
         console.log('[VOICE] Interrupted by user command');
@@ -1468,7 +1484,7 @@ class VoiceCoreOptimized {
 
     // Handle wake word detection - IMPROVED with fuzzy matching
     const now = Date.now();
-    const isWakeWord = this.detectWakeWord(transcript);
+    // Note: isWakeWord was already detected above for interruption logic
 
     if (this.state === VoiceState.IDLE || this.state === VoiceState.INTERRUPTED) {
       if (isWakeWord) {
@@ -1772,43 +1788,48 @@ class VoiceCoreOptimized {
     const transcript = text.toLowerCase().trim();
     if (!transcript) return;
 
-    // Check for interrupt commands even if JARVIS is speaking
+    // INTERRUPTION LOGIC: Check for wake word or interrupt phrases FIRST
+    // This allows the user to interrupt JARVIS even when he's speaking
+    const interruptionEnabled = this.config.allowInterruption !== false; // Default to true
     const interruptPhrases = [
-      'stop',
-      'cancel',
-      'shut up',
-      'be quiet',
-      'enough',
-      'okay stop',
-      'jarvis stop',
-      'jarvis cancel',
-      'cancel that',
-      'never mind',
-      'stop talking',
-      'hold on'
+      'stop', 'cancel', 'shut up', 'be quiet', 'enough',
+      'okay stop', 'jarvis stop', 'jarvis cancel', 'cancel that',
+      'never mind', 'stop talking', 'hold on', 'wait', 'pause'
     ];
 
-    const shouldInterrupt = interruptPhrases.some(phrase => transcript.includes(phrase.toLowerCase()));
+    const isWakeWord = this.detectWakeWord(transcript);
+    const isInterruptPhrase = interruptPhrases.some(phrase => transcript.includes(phrase));
+    const shouldAllowInterruption = interruptionEnabled && (isWakeWord || isInterruptPhrase);
 
-    // Handle interrupt commands, but NOT when JARVIS is speaking to avoid audio feedback
-    // If JARVIS is speaking, any transcript is likely audio feedback of its own voice
-    if (shouldInterrupt && this.isCurrentlySpeaking) {
-      console.log('[VOICE] Audio feedback detected - ignoring interrupt while speaking:', transcript);
-      return;
-    }
-
-    // Handle interrupt commands only when not speaking
-    if (shouldInterrupt && !this.isCurrentlySpeaking) {
-      console.log('[VOICE] Interrupt command detected');
+    // If user says wake word or interrupt phrase while JARVIS is speaking, INTERRUPT immediately
+    if (isFinal && this.isCurrentlySpeaking && shouldAllowInterruption) {
+      console.log(`[VOICE] INTERRUPTION (Whisper): User said "${transcript}" while JARVIS was speaking`);
       this.interrupt();
-      this.setState(VoiceState.LISTENING);
-      console.log('[VOICE] Interrupted by user command');
+      // After interrupting, if it was just a wake word, stay in LISTENING to get the next command
+      if (isWakeWord && !isInterruptPhrase) {
+        this.setState(VoiceState.LISTENING);
+        console.log('[VOICE] Interrupted by wake word - listening for command');
+      } else {
+        // If it was an interrupt phrase like "stop", go back to IDLE
+        this.setState(VoiceState.IDLE);
+        console.log('[VOICE] Interrupted by stop command');
+      }
       return;
     }
 
     // Prevent processing other audio when JARVIS is speaking to avoid feedback loop
+    // (But we already checked for wake word/interrupt phrases above, so this is safe)
     if (this.isCurrentlySpeaking || Date.now() < this.ignoreInputUntil) {
       console.log('[VOICE] Ignoring Whisper input - JARVIS is currently speaking or in deaf period');
+      return;
+    }
+
+    // Handle interrupt commands when NOT speaking
+    if (isFinal && isInterruptPhrase) {
+      console.log('[VOICE] Interrupt command detected');
+      this.interrupt();
+      this.setState(VoiceState.LISTENING);
+      console.log('[VOICE] Interrupted by user command');
       return;
     }
 

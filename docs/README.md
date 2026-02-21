@@ -1,6 +1,6 @@
 # JARVIS Documentation
 
-Complete documentation for the JARVIS Kernel v1.5.0.
+Complete documentation for the JARVIS Kernel v1.5.1.
 
 ## Table of Contents
 
@@ -37,7 +37,8 @@ Complete documentation for the JARVIS Kernel v1.5.0.
 - [Store API](./API.md#store-api)
 
 ### 📜 [Changelog](./CHANGELOG.md)
-- [v1.5.0](./CHANGELOG.md#v150) - Current
+- [v1.5.1](./CHANGELOG.md#v151) - Current
+- [v1.5.0](./CHANGELOG.md#v150) - 2026-02-08
 - [v1.4.x](./CHANGELOG.md#v14x)
 - [v1.3.x](./CHANGELOG.md#v13x)
 - [v1.2.x](./CHANGELOG.md#v12x)

@@ -5,6 +5,8 @@ import { voice } from '../services/voice';
 import { piperTTS, RECOMMENDED_PIPER_VOICES, PIPER_SETUP_INSTRUCTIONS } from '../services/piperTTS';
 import { piperLauncher, PiperLauncherState } from '../services/piperLauncher';
 import { providerManager } from '../services/providers';
+import { imageGenerator } from '../services/imageGenerator';
+import { LocalImageProvider } from '../services/localImageGenerator';
 import { registry } from '../services/registry';
 import { backupService, SystemBackup } from '../services/backup';
 import { haService } from '../services/home_assistant';
@@ -88,11 +90,10 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'AI' | 'DEVICES' | 'PLUGINS' | 'ARCHIVE' | 'DISTRIBUTION' | 'DOCS' | 'SECURITY' | 'BACKUP'>('GENERAL');
   
   // States
-  // SECURITY FIX: Load API key using secure apiKeyManager
+  // SECURITY: Load API key from secure storage only
+  // API keys are stored server-side in the proxy server, never in client bundle
   const loadApiKey = async (): Promise<string> => {
-    const envKey = (import.meta.env?.VITE_GEMINI_API_KEY as string | undefined) || (import.meta.env?.VITE_API_KEY as string | undefined) || '';
-    
-    // Try secure storage first
+    // Try secure local storage first
     if (apiKeyManager.isInitialized()) {
       const secureKey = await apiKeyManager.getKey('gemini');
       if (secureKey) {
@@ -101,22 +102,30 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
       }
     }
     
-    // Fallback to legacy storage (temporary)
+    // Migration: Check for legacy storage and migrate if found
     const storedKey = localStorage.getItem('GEMINI_API_KEY');
     if (storedKey) {
       try {
         const decoded = atob(storedKey);
-        console.warn('[SETTINGS] Loaded API key from legacy storage (not encrypted)');
+        console.warn('[SETTINGS] Migrated API key from legacy storage to secure storage');
+        // Migrate to secure storage
+        if (!apiKeyManager.isInitialized()) {
+          const { generateSecureId } = await import('../services/secureStorage');
+          const deviceId = navigator.userAgent + generateSecureId(16);
+          await apiKeyManager.initialize(deviceId);
+        }
+        await apiKeyManager.setKey('gemini', decoded);
+        localStorage.removeItem('GEMINI_API_KEY');
         return decoded;
       } catch {
-        return storedKey;
+        localStorage.removeItem('GEMINI_API_KEY'); // Clear invalid key
       }
     }
     
-    if (envKey) {
-      console.log('[SETTINGS] Loaded API key from environment variables');
-    }
-    return envKey;
+    // NOTE: API keys are stored server-side in the proxy server
+    // The proxy reads from GEMINI_API_KEY (not VITE_GEMINI_API_KEY)
+    // Run: node scripts/migrate-api-keys.js to migrate existing .env files
+    return '';
   };
   const [apiKey, setApiKey] = useState<string>('');
   
@@ -149,6 +158,8 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
   const [isTestingAudio, setIsTestingAudio] = useState(false);
   const [isTestingVideo, setIsTestingVideo] = useState(false);
   const [ollamaStatus, setOllamaStatus] = useState<'IDLE' | 'PENDING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [comfyUIStatus, setComfyUIStatus] = useState<'IDLE' | 'PENDING' | 'SUCCESS' | 'ERROR'>('IDLE');
+  const [comfyUIProvider, setComfyUIProvider] = useState<LocalImageProvider | null>(null);
   const [encryptionEnabled, setEncryptionEnabled] = useState(false);
   const [showEncryptionSetup, setShowEncryptionSetup] = useState(false);
   const [availableOllamaModels, setAvailableOllamaModels] = useState<string[]>([]);
@@ -169,6 +180,24 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
     updateStats();
     const interval = setInterval(updateStats, 5000); // Update every 5 seconds
     return () => clearInterval(interval);
+  }, []);
+
+  // Check ComfyUI status on mount
+  useEffect(() => {
+    const checkComfyUI = async () => {
+      try {
+        await imageGenerator.initialize();
+        const providers = imageGenerator.getProviders();
+        const comfyProvider = providers.find(p => p.type === 'comfyui');
+        if (comfyProvider?.available) {
+          setComfyUIProvider(comfyProvider);
+          setComfyUIStatus('SUCCESS');
+        }
+      } catch (error) {
+        // ComfyUI not available
+      }
+    };
+    checkComfyUI();
   }, []);
 
   useEffect(() => {
@@ -241,29 +270,49 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
           console.warn('[SETTINGS] Warning: API key does not start with expected "AIza" prefix');
         }
         
-        // SECURITY FIX: Store API key using secure apiKeyManager
+        // SECURITY FIX: Store API key server-side via proxy
+        // This keeps the key out of the client bundle
         try {
-          // Initialize if not already done
-          if (!apiKeyManager.isInitialized()) {
-            // Use a default password or prompt user
-            // For now, use a device-specific derived password
-            const { generateSecureId } = await import('../services/secureStorage');
-            const deviceId = navigator.userAgent + generateSecureId(16);
-            await apiKeyManager.initialize(deviceId);
+          const response = await fetch('http://localhost:3101/save-api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: 'gemini', key: trimmedKey })
+          });
+          
+          if (response.ok) {
+            console.log('[SETTINGS] API key saved to server (not exposed to client)');
+            
+            // Also save to secure local storage as backup
+            if (!apiKeyManager.isInitialized()) {
+              const { generateSecureId } = await import('../services/secureStorage');
+              const deviceId = navigator.userAgent + generateSecureId(16);
+              await apiKeyManager.initialize(deviceId);
+            }
+            await apiKeyManager.setKey('gemini', trimmedKey);
+            
+            // Remove legacy keys
+            localStorage.removeItem('GEMINI_API_KEY');
+            
+            setSaveMessage('API key saved securely to server');
+          } else {
+            throw new Error('Server failed to save API key');
           }
-          
-          await apiKeyManager.setKey('gemini', trimmedKey);
-          console.log('[SETTINGS] API key saved to secure storage (AES-GCM encrypted)');
-          
-          // Also remove legacy key if present
-          localStorage.removeItem('GEMINI_API_KEY');
-          
-          setSaveMessage('API key saved securely');
         } catch (e) {
-          console.error('[SETTINGS] Failed to save to secure storage:', e);
-          // Fallback to legacy storage with warning
-          localStorage.setItem('GEMINI_API_KEY', btoa(trimmedKey));
-          setSaveMessage('API key saved (fallback mode - less secure)');
+          console.error('[SETTINGS] Failed to save to server:', e);
+          // Fallback to secure local storage
+          try {
+            if (!apiKeyManager.isInitialized()) {
+              const { generateSecureId } = await import('../services/secureStorage');
+              const deviceId = navigator.userAgent + generateSecureId(16);
+              await apiKeyManager.initialize(deviceId);
+            }
+            await apiKeyManager.setKey('gemini', trimmedKey);
+            localStorage.removeItem('GEMINI_API_KEY');
+            setSaveMessage('API key saved locally (server unavailable)');
+          } catch (e2) {
+            console.error('[SETTINGS] Failed to save:', e2);
+            setSaveMessage('Failed to save API key');
+          }
         }
       }
       
@@ -291,6 +340,27 @@ export const SettingsInterface: React.FC<SettingsInterfaceProps> = ({ onClose })
     const ok = await providerManager.pingOllama();
     setOllamaStatus(ok ? 'SUCCESS' : 'ERROR');
     setTimeout(() => setOllamaStatus('IDLE'), 3000);
+  };
+
+  const testComfyUI = async () => {
+    setComfyUIStatus('PENDING');
+    try {
+      await imageGenerator.initialize();
+      const providers = imageGenerator.getProviders();
+      const comfyProvider = providers.find(p => p.type === 'comfyui');
+      
+      if (comfyProvider?.available) {
+        setComfyUIProvider(comfyProvider);
+        setComfyUIStatus('SUCCESS');
+      } else {
+        setComfyUIProvider(null);
+        setComfyUIStatus('ERROR');
+      }
+    } catch (error) {
+      setComfyUIProvider(null);
+      setComfyUIStatus('ERROR');
+    }
+    setTimeout(() => setComfyUIStatus('IDLE'), 5000);
   };
 
   const [isTestingVoice, setIsTestingVoice] = useState(false);
@@ -809,6 +879,84 @@ const neuralVoices = [
                             onChange={(e) => setOllamaConfig({...ollamaConfig, temperature: parseFloat(e.target.value)})}
                             className="w-full accent-red-500 h-1.5 bg-red-900/20 rounded-lg appearance-none cursor-pointer"
                         />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* COMFYUI LOCAL IMAGE GENERATION */}
+                <div className="p-6 border border-purple-900/30 rounded-lg bg-[#0a0a0a] flex flex-col gap-6">
+                  <div className="flex items-center justify-between border-b border-purple-900/20 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-purple-950/40 rounded border border-purple-800/50">
+                        <Monitor size={18} className="text-purple-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-bold text-white uppercase tracking-widest">Local Image Generation</h3>
+                        <div className="text-[10px] text-purple-700 font-mono">ComfyUI - SD 3.5 / FLUX</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={testComfyUI}
+                      disabled={comfyUIStatus === 'PENDING'}
+                      className={`px-3 py-1 rounded text-[10px] font-bold border transition-all flex items-center gap-2
+                        ${comfyUIStatus === 'SUCCESS' ? 'bg-green-950/20 border-green-500 text-green-400' : 
+                          comfyUIStatus === 'ERROR' ? 'bg-red-950/20 border-red-500 text-red-400' : 
+                          'bg-black border-purple-900/50 text-purple-400 hover:bg-purple-900/20'}
+                      `}
+                    >
+                       {comfyUIStatus === 'PENDING' ? <Loader2 size={12} className="animate-spin" /> : 
+                        comfyUIStatus === 'SUCCESS' ? <CheckCircle2 size={12} /> : 
+                        comfyUIStatus === 'ERROR' ? <XCircle size={12} /> : <Settings2 size={12} />}
+                       {comfyUIStatus === 'PENDING' ? 'PINGING' : 
+                        comfyUIStatus === 'SUCCESS' ? 'ONLINE' : 
+                        comfyUIStatus === 'ERROR' ? 'OFFLINE' : 'TEST'}
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="bg-purple-950/5 p-4 rounded border border-purple-900/10">
+                      <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Status</div>
+                      {comfyUIProvider ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-xs text-green-400 font-mono">ComfyUI Connected</span>
+                          </div>
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            URL: {comfyUIProvider.url}<br/>
+                            Models: {comfyUIProvider.models.length > 0 ? comfyUIProvider.models.join(', ') : 'No models found'}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                            <span className="text-xs text-red-400 font-mono">ComfyUI Not Detected</span>
+                          </div>
+                          <div className="text-[9px] text-gray-500 font-mono space-y-1">
+                            <p>To enable high-quality AI image generation:</p>
+                            <ol className="list-decimal list-inside mt-2 space-y-1 text-purple-400">
+                              <li>Install ComfyUI from github.com/comfyanonymous/ComfyUI</li>
+                              <li>Download SD 3.5 Medium model (~7GB, fits in 11GB VRAM)</li>
+                              <li>Start ComfyUI with: --enable-cors-header</li>
+                              <li>Click TEST above to verify connection</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="bg-purple-950/10 p-4 rounded border border-purple-900/30">
+                      <div className="text-[10px] font-bold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                        <Zap size={12} /> Optimized for Your Hardware
+                      </div>
+                      <div className="text-[9px] text-gray-500 font-mono space-y-1">
+                        <p>Your GTX 1080 Ti (11GB VRAM) can run:</p>
+                        <ul className="list-disc list-inside mt-2 space-y-1 text-purple-400">
+                          <li>SD 3.5 Medium (7GB) - ⭐ Recommended</li>
+                          <li>RealVisXL (7GB) - Best for portraits</li>
+                          <li>SDXL Base (7GB) - Good general purpose</li>
+                        </ul>
+                        <p className="mt-2 text-gray-600">Place models in: ComfyUI\models\checkpoints\</p>
                       </div>
                     </div>
                   </div>

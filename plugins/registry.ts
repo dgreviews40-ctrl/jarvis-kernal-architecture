@@ -721,7 +721,6 @@ async function checkDependencies(manifest: PluginManifestV2): Promise<boolean> {
       continue;
     }
     
-    // TODO: Check version range compatibility
     const installedVersion = plugin.manifest.version;
     if (!satisfiesVersion(installedVersion, dep.versionRange)) {
       logger.error('PLUGIN', `Dependency ${dep.pluginId} version ${installedVersion} does not satisfy ${dep.versionRange}`);

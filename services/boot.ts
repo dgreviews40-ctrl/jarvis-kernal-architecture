@@ -1,5 +1,5 @@
 /**
- * Boot Orchestrator - Kernel v1.3
+ * Boot Orchestrator - Kernel v1.5.1
  * Enhanced 8-phase boot sequence with v1.3 features
  *
  * Phases:
@@ -45,7 +45,7 @@ export const BOOT_PHASES_V12: BootPhase[] = [
       "Initializing Event Bus...",
       "Mounting Logger (level: DEBUG)",
       "Loading Exception Handlers",
-      "Version Check: v1.5.0"
+      "Version Check: v1.5.1"
     ] 
   },
   { 

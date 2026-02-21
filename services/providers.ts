@@ -1,6 +1,6 @@
 
 import { AIProvider, IAIProvider, AIRequest, AIResponse, HealthEventType, ImpactLevel, AIConfig, OllamaConfig } from "../types";
-import { GoogleGenAI } from "@google/genai";
+// SECURITY: Removed GoogleGenAI import - now using proxy server
 import { cortex } from "./cortex";
 import { geminiRateLimiter } from "./rateLimiter";
 import { EnhancedCircuitBreaker } from "./CircuitBreaker";
@@ -152,7 +152,7 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, operation: strin
 export class GeminiProvider implements IAIProvider {
   public id = AIProvider.GEMINI;
   public name = "Google Gemini Cloud";
-  private client: GoogleGenAI | null = null;
+  // SECURITY: Removed direct client - now using proxy server
   private sourceId = 'provider.gemini';
   private circuitBreaker: EnhancedCircuitBreaker;
   private deduplicator: RequestDeduplicator<AIResponse>;
@@ -168,66 +168,23 @@ export class GeminiProvider implements IAIProvider {
       debug: false
     });
 
-    const apiKey = this.getApiKey();
-    if (apiKey) {
-      this.client = new GoogleGenAI({ apiKey });
-    }
+    // SECURITY: No direct client initialization - using proxy server
   }
 
   public getApiKey(): string | null {
-    // SECURITY FIX: Use secure apiKeyManager instead of localStorage + base64
-    // This ensures proper AES-GCM encryption for API keys
-    
-    // Try to get from secure storage (async, so we need a sync fallback)
-    // For now, check environment variables first (safe, not stored)
-    if (typeof import.meta.env !== 'undefined') {
-      const envKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
-      if (envKey && typeof envKey === 'string') {
-        console.log('[PROVIDERS] Using API key from environment');
-        return envKey;
-      }
-    }
-    
-    // Fallback to process.env for Node.js environments
-    if (typeof process !== 'undefined' && process.env) {
-      const envKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
-      if (envKey && typeof envKey === 'string') {
-        console.log('[PROVIDERS] Using API key from environment');
-        return envKey;
-      }
-    }
-
-    // LEGACY FALLBACK: Check for old format keys (will be migrated on init)
-    // This is temporary and will be removed in a future version
-    if (typeof localStorage !== 'undefined') {
-      const legacyKey = localStorage.getItem('GEMINI_API_KEY');
-      if (legacyKey) {
-        try {
-          const decoded = atob(legacyKey);
-          console.warn('[PROVIDERS] WARNING: Using legacy unencrypted API key. Please re-save your API key in Settings.');
-          return decoded;
-        } catch {
-          // Invalid base64, ignore
-        }
-      }
-    }
-
+    // SECURITY: This method is deprecated and returns null
+    // API keys are now stored server-side only
+    // Use the proxy via generate() instead
     return null;
   }
 
   /**
-   * Set API key securely
-   * This should be called from Settings instead of direct localStorage manipulation
+   * Check if Gemini is available via proxy
    */
-  public async setApiKey(apiKey: string): Promise<void> {
-    // Import and use secure storage
-    const { apiKeyManager } = await import('./apiKeyManager');
-    await apiKeyManager.setKey('gemini', apiKey);
-    console.log('[PROVIDERS] API key stored securely');
-  }
-
   async isAvailable(): Promise<boolean> {
-    return !!this.getApiKey() && navigator.onLine;
+    const { isGeminiProxyAvailable } = await import('./geminiProxyClient');
+    const proxyAvailable = await isGeminiProxyAvailable();
+    return proxyAvailable && navigator.onLine;
   }
 
   async generate(request: AIRequest): Promise<AIResponse> {
@@ -237,15 +194,10 @@ export class GeminiProvider implements IAIProvider {
       throw new Error(`GEMINI service is temporarily unavailable (circuit breaker OPEN). Last failure: ${state.lastFailureTime ? new Date(state.lastFailureTime).toLocaleTimeString() : 'unknown'}`);
     }
 
-    const apiKey = this.getApiKey();
-    if (!apiKey) {
-      throw new Error("CRITICAL: Gemini API Key not detected. Please add it in Settings > API & Security.");
-    }
-
     // Deduplicate identical requests
     const dedupKey = createDedupKey([
       'gemini',
-      request.prompt.slice(0, 100), // First 100 chars of prompt
+      request.prompt.slice(0, 100),
       request.model ?? 'default',
       request.images?.length ?? 0
     ]);
@@ -254,8 +206,6 @@ export class GeminiProvider implements IAIProvider {
   }
 
   private async generateInternal(request: AIRequest): Promise<AIResponse> {
-    const apiKey = this.getApiKey();
-    
     // === RATE LIMIT CHECK ===
     const check = geminiRateLimiter.canMakeRequest(request.images ? 2000 : 500);
     if (!check.allowed) {
@@ -267,70 +217,51 @@ export class GeminiProvider implements IAIProvider {
       );
     }
 
-    if (!this.client) {
-      if (!apiKey) {
-        throw new AuthError(
-          'Gemini API key is required but not available',
-          ErrorCode.API_KEY_INVALID
-        );
-      }
-      this.client = new GoogleGenAI({ apiKey });
-    }
-
-    const start = Date.now();
-    let response;
     const config = providerManager.getAIConfig();
-    const timeoutMs = request.timeout ?? REQUEST_TIMEOUT_MS;
+    const start = Date.now();
 
     try {
-      // Wrap the actual API call with the circuit breaker (with per-request timeout)
-      response = await this.circuitBreaker.call(async () => {
-        if (request.images && request.images.length > 0) {
-          const parts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [];
+      // SECURITY FIX: Use proxy instead of direct API calls
+      const { generateViaProxy, isGeminiProxyAvailable } = await import('./geminiProxyClient');
+      
+      const proxyAvailable = await isGeminiProxyAvailable();
+      if (!proxyAvailable) {
+        throw new Error(
+          "Gemini proxy not available. Please ensure:\n" +
+          "1. The proxy server is running (npm run proxy)\n" +
+          "2. Your API key is configured in Settings > API & Security"
+        );
+      }
 
-          request.images.forEach(imgBase64 => {
-            // Validate that the image is a proper base64 string
-            if (!imgBase64 || typeof imgBase64 !== 'string') {
-              throw new Error('Invalid image data provided');
-            }
+      // Convert request to proxy format
+      const contents = request.images && request.images.length > 0
+        ? [
+            ...request.images.map(img => ({ 
+              inlineData: { 
+                mimeType: 'image/jpeg' as const, 
+                data: img 
+              } 
+            })),
+            { text: request.prompt }
+          ]
+        : [{ text: request.prompt }];
 
-            parts.push({
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: imgBase64
-              }
-            });
-          });
+      const response = await this.circuitBreaker.call(async () => {
+        return await generateViaProxy({
+          model: request.images && request.images.length > 0 
+            ? 'gemini-2.5-flash-image' 
+            : config.model,
+          contents,
+          config: {
+            systemInstruction: request.systemInstruction,
+            temperature: request.temperature ?? config.temperature,
+          }
+        });
+      });
 
-          parts.push({ text: request.prompt });
-
-          return await withTimeout(
-            this.client!.models.generateContent({
-              model: 'gemini-2.5-flash-image',
-              contents: { parts },
-              config: {
-                systemInstruction: request.systemInstruction,
-                temperature: request.temperature ?? config.temperature,
-              }
-            }),
-            timeoutMs,
-            'Gemini Vision API'
-          );
-        } else {
-          return await withTimeout(
-            this.client!.models.generateContent({
-              model: config.model,
-              contents: request.prompt,
-              config: {
-                systemInstruction: request.systemInstruction,
-                temperature: request.temperature ?? config.temperature,
-              }
-            }),
-            timeoutMs,
-            'Gemini API'
-          );
-        }
-      }, timeoutMs);
+      if (!response.success) {
+        throw new Error(response.error || 'Proxy request failed');
+      }
 
       const latency = Date.now() - start;
 
@@ -338,29 +269,20 @@ export class GeminiProvider implements IAIProvider {
       geminiRateLimiter.trackRequest(request.images ? 2000 : 500);
 
       cortex.reportEvent({
-          sourceId: this.sourceId,
-          type: HealthEventType.SUCCESS,
-          impact: ImpactLevel.NONE,
-          latencyMs: latency,
-          context: { endpoint: 'generateContent' }
+        sourceId: this.sourceId,
+        type: HealthEventType.SUCCESS,
+        impact: ImpactLevel.NONE,
+        latencyMs: latency,
+        context: { endpoint: 'generateContent' }
       });
 
-      // Validate response before returning
-      console.log('[GEMINI] Raw response:', response);
-      if (!response) {
-        throw new ValidationError(
-        'Gemini API returned null/undefined response',
-        undefined,
-        ErrorCode.API_INVALID_REQUEST
-      );
-      }
+      // Validate response
       if (!response.text) {
-        console.warn('[GEMINI] Response missing text field:', response);
         throw new ValidationError(
-        'Gemini API returned empty response (no text field)',
-        undefined,
-        ErrorCode.API_INVALID_REQUEST
-      );
+          'Gemini API returned empty response',
+          undefined,
+          ErrorCode.API_INVALID_REQUEST
+        );
       }
 
       return {
@@ -442,7 +364,25 @@ export class OllamaProvider implements IAIProvider {
       request.images?.length ?? 0
     ]);
     
-    return this.deduplicator.dedup(dedupKey, () => this.generateInternal(request));
+    try {
+      return await this.deduplicator.dedup(dedupKey, () => this.generateInternal(request));
+    } catch (error) {
+      // Return simulated fallback response when Ollama is unavailable
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const ollamaConfig = providerManager.getOllamaConfig();
+      console.error('[OLLAMA] Error details:', {
+        message: errorMessage,
+        url: ollamaConfig.url,
+        model: request.model || ollamaConfig.model
+      });
+      console.warn('[OLLAMA] Returning simulated response due to error:', errorMessage);
+      return {
+        text: `[SIMULATED] Ollama connection failed: ${errorMessage}. Please check that Ollama is running at ${ollamaConfig.url} and the model '${request.model || ollamaConfig.model}' is available.`,
+        provider: AIProvider.OLLAMA,
+        model: 'fallback-simulated',
+        latencyMs: 0
+      };
+    }
   }
 
   private async generateInternal(request: AIRequest): Promise<AIResponse> {
@@ -867,6 +807,7 @@ class ProviderManager {
   constructor() {
     this.register(new GeminiProvider());
     this.register(new OllamaProvider());
+    this.register(new LoRAProvider());
     
     this.loadConfigs();
   }
@@ -988,8 +929,21 @@ class ProviderManager {
       }
     }
 
+    // If LORA was requested but failed/unavailable, fallback to Gemini
+    if (targetProvider === AIProvider.LORA) {
+      console.warn('[PROVIDER] LoRA unavailable or failed, falling back to Gemini');
+      const gemini = this.providers.get(AIProvider.GEMINI);
+      if (gemini && await gemini.isAvailable()) {
+        return await gemini.generate(request);
+      }
+    }
+
     const fallback = this.providers.get(AIProvider.OLLAMA);
-    if (fallback) return fallback.generate(request);
+    if (fallback && await fallback.isAvailable()) return fallback.generate(request);
+
+    // Final fallback to Gemini
+    const gemini = this.providers.get(AIProvider.GEMINI);
+    if (gemini) return gemini.generate(request);
 
     throw new Error("No AI Providers available.");
   }
@@ -1051,6 +1005,138 @@ class ProviderManager {
     const ollama = this.providers.get(AIProvider.OLLAMA) as OllamaProvider | undefined;
     if (!ollama) return false;
     return ollama.isCacheEnabled();
+  }
+
+  // ==================== LORA ADAPTER MANAGEMENT ====================
+
+  /**
+   * Set the preferred LoRA adapter
+   */
+  setLoRAAdapter(adapterId: string | null): void {
+    const lora = this.providers.get(AIProvider.LORA) as LoRAProvider | undefined;
+    if (lora) {
+      lora.setPreferredAdapter(adapterId);
+      console.log(`[PROVIDER] LoRA adapter set to: ${adapterId || 'none'}`);
+    }
+  }
+
+  /**
+   * Get the current LoRA adapter ID
+   */
+  getLoRAAdapter(): string | null {
+    const lora = this.providers.get(AIProvider.LORA) as LoRAProvider | undefined;
+    return lora ? lora.getPreferredAdapter() : null;
+  }
+
+  /**
+   * Check if LoRA is available with a selected adapter
+   */
+  async isLoRAAvailable(): Promise<boolean> {
+    const lora = this.providers.get(AIProvider.LORA) as LoRAProvider | undefined;
+    return lora ? await lora.isAvailable() : false;
+  }
+}
+
+// --- LORA PROVIDER ---
+export class LoRAProvider implements IAIProvider {
+  public id = AIProvider.LORA;
+  public name = "LoRA Personal Adapter";
+  private circuitBreaker: EnhancedCircuitBreaker;
+  private preferredAdapterId: string | null = null;
+
+  constructor() {
+    this.circuitBreaker = new EnhancedCircuitBreaker({
+      failureThreshold: 3,
+      resetTimeout: 30000,
+      timeout: 60000 // 60 seconds for LoRA generation
+    });
+    this.loadPreferredAdapter();
+  }
+
+  private loadPreferredAdapter() {
+    const saved = localStorage.getItem('jarvis_lora_preferred_adapter');
+    if (saved) {
+      this.preferredAdapterId = saved;
+    }
+  }
+
+  public setPreferredAdapter(adapterId: string | null) {
+    this.preferredAdapterId = adapterId;
+    if (adapterId) {
+      localStorage.setItem('jarvis_lora_preferred_adapter', adapterId);
+    } else {
+      localStorage.removeItem('jarvis_lora_preferred_adapter');
+    }
+  }
+
+  public getPreferredAdapter(): string | null {
+    return this.preferredAdapterId;
+  }
+
+  async isAvailable(): Promise<boolean> {
+    try {
+      // Check if LoRA server is running
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch('http://localhost:5005/health', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      
+      if (!res.ok) return false;
+      
+      const data = await res.json();
+      // Server is available if status is ok and we have a preferred adapter
+      return data.status === 'ok' && this.preferredAdapterId !== null;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async generate(request: AIRequest): Promise<AIResponse> {
+    if (!this.preferredAdapterId) {
+      throw new Error('No LoRA adapter selected. Please select an adapter in the LoRA Dashboard.');
+    }
+
+    // Check circuit breaker
+    if (this.circuitBreaker.getState().state === 'OPEN') {
+      const state = this.circuitBreaker.getState();
+      return {
+        text: `[LoRA SERVICE UNAVAILABLE] LoRA service is temporarily unavailable (circuit breaker OPEN). Last failure: ${state.lastFailureTime ? new Date(state.lastFailureTime).toLocaleTimeString() : 'unknown'}`,
+        provider: AIProvider.LORA,
+        model: 'lora-fallback-unavailable',
+        latencyMs: 0
+      };
+    }
+
+    return this.circuitBreaker.call(async () => {
+      const start = Date.now();
+      
+      // Import loraService dynamically to avoid circular dependency
+      const { loraService } = await import('./loraService');
+      
+      // Format prompt with system instruction if provided
+      let fullPrompt = request.prompt;
+      if (request.systemInstruction) {
+        fullPrompt = `${request.systemInstruction}\n\nUser: ${request.prompt}\nAssistant:`;
+      }
+
+      const result = await loraService.generate({
+        adapterId: this.preferredAdapterId!,
+        prompt: fullPrompt,
+        maxTokens: request.maxTokens || 256,
+        temperature: request.temperature ?? 0.7
+      });
+
+      if (!result) {
+        throw new Error('LoRA generation failed - no response from server');
+      }
+
+      return {
+        text: result.text,
+        provider: AIProvider.LORA,
+        model: `lora-${this.preferredAdapterId}`,
+        latencyMs: result.timeMs
+      };
+    }, 60000);
   }
 }
 

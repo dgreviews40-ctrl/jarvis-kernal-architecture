@@ -1,11 +1,16 @@
 
-import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_INSTRUCTION_KERNEL } from "../constants";
 import { providerManager } from "./providers";
-import { AIProvider } from "../types";
+import { AIProvider, IntentType } from "../types";
 import { localIntentClassifier } from "./localIntent";
 import { geminiRateLimiter } from "./rateLimiter";
 import { RequestDeduplicator, createDedupKey } from "./deduplicator";
+
+// Lazy load proxy client to avoid bundling in main chunk
+const getGeminiProxyClient = async () => {
+  const { generateViaProxy, streamViaProxy, isGeminiProxyAvailable } = await import('./geminiProxyClient');
+  return { generateViaProxy, streamViaProxy, isGeminiProxyAvailable };
+};
 
 // LRU Cache for intent analysis results
 const INTENT_CACHE_SIZE = 50;
@@ -108,75 +113,51 @@ export const getGeminiStats = () => {
 
 // Export for testing/debugging
 export const clearIntentCache = () => intentCache.clear();
-export const hasApiKey = (): boolean => {
-  // Check environment variables first (VITE_ prefixed), then localStorage
-  const envKey = typeof process !== 'undefined' ? (process.env.VITE_GEMINI_API_KEY || process.env.API_KEY) : null;
-  // Only check localStorage in the browser environment
-  const storedKey = typeof localStorage !== 'undefined' ? localStorage.getItem('GEMINI_API_KEY') : null;
-  return !!(envKey || storedKey);
+
+/**
+ * Check if Gemini is configured via proxy server
+ */
+export const hasApiKey = async (): Promise<boolean> => {
+  // Check if proxy has the key configured
+  const { isGeminiProxyAvailable } = await getGeminiProxyClient();
+  return await isGeminiProxyAvailable();
 };
 
-const createClient = async () => {
-  // SECURITY FIX: Use secure apiKeyManager for encrypted storage
-  const { apiKeyManager } = await import('./apiKeyManager');
+/**
+ * Generate content via proxy server (secure - no client-side API keys)
+ */
+async function generateViaProxyWrapper(params: {
+  model: string;
+  contents: any;
+  config?: any;
+}): Promise<{ text: string; candidates?: any[] }> {
+  // Check if proxy is available
+  const { generateViaProxy, isGeminiProxyAvailable } = await getGeminiProxyClient();
+  const proxyAvailable = await isGeminiProxyAvailable();
   
-  let apiKey: string | null = null;
-
-  // Priority 1: Secure storage (if initialized)
-  if (apiKeyManager.isInitialized() && apiKeyManager.isSecure()) {
-    apiKey = await apiKeyManager.getKey('gemini');
-    if (apiKey) {
-      console.log('[GEMINI] Using API key from secure storage');
-    }
+  if (!proxyAvailable) {
+    throw new Error(
+      "Gemini proxy not available. Please ensure:\n" +
+      "1. The proxy server is running (npm run proxy)\n" +
+      "2. Your API key is configured in Settings > API & Security"
+    );
   }
-
-  // Priority 2: Environment variables
-  if (!apiKey) {
-    apiKey = (import.meta.env?.VITE_GEMINI_API_KEY as string | undefined) || 
-             (import.meta.env?.VITE_API_KEY as string | undefined) || 
-             (typeof process !== 'undefined' ? process.env.VITE_GEMINI_API_KEY : null) || null;
-    if (apiKey) {
-      console.log('[GEMINI] Using API key from environment');
-    }
+  
+  const response = await generateViaProxy({
+    model: params.model,
+    contents: Array.isArray(params.contents) ? params.contents : [{ parts: [{ text: params.contents }] }],
+    config: params.config
+  });
+  
+  if (!response.success) {
+    throw new Error(response.error || 'Proxy request failed');
   }
-
-  // Priority 3: Legacy storage (temporary - will be removed)
-  if (!apiKey && typeof localStorage !== 'undefined') {
-    const legacyKey = localStorage.getItem('GEMINI_API_KEY');
-    if (legacyKey) {
-      try {
-        apiKey = atob(legacyKey);
-        console.warn('[GEMINI] WARNING: Using legacy unencrypted API key. Please re-save in Settings for security.');
-      } catch {
-        // Invalid base64
-      }
-    }
-  }
-
-  if (!apiKey) {
-    throw new Error("API Key missing. Please set your Gemini API key in Settings > API & Security.");
-  }
-
-  // Trim whitespace and validate key format
-  apiKey = apiKey.trim();
-
-  if (apiKey.length < 10) {
-    throw new Error("API Key appears to be invalid (too short)");
-  }
-
-  // Validate key format (Google API keys typically start with "AI" followed by letters and numbers)
-  if (!/^AIza[a-zA-Z0-9_-]{30,}$/.test(apiKey)) {
-    console.warn("API key format appears unusual - verify it's correct");
-  }
-
-  // Log key prefix for debugging (don't log full key)
-  console.log(`[GEMINI] API key: ${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)} (${apiKey.length} chars)`);
-
-  return new GoogleGenAI({ apiKey });
-};
+  
+  return { text: response.text || '', candidates: response.candidates };
+}
 
 export interface ParsedIntent {
-  type: string;
+  type: IntentType;
   confidence: number;
   complexity: number;
   suggestedProvider: string;
@@ -199,8 +180,9 @@ export const analyzeIntent = async (input: string): Promise<ParsedIntent> => {
 
 async function analyzeIntentInternal(input: string): Promise<ParsedIntent> {
   const currentMode = providerManager.getMode();
-  const hasValidApiKey = hasApiKey();
-  
+  const { isGeminiProxyAvailable } = await getGeminiProxyClient();
+  const proxyAvailable = await isGeminiProxyAvailable();
+
   // === LOCAL INTENT CLASSIFICATION (FREE) ===
   // Try local classification first to reduce API calls
   const localResult = localIntentClassifier.classify(input);
@@ -275,7 +257,7 @@ Rules:
       const lower = input.toLowerCase();
       if (lower.includes('save') || lower.includes('remind') || lower.includes('remember')) {
          return {
-           type: 'MEMORY_WRITE',
+           type: IntentType.MEMORY_WRITE,
            confidence: 0.8,
            complexity: 0.2,
            suggestedProvider: 'OLLAMA',
@@ -285,7 +267,7 @@ Rules:
       }
       if (lower.includes('what') && (lower.includes('did') || lower.includes('stored') || lower.includes('location') || lower.includes('where'))) {
          return {
-          type: 'MEMORY_READ',
+          type: IntentType.MEMORY_READ,
            confidence: 0.8,
            complexity: 0.2,
            suggestedProvider: 'OLLAMA',
@@ -297,7 +279,7 @@ Rules:
           lower.includes('run') || lower.includes('activate') || lower.includes('initiate') ||
           lower.includes('enable') || lower.includes('reset') || lower.includes('optimize')) {
          return {
-           type: 'COMMAND',
+           type: IntentType.COMMAND,
            confidence: 0.9,
            complexity: 0.1,
            suggestedProvider: 'OLLAMA',
@@ -306,7 +288,7 @@ Rules:
          };
       }
       return {
-        type: 'QUERY',
+        type: IntentType.QUERY,
         confidence: 0.5,
         complexity: 0.5,
         suggestedProvider: 'OLLAMA',
@@ -316,8 +298,8 @@ Rules:
     }
   }
 
-  // If no API key, also try Ollama for intent analysis
-  if (!hasValidApiKey) {
+  // If no API key available via proxy, also try Ollama for intent analysis
+  if (!proxyAvailable) {
     try {
       // Try to use Ollama for intent analysis
       const response = await providerManager.route({
@@ -354,156 +336,191 @@ Rules:
       // Validate the structure of the parsed object
       if (isValidParsedIntent(parsed)) {
         return parsed;
-      } else {
-        console.warn("Invalid intent structure received from Ollama:", parsed);
-        throw new Error("Invalid response structure from AI provider");
       }
-    } catch (error) {
-      console.warn("Ollama intent analysis failed, falling back to heuristic:", error);
-      // Fallback to heuristic if Ollama fails
-      const lower = input.toLowerCase();
-      if (lower.includes('save') || lower.includes('remind') || lower.includes('remember')) {
-         return {
-           type: 'MEMORY_WRITE',
-           confidence: 0.8,
-           complexity: 0.2,
-           suggestedProvider: 'OLLAMA',
-           entities: input.split(' ').slice(1),
-           reasoning: "Local heuristic detected memory keyword."
-         };
-      }
-      if (lower.includes('what') && (lower.includes('did') || lower.includes('stored') || lower.includes('location') || lower.includes('where'))) {
-         return {
-          type: 'MEMORY_READ',
-           confidence: 0.8,
-           complexity: 0.2,
-           suggestedProvider: 'OLLAMA',
-           entities: [],
-           reasoning: "Local heuristic detected memory query."
-         };
-      }
-      if (lower.includes('turn') || lower.includes('play') || lower.includes('stop') ||
-          lower.includes('run') || lower.includes('activate') || lower.includes('initiate') ||
-          lower.includes('enable') || lower.includes('reset') || lower.includes('optimize')) {
-         return {
-           type: 'COMMAND',
-           confidence: 0.9,
-           complexity: 0.1,
-           suggestedProvider: 'OLLAMA',
-           entities: [],
-           reasoning: "Local heuristic detected command verb."
-         };
-      }
-      return {
-        type: 'QUERY',
-        confidence: 0.5,
-        complexity: 0.5,
-        suggestedProvider: 'OLLAMA',
-        entities: [],
-        reasoning: "Defaulting to local query."
-      };
+    } catch {
+      // Ollama not available, fall through to default
     }
-  }
-
-  // === CHECK RATE LIMITS BEFORE USING GEMINI ===
-  const rateLimitCheck = geminiRateLimiter.canMakeRequest(500);
-  if (!rateLimitCheck.allowed) {
-    console.log(`[INTENT] Gemini rate limited: ${rateLimitCheck.reason}. Using local classification.`);
-    // Enhance local result with a note about rate limiting
-    const enhancedLocal = {
-      ...localResult,
-      reasoning: `${localResult.reasoning} (Gemini rate limited: ${rateLimitCheck.reason})`
+    
+    // Return a default QUERY intent if no AI is available
+    return {
+      type: IntentType.QUERY,
+      confidence: 0.5,
+      complexity: 0.5,
+      suggestedProvider: 'OLLAMA',
+      entities: [],
+      reasoning: "No AI provider available - defaulting to query."
     };
-    intentCache.set(input, enhancedLocal);
-    return enhancedLocal;
   }
 
-  // Use Gemini when available and not forced to Ollama
-  try {
-    const ai = await createClient(); // Updated to await the async function
-    const config = providerManager.getAIConfig();
+  // === GEMINI INTENT ANALYSIS (uses API credits) ===
+  // Apply rate limiting
+  const rateLimitResult = geminiRateLimiter.canMakeRequest();
+  if (!rateLimitResult.allowed) {
+    console.warn(`[INTENT] Rate limited: ${rateLimitResult.reason}, using local classification`);
+    return localResult;
+  }
 
-    const response = await ai.models.generateContent({
-      model: config.model,
-      contents: input,
+  // Check if request is cacheable before making it
+  const cached = intentCache.get(input);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    console.log('[INTENT] Using Gemini API for intent analysis');
+    const { generateViaProxy } = await getGeminiProxyClient();
+    
+    const response = await generateViaProxyWrapper({
+      model: 'gemini-1.5-flash-8b',
+      contents: `Analyze this input and respond in exactly this JSON format:
+{
+  "type": "QUERY" | "COMMAND" | "MEMORY_READ" | "MEMORY_WRITE" | "VISION_ANALYSIS",
+  "confidence": number (0-1),
+  "complexity": number (0-1),
+  "suggestedProvider": "GEMINI" | "OLLAMA" | "ROUTED",
+  "entities": [array of extracted keywords],
+  "reasoning": "Short string explaining why"
+}
+
+Input: ${input}
+
+Rules:
+- If the user asks for factual info, coding, creative writing -> QUERY -> GEMINI
+- If the user asks to change hardware state (lights, volume, launch app) -> COMMAND -> ROUTED
+- If the user references past conversations, stored information, or asks about remembered details (like location, preferences, facts) -> MEMORY_READ -> GEMINI
+- If the user asks to save something for later -> MEMORY_WRITE -> GEMINI
+- If the user asks to "look at", "see", "describe this", "what is this", "scan this" -> VISION_ANALYSIS -> GEMINI
+- Complexity > 0.7 or requires multi-step reasoning -> GEMINI
+- Simple queries or casual conversation -> OLLAMA
+- Complexity should reflect the difficulty of the request.`,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION_KERNEL,
+        systemInstruction: "You are an intent classifier. Respond ONLY with the requested JSON format. No other text.",
         responseMimeType: "application/json",
-        temperature: 0.1,
-      }
+      },
     });
 
-    // Track this API call
-    geminiRateLimiter.trackRequest(500);
+    // Try to parse the JSON response
+    const jsonString = response.text
+      .replace(/```json/g, '')
+      .replace(/```/g, '')
+      .trim();
 
-    const text = response.text;
-    if (!text) throw new Error("No response from Gemini");
-    const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const result = JSON.parse(cleanText) as ParsedIntent;
+    const parsed = JSON.parse(jsonString);
 
-    // Cache successful result
-    intentCache.set(input, result);
-    return result;
-  } catch (error: unknown) {
-    console.error("Gemini Intent Parsing Error:", error);
-
-    // Check if it's an invalid API key error - log but still fallback
-    const errorMessage = (error as any)?.error?.message || (error as Error)?.message || '';
-    if (errorMessage.includes("API key not valid") || (error as any)?.error?.code === 400) {
-      console.warn("[INTENT] Invalid API key, falling back to local heuristics");
+    // Validate the structure of the parsed object
+    if (isValidParsedIntent(parsed)) {
+      // Cache the result
+      intentCache.set(input, parsed);
+      return parsed;
+    } else {
+      console.warn("Invalid intent structure received from Gemini:", parsed);
+      throw new Error("Invalid response structure from AI provider");
     }
 
-    // Graceful degradation: Use local heuristics when API fails
-    console.warn("[INTENT] Gemini failed, falling back to local heuristics");
-    const result = analyzeIntentWithHeuristics(input);
-
-    // Cache the heuristic result too (but with lower confidence)
-    intentCache.set(input, result);
-    return result;
+  } catch (error) {
+    console.error("Intent analysis error:", error);
+    // Fallback to local result on error
+    return localResult;
   }
-};
-
-/**
- * Local heuristic-based intent analysis (no API required)
- * Used as fallback when Gemini is unavailable
- * Now delegates to the more sophisticated LocalIntentClassifier
- */
-function analyzeIntentWithHeuristics(input: string): ParsedIntent {
-  // Use the new local classifier for consistent results
-  const result = localIntentClassifier.classify(input);
-  
-  // Add note that this was a fallback
-  return {
-    ...result,
-    reasoning: `${result.reasoning} (fallback from Gemini failure)`
-  };
 }
 
-/**
- * Generate a response using Gemini (alias for analyzeIntent for compatibility)
- */
-export const generateResponse = async (input: string, options?: { conversationId?: string }): Promise<string> => {
-  const intent = await analyzeIntent(input);
-  return intent.type;
-};
-
-/**
- * Validates if the parsed object has the correct structure for ParsedIntent
- */
-function isValidParsedIntent(obj: unknown): obj is ParsedIntent {
-  if (typeof obj !== 'object' || obj === null) {
-    return false;
-  }
-  const record = obj as Record<string, unknown>;
+// Type guard to validate ParsedIntent structure
+function isValidParsedIntent(obj: any): obj is ParsedIntent {
   return (
-    typeof record.type === 'string' &&
-    ['QUERY', 'COMMAND', 'MEMORY_READ', 'MEMORY_WRITE', 'VISION_ANALYSIS', 'UNKNOWN'].includes(record.type) &&
-    typeof record.confidence === 'number' &&
-    record.confidence >= 0 && record.confidence <= 1 &&
-    typeof record.complexity === 'number' &&
-    record.complexity >= 0 && record.complexity <= 1 &&
-    typeof record.suggestedProvider === 'string' &&
-    Array.isArray(record.entities) &&
-    typeof record.reasoning === 'string'
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof obj.type === 'string' &&
+    typeof obj.confidence === 'number' &&
+    typeof obj.complexity === 'number' &&
+    typeof obj.suggestedProvider === 'string' &&
+    Array.isArray(obj.entities) &&
+    typeof obj.reasoning === 'string'
   );
 }
+
+// Keep the isValidParsedIntent function internal, but export if needed for testing
+export { isValidParsedIntent };
+
+interface GenerateParams {
+  prompt: string;
+  systemInstruction?: string;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+}
+
+export async function generateContent({
+  prompt,
+  systemInstruction = SYSTEM_INSTRUCTION_KERNEL,
+  model = "gemini-1.5-flash",
+  temperature = 0.7,
+  maxTokens = 2048,
+}: GenerateParams): Promise<string> {
+  const response = await generateViaProxyWrapper({
+    model,
+    contents: prompt,
+    config: {
+      systemInstruction,
+      temperature,
+      maxOutputTokens: maxTokens,
+    },
+  });
+
+  return response.text || "";
+}
+
+export async function* streamContent({
+  prompt,
+  systemInstruction = SYSTEM_INSTRUCTION_KERNEL,
+  model = "gemini-1.5-flash",
+  temperature = 0.7,
+}: GenerateParams): AsyncGenerator<string, void, unknown> {
+  // Check if proxy is available
+  const { streamViaProxy, isGeminiProxyAvailable } = await getGeminiProxyClient();
+  const proxyAvailable = await isGeminiProxyAvailable();
+  
+  if (!proxyAvailable) {
+    throw new Error(
+      "Gemini proxy not available. Please ensure:\n" +
+      "1. The proxy server is running (npm run proxy)\n" +
+      "2. Your API key is configured in Settings > API & Security"
+    );
+  }
+  
+  const stream = streamViaProxy({
+    model,
+    contents: [{ parts: [{ text: prompt }] }],
+    config: {
+      systemInstruction,
+      temperature,
+    },
+  });
+
+  for await (const chunk of stream) {
+    // streamViaProxy yields strings directly
+    yield chunk as string;
+  }
+}
+
+/**
+ * Generate a response using Gemini (used by kernelApi)
+ * This is the main entry point for AI generation
+ */
+export async function generateResponse(
+  prompt: string, 
+  options?: { conversationId?: string; systemInstruction?: string }
+): Promise<string> {
+  return generateContent({
+    prompt,
+    systemInstruction: options?.systemInstruction || SYSTEM_INSTRUCTION_KERNEL,
+    model: "gemini-1.5-flash",
+    temperature: 0.7,
+  });
+}
+
+// Simple health check - returns true if proxy has Gemini configured
+export const isGeminiHealthy = async (): Promise<boolean> => {
+  const { isGeminiProxyAvailable } = await getGeminiProxyClient();
+  return await isGeminiProxyAvailable();
+};

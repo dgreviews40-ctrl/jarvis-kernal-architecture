@@ -365,6 +365,9 @@ export const FEATURES = {
   
   /** Enable debug mode */
   ENABLE_DEBUG: import.meta.env?.DEV || false,
+  
+  /** Enable LoRA fine-tuning */
+  ENABLE_LORA_TRAINING: true,
 } as const;
 
 // ==================== AUDIO ====================
@@ -634,6 +637,52 @@ export const AGENT = {
   COMPLEXITY_THRESHOLD: 0.7,
 } as const;
 
+// ==================== LoRA Fine-Tuning ====================
+
+export const LORA = {
+  /** Default LoRA rank (lower = smaller adapter, faster training) */
+  DEFAULT_R: 16,
+  
+  /** Default LoRA alpha (scaling factor) */
+  DEFAULT_ALPHA: 32,
+  
+  /** Default training epochs */
+  DEFAULT_EPOCHS: 3,
+  
+  /** Default batch size */
+  DEFAULT_BATCH_SIZE: 4,
+  
+  /** Default learning rate */
+  DEFAULT_LEARNING_RATE: 0.0002,
+  
+  /** Maximum adapters to keep */
+  MAX_ADAPTERS: 10,
+  
+  /** Maximum training examples per job */
+  MAX_TRAINING_EXAMPLES: 1000,
+  
+  /** Quick training epochs (for fast personalization) */
+  QUICK_TRAIN_EPOCHS: 2,
+  
+  /** Quick training LoRA rank */
+  QUICK_TRAIN_R: 8,
+  
+  /** Server port */
+  SERVER_PORT: 5005,
+  
+  /** Server URL */
+  SERVER_URL: 'http://localhost:5005',
+  
+  /** Default base model */
+  DEFAULT_BASE_MODEL: 'unsloth/Llama-3.2-1B-Instruct',
+  
+  /** Health check interval (ms) */
+  HEALTH_CHECK_INTERVAL_MS: 10000,
+  
+  /** Training status poll interval (ms) */
+  TRAINING_POLL_INTERVAL_MS: 5000,
+} as const;
+
 // ==================== EXPORT ALL ====================
 
 export const CONFIG = {
@@ -647,6 +696,7 @@ export const CONFIG = {
   AI_MODELS,
   STORAGE_KEYS,
   UI,
+  LORA,
 } as const;
 
 export default CONFIG;

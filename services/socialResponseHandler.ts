@@ -640,13 +640,12 @@ export class SocialResponseHandler {
    */
   private async storePersonalUpdate(update: string): Promise<void> {
     try {
-      await emotionalMemory.recordMoment({
-        type: 'milestone',
-        content: update.substring(0, 200), // Truncate for storage
-        intensity: 0.6,
-        topics: ['personal_update', 'activity'],
-        notes: { source: 'user_update', timestamp: Date.now() }
-      });
+      await emotionalMemory.recordMoment(
+        'milestone',
+        update.substring(0, 200), // Truncate for storage
+        { valence: 'positive', intensity: 0.6, primaryEmotion: 'milestone' },
+        0.6
+      );
     } catch {
       // Silently fail - memory storage is optional
     }

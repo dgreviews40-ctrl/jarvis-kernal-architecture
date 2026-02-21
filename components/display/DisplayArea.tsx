@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { X, Download, Settings, Brain } from 'lucide-react';
+import { X, Download, Settings, Brain, Copy, Check } from 'lucide-react';
 import { ProcessorState, VoiceState, DisplayMode, DisplayContent } from '../../types';
 import { JarvisNeuralNetwork } from '../JarvisNeuralNetwork';
 
@@ -98,6 +98,203 @@ const MapViewer: React.FC<{ content: DisplayContent['map'] }> = ({ content }) =>
         </div>
       </div>
     </div>
+  );
+};
+
+// Text/Markdown Viewer Component with Copy Functionality
+const TextViewer: React.FC<{ content: DisplayContent['text'] }> = ({ content }) => {
+  const [copied, setCopied] = useState(false);
+  
+  if (!content) return null;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Simple markdown table parser
+  const renderMarkdown = (text: string): React.ReactNode => {
+    const lines = text.split('\n');
+    const elements: React.ReactNode[] = [];
+    let inTable = false;
+    let tableRows: string[] = [];
+
+    const flushTable = () => {
+      if (tableRows.length === 0) return;
+      
+      const headerLine = tableRows[0];
+      const separatorLine = tableRows[1];
+      const bodyLines = tableRows.slice(2);
+      
+      // Parse header
+      const headers = headerLine.split('|').map(h => h.trim()).filter(h => h);
+      
+      elements.push(
+        <table key={`table-${elements.length}`} className="w-full text-xs border-collapse my-3">
+          <thead>
+            <tr className="bg-cyan-900/30">
+              {headers.map((header, i) => (
+                <th key={i} className="border border-cyan-700/30 px-2 py-1 text-cyan-300 text-left font-semibold">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bodyLines.map((row, rowIdx) => {
+              const cells = row.split('|').map(c => c.trim()).filter(c => c);
+              return (
+                <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-black/20' : 'bg-black/10'}>
+                  {cells.map((cell, cellIdx) => (
+                    <td key={cellIdx} className="border border-cyan-700/20 px-2 py-1 text-cyan-100/80">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      );
+      
+      tableRows = [];
+      inTable = false;
+    };
+
+    lines.forEach((line, idx) => {
+      const trimmedLine = line.trim();
+      
+      // Check if this is a table row (starts with | or contains |---|)
+      if (trimmedLine.startsWith('|') && trimmedLine.includes('|', 1)) {
+        tableRows.push(trimmedLine);
+        inTable = true;
+      } else {
+        if (inTable) {
+          flushTable();
+        }
+        
+        // Render as regular text with markdown-like formatting
+        if (trimmedLine.startsWith('# ')) {
+          elements.push(
+            <h1 key={idx} className="text-lg font-bold text-cyan-400 mt-4 mb-2">
+              {trimmedLine.substring(2)}
+            </h1>
+          );
+        } else if (trimmedLine.startsWith('## ')) {
+          elements.push(
+            <h2 key={idx} className="text-md font-bold text-cyan-300 mt-3 mb-2">
+              {trimmedLine.substring(3)}
+            </h2>
+          );
+        } else if (trimmedLine.startsWith('### ')) {
+          elements.push(
+            <h3 key={idx} className="text-sm font-bold text-cyan-200 mt-2 mb-1">
+              {trimmedLine.substring(4)}
+            </h3>
+          );
+        } else if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ')) {
+          elements.push(
+            <li key={idx} className="text-xs text-cyan-100/80 ml-4 my-1">
+              {trimmedLine.substring(2)}
+            </li>
+          );
+        } else if (trimmedLine.match(/^\*\*.*\*\*$/)) {
+          // Bold text **text**
+          elements.push(
+            <p key={idx} className="text-xs text-cyan-100/90 my-1 font-semibold">
+              {trimmedLine.replace(/\*\*/g, '')}
+            </p>
+          );
+        } else if (trimmedLine) {
+          elements.push(
+            <p key={idx} className="text-xs text-cyan-100/80 my-1 leading-relaxed">
+              {trimmedLine}
+            </p>
+          );
+        } else {
+          elements.push(<div key={idx} className="h-2" />);
+        }
+      }
+    });
+
+    if (inTable) {
+      flushTable();
+    }
+
+    return elements;
+  };
+
+  return (
+    <div className="w-full h-full flex flex-col bg-[#0a1628]/95">
+      {/* Copy Button */}
+      {content.copyable !== false && (
+        <div className="flex justify-end p-2 border-b border-cyan-900/30 bg-black/30">
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-2 px-3 py-1.5 bg-cyan-900/40 hover:bg-cyan-800/50 border border-cyan-700/30 rounded text-xs text-cyan-300 transition-all"
+          >
+            {copied ? (
+              <>
+                <Check size={14} className="text-green-400" />
+                <span className="text-green-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy size={14} />
+                <span>Copy to Clipboard</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+      
+      {/* Content */}
+      <div className="flex-1 overflow-auto p-4 font-mono">
+        {content.format === 'markdown' ? (
+          <div className="max-w-none">
+            {renderMarkdown(content.content)}
+          </div>
+        ) : (
+          <pre className="whitespace-pre-wrap text-xs text-cyan-100/80 leading-relaxed">
+            {content.content}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Copy Button Component for Text Content
+const CopyButton: React.FC<{ content: string }> = ({ content }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-4 right-14 p-2 bg-black/70 hover:bg-cyan-900/50 border border-cyan-900/30 hover:border-cyan-500/50 rounded transition-all group z-20"
+      title={copied ? 'Copied!' : 'Copy to Clipboard'}
+    >
+      {copied ? (
+        <Check size={16} className="text-green-400" />
+      ) : (
+        <Copy size={16} className="text-cyan-500 group-hover:text-cyan-300" />
+      )}
+    </button>
   );
 };
 
@@ -282,6 +479,8 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         return <WebViewer key={contentKey} content={displayContent?.web} />;
       case 'MAP':
         return <MapViewer key={contentKey} content={displayContent?.map} />;
+      case 'TEXT':
+        return <TextViewer key={contentKey} content={displayContent?.text} />;
       case 'CUSTOM':
         return (displayContent?.custom?.component as React.ReactNode) || null;
       case 'NEURAL':
@@ -387,7 +586,7 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         </div>
       )}
 
-      {/* Download Button */}
+      {/* Download Button for Images/Schematics */}
       {showingContent && (displayMode === 'IMAGE' || displayMode === 'SCHEMATIC') && displayContent && (
         <button
           onClick={() => {
@@ -418,6 +617,11 @@ export const DisplayArea: React.FC<DisplayAreaProps> = ({
         >
           <Download size={16} className="text-cyan-500 group-hover:text-cyan-300" />
         </button>
+      )}
+
+      {/* Copy Button for Text Content */}
+      {showingContent && displayMode === 'TEXT' && displayContent?.text && (
+        <CopyButton content={displayContent.text.content} />
       )}
 
       {/* Close/Clear Button */}

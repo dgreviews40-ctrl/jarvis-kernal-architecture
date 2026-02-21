@@ -502,6 +502,9 @@ Or {"toolId": null} if no tool matches.
       // Update context with result
       task.context.accumulatedData[taskId] = result;
       
+      // Display result on main dashboard if it's substantial
+      this.displayResultOnDashboard(task, result);
+      
       this.emitEvent({ type: 'task_completed', goalId, taskId, data: { result }, timestamp: Date.now() });
       logger.log('AGENT', `Task completed: ${taskId}`, 'success');
     } catch (error) {
@@ -544,7 +547,40 @@ Or {"toolId": null} if no tool matches.
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join('\n');
 
-    const prompt = `
+    const isContentGenerationTask = /\b(csv|list|table|generate.*content|create.*file|plant|garden|data)\b/i.test(task.description);
+
+    const prompt = isContentGenerationTask ? `
+OUTPUT THE RAW DATA TABLE. DO NOT ADD ANY EXPLANATION OR LINKS.
+
+Task: ${task.description}
+
+Context from previous tasks:
+${context}
+
+ABSOLUTE REQUIREMENTS:
+1. OUTPUT ONLY THE MARKDOWN TABLE - no intro, no outro, no explanations
+2. NO download links, NO example.com links, NO http links
+3. NO "click here", NO "download", NO "file", NO "link"
+4. NO checkmarks, NO status messages like "Download link test:"
+5. Start with | and end with the last table row
+6. Use proper markdown table format with | separators
+
+FORBIDDEN - NEVER DO THESE:
+- "Here's the ready-to-download file"
+- "[Link text](https://...)"
+- "Click the link"
+- "✅ Download link test"
+- Any URLs or links
+
+CORRECT OUTPUT FORMAT:
+| Plant | Type | Planting Date |
+|-------|------|---------------|
+| Peas | Vegetable | Early Feb |
+| Lettuce | Vegetable | Mid Feb |
+
+WRONG OUTPUT (NEVER DO THIS):
+"Here is your file: [download](https://example.com/file.csv)"
+` : `
 Execute the following task and provide the result.
 
 Task: ${task.description}
@@ -555,9 +591,13 @@ ${context}
 Provide a clear, actionable result.
 `;
 
+    const systemInstruction = isContentGenerationTask 
+      ? 'You output ONLY markdown tables. NO links. NO download buttons. NO explanations. NO intro text. Start with | immediately. Output raw table data only.'
+      : 'You are JARVIS executing a task. Be concise and accurate.';
+
     const response = await providerManager.route({
       prompt,
-      systemInstruction: 'You are JARVIS executing a task. Be concise and accurate.',
+      systemInstruction,
     }, AIProvider.GEMINI);
 
     return response.text;
@@ -591,20 +631,42 @@ Provide a clear, actionable result.
    * Register default tools
    */
   private registerDefaultTools(): void {
-    // Web search tool
+    // Web search tool - uses actual search service
     this.registerTool({
       id: 'web_search',
       name: 'Web Search',
-      description: 'Search the internet for information',
+      description: 'Search the internet for information using DuckDuckGo',
       parameters: [
         { name: 'query', type: 'string', description: 'Search query', required: true },
         { name: 'maxResults', type: 'number', description: 'Maximum results', required: false, default: 5 },
       ],
       execute: async (params) => {
-        // Implementation would use actual search API
-        return { results: [`Simulated search for: ${params.query}`] };
+        try {
+          const { searchService } = await import('./search');
+          const results = await searchService.search(params.query as string);
+          
+          // Format results for the agent
+          const formattedResults = results.results.map(r => ({
+            title: r.title,
+            snippet: r.snippet,
+            url: r.url
+          })).slice(0, params.maxResults as number || 5);
+          
+          return { 
+            query: params.query,
+            results: formattedResults,
+            resultCount: formattedResults.length
+          };
+        } catch (error) {
+          logger.log('AGENT', `Web search failed: ${(error as Error).message}`, 'error');
+          return { 
+            error: 'Search failed', 
+            message: (error as Error).message,
+            query: params.query 
+          };
+        }
       },
-      estimateDuration: () => 3000,
+      estimateDuration: () => 5000,
     });
 
     // Memory store tool
@@ -686,6 +748,49 @@ Provide a clear, actionable result.
       },
       estimateDuration: () => 500,
     });
+
+    // CSV/Text Generator Tool - Displays content on dashboard
+    this.registerTool({
+      id: 'generate_text',
+      name: 'Generate Text/CSV Content',
+      description: 'Generate formatted text, CSV, or markdown content and display it on the dashboard with copy functionality. Use this instead of external file uploads.',
+      parameters: [
+        { name: 'title', type: 'string', description: 'Title for the content', required: true },
+        { name: 'content', type: 'string', description: 'The ACTUAL content to display - raw CSV data or markdown table, NOT a description', required: true },
+        { name: 'format', type: 'string', description: 'Format type', required: false, default: 'markdown' },
+      ],
+      execute: async (params) => {
+        const title = params.title as string;
+        let content = params.content as string;
+        const format = (params.format as string) || 'markdown';
+        
+        // If content looks like it contains instructions instead of data, fix it
+        if (content.match(/\b(here is|you can|i have created|download|click|link)\b/i) && !content.includes('|')) {
+          return {
+            error: true,
+            message: 'Please provide the ACTUAL data table, not instructions. Output the CSV or markdown table directly.'
+          };
+        }
+        
+        // Convert CSV to markdown if needed
+        if (format === 'csv' || (content.includes(',') && !content.includes('|'))) {
+          content = this.convertCSVToMarkdownTable(content);
+        }
+        
+        // Display on dashboard immediately
+        this.displayOnDashboard(title, content, 'markdown');
+        
+        return { 
+          displayed: true, 
+          title,
+          format: 'markdown',
+          length: content.length,
+          content: content.substring(0, 500) + (content.length > 500 ? '...' : ''),
+          message: `Content displayed on dashboard. Click the copy button to copy the data.`
+        };
+      },
+      estimateDuration: () => 500,
+    });
   }
 
   // ==================== PROGRESS TRACKING ====================
@@ -747,6 +852,164 @@ Provide a clear, actionable result.
     });
   }
 
+  /**
+   * Display task result on the main dashboard
+   * This shows agent-generated content in the center display area
+   */
+  private displayResultOnDashboard(task: AgentTask, result: unknown): void {
+    // Only display results for certain task types or if result is substantial
+    let resultText = '';
+    let title = task.description.substring(0, 50) + (task.description.length > 50 ? '...' : '');
+    
+    // Handle different result types
+    if (typeof result === 'string') {
+      resultText = result;
+    } else if (result && typeof result === 'object') {
+      // If result has a message or content field, use that
+      const resultObj = result as Record<string, unknown>;
+      if (resultObj.message && typeof resultObj.message === 'string') {
+        resultText = resultObj.message;
+      } else if (resultObj.content && typeof resultObj.content === 'string') {
+        resultText = resultObj.content;
+      } else {
+        resultText = JSON.stringify(result, null, 2);
+      }
+      
+      // Use title from result if available
+      if (resultObj.title && typeof resultObj.title === 'string') {
+        title = resultObj.title;
+      }
+    }
+    
+    // Only show if result is substantial (more than 100 chars)
+    if (resultText.length < 100) return;
+    
+    // Check if result looks like a markdown table or structured content
+    const hasMarkdownTable = resultText.includes('|') && resultText.includes('---');
+    const hasMarkdownHeaders = resultText.includes('# ') || resultText.includes('## ');
+    const hasCSVFormat = resultText.includes(',') && resultText.split('\n').some(line => line.split(',').length > 2);
+    const isStructured = hasMarkdownTable || hasMarkdownHeaders || hasCSVFormat;
+    
+    // Format CSV as markdown table if needed
+    let displayContent = resultText;
+    if (hasCSVFormat && !hasMarkdownTable) {
+      displayContent = this.convertCSVToMarkdownTable(resultText);
+    }
+    
+    // Always extract/clean table content - removes links, instructions, etc.
+    displayContent = this.extractTableFromText(displayContent);
+    
+    // If after cleaning we have nothing useful, return original
+    if (!displayContent || displayContent.length < 50) {
+      displayContent = resultText;
+    }
+    
+    // Import dynamically to avoid circular dependencies
+    import('../stores').then(({ setKernelDisplay }) => {
+      setKernelDisplay('TEXT', {
+        type: 'TEXT',
+        title,
+        description: `Completed by Agent System`,
+        text: {
+          content: displayContent,
+          format: isStructured ? 'markdown' : 'plain',
+          copyable: true,
+          filename: `agent-result-${task.id}.md`
+        }
+      });
+      
+      logger.log('AGENT', `Result displayed on dashboard for task: ${task.id}`, 'success');
+    }).catch(err => {
+      logger.log('AGENT', `Failed to display result: ${err.message}`, 'error');
+    });
+  }
+
+  /**
+   * Convert CSV format to Markdown table for better display
+   */
+  private convertCSVToMarkdownTable(csv: string): string {
+    const lines = csv.trim().split('\n');
+    if (lines.length < 2) return csv;
+    
+    // Parse CSV (simple - doesn't handle quoted commas)
+    const rows = lines.map(line => line.split(',').map(cell => cell.trim()));
+    
+    // Build markdown table
+    const maxCols = Math.max(...rows.map(r => r.length));
+    let mdTable = '';
+    
+    rows.forEach((row, idx) => {
+      // Pad row to max columns
+      const paddedRow = [...row, ...Array(maxCols - row.length).fill('')];
+      mdTable += '| ' + paddedRow.join(' | ') + ' |\n';
+      
+      // Add separator after header row
+      if (idx === 0) {
+        mdTable += '|' + Array(maxCols).fill('---').join('|') + '|\n';
+      }
+    });
+    
+    return mdTable;
+  }
+
+  /**
+   * Extract markdown table from text that might contain other content
+   */
+  private extractTableFromText(text: string): string {
+    // Remove any markdown links [text](url)
+    let cleaned = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    
+    // Remove any bare URLs
+    cleaned = cleaned.replace(/https?:\/\/[^\s]+/g, '');
+    
+    // Remove common instruction phrases
+    const instructionPatterns = [
+      /here[\s']s the ready-to-download file:?/gi,
+      /you can click the link[^\n]*/gi,
+      /click the link[^\n]*/gi,
+      /download link test:?[^\n]*/gi,
+      /✅[^\n]*/g,
+      /\[?plant-by-plant[^\]]*\]?/gi,
+      /\([^)]*example\.com[^)]*\)/gi,
+    ];
+    
+    for (const pattern of instructionPatterns) {
+      cleaned = cleaned.replace(pattern, '');
+    }
+    
+    // Look for markdown table pattern | ... | ... |
+    const tableRegex = /\|[^\n]+\|\n\|[-:\s|]+\|\n(?:\|[^\n]+\|\n?)+/;
+    const match = cleaned.match(tableRegex);
+    
+    if (match) {
+      return match[0].trim();
+    }
+    
+    // Look for CSV-like pattern with multiple commas
+    const lines = cleaned.split('\n');
+    const csvLines: string[] = [];
+    let inCSV = false;
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
+      
+      const commaCount = (trimmedLine.match(/,/g) || []).length;
+      if (commaCount >= 2) {
+        csvLines.push(trimmedLine);
+        inCSV = true;
+      } else if (inCSV && trimmedLine === '') {
+        break;
+      }
+    }
+    
+    if (csvLines.length >= 2) {
+      return this.convertCSVToMarkdownTable(csvLines.join('\n'));
+    }
+    
+    return cleaned.trim();
+  }
+
   // ==================== UTILITIES ====================
 
   public getGoal(goalId: string): AgentGoal | undefined {
@@ -785,6 +1048,28 @@ Provide a clear, actionable result.
 
   public getConfig(): AgentConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Display any content on the main dashboard
+   * Public API for manually showing agent results
+   */
+  public displayOnDashboard(title: string, content: string, format: 'markdown' | 'plain' = 'markdown'): void {
+    import('../stores').then(({ setKernelDisplay }) => {
+      setKernelDisplay('TEXT', {
+        type: 'TEXT',
+        title,
+        description: 'Agent System Result',
+        text: {
+          content,
+          format,
+          copyable: true,
+          filename: `agent-result-${Date.now()}.md`
+        }
+      });
+    }).catch(err => {
+      logger.log('AGENT', `Failed to display on dashboard: ${err.message}`, 'error');
+    });
   }
 
   private getSessionId(): string {

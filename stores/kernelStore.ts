@@ -100,8 +100,8 @@ export interface KernelVersion {
 export const KERNEL_VERSION: KernelVersion = {
   major: 1,
   minor: 5,
-  patch: 0,
-  build: 'v1.5.0-stable'
+  patch: 1,
+  build: 'v1.5.1-stable'
 };
 
 interface KernelState {
@@ -176,6 +176,7 @@ interface KernelState {
   // v1.4.0 Actions
   setVectorDBStats: (stats: VectorDBStats) => void;
   setContextWindowStats: (stats: ContextWindowStats) => void;
+  refreshVectorDBStats: () => Promise<void>;
 
   // v1.4.1 Actions
   setMemoryConsolidationStats: (stats: MemoryConsolidationStats) => void;

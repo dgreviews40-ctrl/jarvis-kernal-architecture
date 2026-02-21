@@ -175,7 +175,7 @@ export function getStorageStats(): { store: string; size: string; keys: number }
   const stats: { store: string; size: string; keys: number }[] = [];
   
   try {
-    const stores = ['jarvis-ui-store', 'jarvis-kernel-store', 'jarvis-logs-store', 'jarvis-plugin-store'];
+    const stores = ['jarvis-ui-store', 'jarvis-kernel-store', 'jarvis-logs-store', 'jarvis-plugin-store', 'jarvis_ha_entity_whitelist'];
     
     stores.forEach(store => {
       const data = localStorage.getItem(store);

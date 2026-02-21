@@ -164,75 +164,29 @@ export class StreamingResponseHandler {
   }
 
   /**
-   * Stream from Gemini
+   * Stream from Gemini via proxy (secure - no client-side API keys)
    */
   private async streamGemini(
     request: AIRequest,
     options: { enableTTS: boolean; ttsDelayMs: number; onChunk?: (chunk: StreamChunk) => void }
   ): Promise<void> {
-    const { GoogleGenAI } = await import('@google/genai');
+    // SECURITY FIX: Use proxy streaming instead of direct API
+    const { streamViaProxy, isGeminiProxyAvailable } = await import('./geminiProxyClient');
     
-    // Get API key from provider manager (handles decoding properly)
-    const geminiProvider = providerManager.getProvider(AIProvider.GEMINI);
-    let apiKey = (geminiProvider as any)?.getApiKey?.();
-    
-    // Fallback to env var
-    if (!apiKey && typeof process !== 'undefined') {
-      apiKey = process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || null;
+    // Check if proxy is available
+    const proxyAvailable = await isGeminiProxyAvailable();
+    if (!proxyAvailable) {
+      throw new Error('Gemini proxy not available. Please ensure the proxy server is running and API key is configured.');
     }
     
-    // Fallback to localStorage with proper decoding
-    if (!apiKey && typeof localStorage !== 'undefined') {
-      const storedKey = localStorage.getItem('GEMINI_API_KEY');
-      if (storedKey) {
-        try {
-          apiKey = atob(storedKey);
-        } catch (e) {
-          console.error('[STREAMING] Failed to decode API key from localStorage');
-        }
-      }
-    }
-    
-    if (!apiKey) {
-      throw new Error('Gemini API key not found. Please configure your API key in settings.');
-    }
-
-    const client = new GoogleGenAI({ apiKey });
     const config = providerManager.getAIConfig();
-
     const startTime = Date.now();
     let tokenCount = 0;
 
-    // Check if generateContentStream is available (v1.1+ of SDK)
-    const hasStreaming = typeof (client.models as any).generateContentStream === 'function';
-    
-    if (!hasStreaming) {
-      // Fallback to non-streaming
-      logger.log('KERNEL', 'Streaming not available in SDK, falling back to standard', 'warning');
-      const response = await client.models.generateContent({
-        model: request.images && request.images.length > 0 ? 'gemini-2.5-flash-image' : config.model,
-        contents: request.prompt,
-        config: {
-          systemInstruction: request.systemInstruction,
-          temperature: request.temperature ?? config.temperature,
-        }
-      });
-      
-      const text = response.text || '';
-      this.fullResponse = text;
-      options.onChunk?.({
-        text,
-        isComplete: true,
-        provider: AIProvider.GEMINI,
-        model: config.model
-      });
-      return;
-    }
-
-    // Create streaming request
-    const stream = await (client.models as any).generateContentStream({
+    // Use proxy streaming
+    const stream = streamViaProxy({
       model: request.images && request.images.length > 0 ? 'gemini-2.5-flash-image' : config.model,
-      contents: request.prompt,
+      contents: [{ parts: [{ text: request.prompt }] }],
       config: {
         systemInstruction: request.systemInstruction,
         temperature: request.temperature ?? config.temperature,
@@ -246,7 +200,8 @@ export class StreamingResponseHandler {
         break;
       }
 
-      const text = chunk.text || '';
+      // streamViaProxy yields strings directly
+      const text = typeof chunk === 'string' ? chunk : (chunk as any).text || '';
       if (!text) continue;
       
       // Double-check abort after getting text

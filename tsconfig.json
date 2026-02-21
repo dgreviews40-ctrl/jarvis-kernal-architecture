@@ -1,5 +1,5 @@
 {
-  "exclude": ["plugins/display/**/*", "archive/**/*", "_old_launchers/**/*", "tests/**/*", "launcher.cjs"],
+  "exclude": ["plugins/display/**/*", "archive/**/*", "_old_launchers/**/*", "tests/**/*", "launcher.cjs", "sdk/templates/**/*", "examples/**/*"],
   "compilerOptions": {
     "target": "ES2022",
     "experimentalDecorators": true,

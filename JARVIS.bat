@@ -36,6 +36,8 @@ set "PORT_WHISPER=5001"
 set "PORT_EMBEDDING=5002"
 set "PORT_GPUMON=5003"
 set "PORT_VISION=5004"
+set "PORT_LORA=5005"
+set "PORT_COMFYUI=8188"
 
 :: Create temp directory
 if not exist "temp" mkdir "temp" 2>nul
@@ -210,18 +212,77 @@ if %PYTHON_AVAILABLE%==1 (
     echo           (Skipped - Python not available)
 )
 
+:: Start LoRA Server (Python) - Optional
+echo [9/10] LoRA Training Server  - Port %PORT_LORA%
+if %PYTHON_AVAILABLE%==1 (
+    :: Check if peft is installed first
+    python -c "import peft" >nul 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        cd /d "%~dp0"
+        start /MIN "JARVIS-LORA" cmd /c "python lora_server.py > temp\lora.log 2>&1"
+        call :WaitForPortSilent %PORT_LORA% 10
+    ) else (
+        echo           [WARN] peft module not installed
+        echo                Run: pip install peft
+        echo                LoRA server will not start automatically
+    )
+) else (
+    echo           (Skipped - Python not available)
+)
+
+:: Start ComfyUI (Python) - Optional but recommended for image generation
+echo [10/11] ComfyUI Image Gen   - Port %PORT_COMFYUI%
+if %PYTHON_AVAILABLE%==1 (
+    :: Check if ComfyUI is installed
+    if exist "C:\ComfyUI\ComfyUI_windows_portable\ComfyUI\main.py" (
+        echo           [OK] ComfyUI found at C:\ComfyUI
+        start /MIN "JARVIS-COMFYUI" cmd /c "cd /d C:\ComfyUI\ComfyUI_windows_portable && .\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build --normalvram --dont-upcast-attention --enable-cors-header > %CD%\temp\comfyui.log 2>&1"
+        call :WaitForPort %PORT_COMFYUI% 30
+    ) else (
+        echo           [INFO] ComfyUI not found at C:\ComfyUI
+        echo                Install ComfyUI for AI image generation
+        echo                See: docs/LOCAL_IMAGE_GENERATION.md
+    )
+) else (
+    echo           (Skipped - Python not available)
+)
+
 :: ============================================================================
 :: START MAIN VITE SERVER (loading.html already opened above)
 :: ============================================================================
 echo.
 echo [START] Starting J.A.R.V.I.S. Dashboard...
 echo.
-echo [9/9] Vite Dev Server        - Port %PORT_VITE% (MAIN)
+echo [11/11] Vite Dev Server       - Port %PORT_VITE% (MAIN)
 echo.
 
 :: Start Vite in the background
 echo [START] Launching Vite dev server...
 start /MIN "JARVIS-VITE" cmd /c "npx vite --config vite.config.fast.ts --port %PORT_VITE%"
+
+:: Check LoRA server status
+timeout /t 2 /nobreak >nul
+netstat -an | findstr ":%PORT_LORA% " | findstr LISTENING >nul
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo [NOTE] LoRA Training Server (port %PORT_LORA%) is not running
+    echo        To start it manually, run: Start-LoRA-Visible.bat
+    echo.
+)
+
+:: Check ComfyUI status
+netstat -an | findstr ":%PORT_COMFYUI% " | findstr LISTENING >nul
+if %ERRORLEVEL% EQU 0 (
+    echo.
+    echo [OK] ComfyUI Image Generation (port %PORT_COMFYUI%) is running
+    echo        AI image generation is available!
+    echo.
+) else (
+    echo.
+    echo [NOTE] ComfyUI (port %PORT_COMFYUI%) is not running
+    echo        AI image generation will use SVG fallback
+    echo.
+)
 
 :: Display ready message
 echo ============================================================
@@ -333,11 +394,18 @@ taskkill /F /FI "WINDOWTITLE eq JARVIS-WHISPER" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq JARVIS-EMBEDDING" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq JARVIS-GPU" /T >nul 2>&1
 taskkill /F /FI "WINDOWTITLE eq JARVIS-VISION" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq JARVIS-LORA" /T >nul 2>&1
+taskkill /F /FI "WINDOWTITLE eq JARVIS-COMFYUI" /T >nul 2>&1
+
+:: Kill ComfyUI python process on port 8188
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8188 ^| findstr LISTENING') do (
+    taskkill /F /PID %%a >nul 2>&1
+)
 
 :: Kill the Chrome app window running loading.html
 taskkill /F /IM chrome.exe /FI "WINDOWTITLE eq loading.html" >nul 2>&1
 :: Kill by port
-for %%p in (3000 3100 3101 5000 5001 5002 5003 5004 9999) do (
+for %%p in (3000 3100 3101 5000 5001 5002 5003 5004 5005 8188 9999) do (
     for /f "tokens=5" %%a in ('netstat -ano ^| findstr :%%p ^| findstr LISTENING') do (
         taskkill /F /PID %%a >nul 2>&1
     )

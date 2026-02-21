@@ -16,8 +16,9 @@ export enum ProcessorState {
 
 export enum AIProvider {
   GEMINI = 'GEMINI',
-  OLLAMA = 'OLLAMA', 
-  SYSTEM = 'SYSTEM'  
+  OLLAMA = 'OLLAMA',
+  LORA = 'LORA',
+  SYSTEM = 'SYSTEM'
 }
 
 export enum IntentType {
@@ -28,6 +29,9 @@ export enum IntentType {
   VISION_ANALYSIS = 'VISION_ANALYSIS',
   TIMER_REMINDER = 'TIMER_REMINDER',
   SOCIAL = 'SOCIAL',         // Conversational/social interactions
+  SEARCH = 'SEARCH',         // Web search queries
+  ENVISION = 'ENVISION',     // Generate redesign/layout images based on current view
+  IMAGE_GENERATION = 'IMAGE_GENERATION', // General image creation (not based on current view)
   UNKNOWN = 'UNKNOWN'
 }
 
@@ -84,10 +88,12 @@ export interface LogEntry {
     // v1.5+ Offline Queue
     'QUEUE' |
     // v1.5.1+ Hardware
-    'GPU_MONITOR' | 'MODEL_MANAGER' | 'GPU_DASHBOARD';
+    'GPU_MONITOR' | 'MODEL_MANAGER' | 'GPU_DASHBOARD' |
+    // v1.5.1+ LoRA
+    'LORA_SERVICE';
   message: string;
   details?: Record<string, unknown> | string | number | boolean | object;
-  type: 'info' | 'success' | 'warning' | 'error';
+  type: 'info' | 'success' | 'warning' | 'error' | 'debug';
 }
 
 export enum CircuitState {
@@ -158,7 +164,7 @@ export interface GraphEdge {
   capability: string; 
 }
 
-export type MemoryType = 'FACT' | 'PREFERENCE' | 'EPISODE' | 'SUMMARY';
+export type MemoryType = 'FACT' | 'PREFERENCE' | 'EPISODE' | 'SUMMARY' | 'SEARCH';
 
 export interface MemoryNode {
   id: string;
@@ -190,6 +196,7 @@ export interface AIRequest {
   timeout?: number; // Request timeout in milliseconds
   model?: string; // Optional model override (for Ollama)
   conversationId?: string; // Optional conversation ID for KV-cache persistence
+  maxTokens?: number; // Maximum tokens to generate
 }
 
 export interface AIResponse {
@@ -228,6 +235,7 @@ export interface VoiceConfig {
   rate: number;     
   pitch: number;
   sttProvider: STTProvider; // Speech-to-text provider preference
+  allowInterruption?: boolean; // Allow user to interrupt JARVIS while speaking (barge-in)
 }
 
 export interface ConversationTurn {
@@ -365,7 +373,7 @@ export interface IPCMessage {
 // DISPLAY AREA TYPES - For flexible middle section
 // =====================================================
 
-export type DisplayMode = 'NEURAL' | 'SCHEMATIC' | 'MAP' | 'WEB' | 'IMAGE' | 'CUSTOM';
+export type DisplayMode = 'NEURAL' | 'SCHEMATIC' | 'MAP' | 'WEB' | 'IMAGE' | 'TEXT' | 'CUSTOM';
 
 export interface SchematicContent {
   imageUrl?: string;
@@ -398,6 +406,13 @@ export interface ImageContent {
   fit?: 'contain' | 'cover' | 'fill';
 }
 
+export interface TextContent {
+  content: string;
+  format?: 'markdown' | 'plain' | 'html';
+  copyable?: boolean;
+  filename?: string;
+}
+
 export interface DisplayContent {
   type: DisplayMode;
   title?: string;
@@ -407,6 +422,7 @@ export interface DisplayContent {
   map?: MapContent;
   web?: WebContent;
   image?: ImageContent;
+  text?: TextContent;
   custom?: {
     component: unknown; // React.ReactNode - use unknown to avoid import
   };
@@ -501,32 +517,7 @@ export interface SpeechRecognition extends EventTarget {
   stop(): void;
 }
 
-// Extend global window interface for speech recognition and audio context
-declare global {
-  interface Window {
-    SpeechRecognition: {
-      new(): SpeechRecognition;
-    };
-    webkitSpeechRecognition: {
-      new(): SpeechRecognition;
-    };
-    AudioContext: {
-      new(options?: AudioContextOptions): AudioContext;
-    };
-    webkitAudioContext: {
-      new(options?: AudioContextOptions): AudioContext;
-    };
-  }
-  
-  // Extend ImportMeta for env access
-  interface ImportMeta {
-    env?: {
-      DEV?: boolean;
-      PROD?: boolean;
-      [key: string]: unknown;
-    };
-  }
-}
+// Note: Window interface extensions are defined earlier in this file (lines 505-530)
 
 // ============================================
 // Offline Queue Types - v1.5
@@ -590,6 +581,84 @@ export interface ResilientAIOptions {
     userInput?: string;
   };
   notifyUser?: boolean;
+}
+
+// ============================================
+// LoRA Fine-Tuning Types - v1.5.2
+// ============================================
+
+export interface LoRAAdapter {
+  id: string;
+  name: string;
+  baseModel: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  trainingExamples: number;
+  status: 'initialized' | 'training' | 'ready' | 'error';
+  loss?: number;
+  adapterPath?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LoRATrainingJob {
+  id: string;
+  adapterId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  currentEpoch: number;
+  totalEpochs: number;
+  currentLoss?: number;
+  startTime?: string;
+  endTime?: string;
+  errorMessage?: string;
+  // Extended status fields from server
+  phase?: 'initializing' | 'downloading' | 'loading' | 'training' | 'saving' | 'completed';
+  phaseMessage?: string;
+  downloadProgress?: number;
+  downloadTotalMb?: number;
+  downloadCurrentMb?: number;
+}
+
+export interface LoRATrainingConfig {
+  epochs?: number;
+  batchSize?: number;
+  learningRate?: number;
+  loraR?: number;
+  loraAlpha?: number;
+}
+
+export interface LoRATrainingExample {
+  input: string;
+  output: string;
+}
+
+export interface LoRAGPUInfo {
+  name: string;
+  totalMemoryGb: number;
+  allocatedGb: number;
+  reservedGb: number;
+}
+
+export interface LoRAServerHealth {
+  status: string;
+  device: string;
+  gpu?: LoRAGPUInfo;
+  adaptersCount: number;
+  currentJob?: LoRATrainingJob;
+  avgRequestTimeMs: number;
+}
+
+export interface LoRAGenerateRequest {
+  adapterId: string;
+  prompt: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
+export interface LoRAGenerateResponse {
+  text: string;
+  timeMs: number;
 }
 
 // Extend global window interface for speech recognition and audio context

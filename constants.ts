@@ -1,7 +1,5 @@
 import { IntentType } from "./types";
 
-export const APP_NAME = "JARVIS Kernel Architect";
-
 export const SYSTEM_INSTRUCTION_KERNEL = `
 You are the JARVIS Kernel Intent Parser. Your ONLY job is to analyze the user input and output a raw JSON object describing the intent. 
 DO NOT generate conversational text. DO NOT answer the question.
@@ -62,9 +60,3 @@ Input: "What are my hobbies?" -> {"type": "MEMORY_READ", "reasoning": "Querying 
 Input: "What's the temperature?" -> {"type": "QUERY", "reasoning": "Asking for sensor data, not personal info"}
 Input: "Turn on the lights" -> {"type": "COMMAND", "reasoning": "Device control action"}
 `;
-
-export const MOCK_MEMORY = [
-  { id: 1, content: "User prefers dark mode." },
-  { id: 2, content: "Project 'Mark 3' is due on Friday." },
-  { id: 3, content: "Home automation API key is set." }
-];

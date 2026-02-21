@@ -19,22 +19,27 @@ const MOCK_MARKETPLACE: PluginListing[] = [
     manifest: {
       id: 'plugin.weather',
       name: 'Weather Station',
-      version: '1.0.0',
-      description: 'Real-time weather data with hourly/daily forecasts, air quality monitoring, and location search. Powered by Open-Meteo API.',
+      version: '1.2.0',
+      description: 'Advanced weather monitoring with real-time forecasts, Doppler radar, severe weather alerts, and proactive voice notifications. Features live precipitation maps, National Weather Service integration (US), automatic severe weather warnings with TTS announcements, air quality monitoring, and location-based alerting.',
       author: 'JARVIS',
-      engineVersion: '1.0.0',
+      engineVersion: '1.5.0',
       dependencies: [],
-      permissions: ['network:fetch'],
-      provides: [{ name: 'weather_data', version: '1.0.0', description: 'Weather data provider' }],
+      permissions: ['network:fetch', 'system:notification', 'audio:output'],
+      provides: [
+        { name: 'weather_data', version: '1.2.0', description: 'Current conditions, hourly/daily forecasts' },
+        { name: 'weather_radar', version: '1.0.0', description: 'Live Doppler radar with precipitation maps' },
+        { name: 'weather_alerts', version: '1.0.0', description: 'Severe weather alerts and warnings with voice notifications' },
+        { name: 'air_quality', version: '1.0.0', description: 'AQI monitoring and pollution data' }
+      ],
       entry: { ui: 'WeatherDashboard.tsx' },
-      tags: ['weather', 'utilities', 'monitoring'],
+      tags: ['weather', 'utilities', 'monitoring', 'alerts', 'radar', 'notifications', 'voice'],
       license: 'MIT'
     },
     downloadUrl: 'builtin://plugin.weather',
-    rating: 4.8,
-    downloadCount: 1250,
+    rating: 4.9,
+    downloadCount: 1847,
     verified: true,
-    updatedAt: '2026-02-01T00:00:00Z'
+    updatedAt: '2026-02-21T00:00:00Z'
   },
   {
     manifest: {

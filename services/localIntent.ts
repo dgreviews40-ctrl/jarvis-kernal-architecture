@@ -532,6 +532,7 @@ export class LocalIntentClassifier {
     const isDopplerRadarQuery = /\bdoppler\b/i.test(normalized) ||
                                 /\bradar\s+(map|weather|storm|rain)/i.test(normalized) ||
                                 /\bweather\s+radar\b/i.test(normalized) ||
+                                /\bcheck\s+(the\s+)?radar\b/i.test(normalized) ||
                                 (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized));
     
     if (isDopplerRadarQuery) {
@@ -627,6 +628,7 @@ export class LocalIntentClassifier {
     const isDopplerRadarQuery = /\bdoppler\b/i.test(normalized) ||
                                 /\bradar\s+(map|weather|storm|rain)/i.test(normalized) ||
                                 /\bweather\s+radar\b/i.test(normalized) ||
+                                /\bcheck\s+(the\s+)?radar\b/i.test(normalized) ||
                                 (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized));
     
     if (isDopplerRadarQuery) {

@@ -2460,17 +2460,19 @@ Please synthesize this information into a clear, helpful response. Cite sources 
         return "I'll need to know your location first. Let me open the weather dashboard where you can set your location, then I can show you the Doppler radar.";
       }
 
-      // The radar view will be opened via the UI store
-      // Publish an event to switch to radar view
-      const { eventBus } = await import('./eventBus');
-      await eventBus.publish('weather:radar', { location });
-      
-      // Also switch to weather tab if not already there
+      // Switch to weather tab FIRST, then publish radar event
       const { useUIStore } = await import('../stores');
       const uiStore = useUIStore.getState();
       if (uiStore.activeTab !== 'WEATHER') {
         uiStore.setActiveTab('WEATHER');
       }
+      
+      // Small delay to ensure WeatherDashboard is mounted before sending event
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Publish event to switch to radar view
+      const { eventBus } = await import('./eventBus');
+      await eventBus.publish('weather:radar', { location });
 
       // Provide a natural response
       const responses = [

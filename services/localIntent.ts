@@ -528,6 +528,25 @@ export class LocalIntentClassifier {
     const cached = this.getCached(normalized);
     if (cached) return cached;
     
+    // EARLY CHECK: Doppler radar - highest priority to avoid confusion with vision commands
+    const isDopplerRadarQuery = /\bdoppler\b/i.test(normalized) ||
+                                /\bradar\s+(map|weather|storm|rain)/i.test(normalized) ||
+                                /\bweather\s+radar\b/i.test(normalized) ||
+                                (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized));
+    
+    if (isDopplerRadarQuery) {
+      const result: ParsedIntent = {
+        type: IntentType.DOPPLER_RADAR,
+        confidence: 0.97,
+        complexity: 0.3,
+        suggestedProvider: 'OLLAMA',
+        entities: this.extractEntities(normalized),
+        reasoning: 'Doppler radar request detected - highest priority'
+      };
+      this.cacheResult(normalized, result);
+      return result;
+    }
+    
     // EARLY CHECK: Vision memory recall - high priority
     const isVisionMemoryQuery = /\b(look|show|find|search|check)\s+(in|at|through|for|my|the|into)?\s*(vision memory|vision memories|stored images|saved photos|image memory|visual memory)\b/i.test(normalized) ||
                                 /\b(look|see|check)\s+(for|at)?\s*(the|my|any)?\s*(image|photo|picture|snapshot|snapshots)\s+(of|from|in|my|the)?\b/i.test(normalized) ||
@@ -602,6 +621,16 @@ export class LocalIntentClassifier {
     // Always use Gemini for complex creative tasks
     if (COMPLEXITY_INDICATORS.some(w => normalized.includes(w))) {
       return true;
+    }
+    
+    // NEVER use Gemini for Doppler radar - handle locally
+    const isDopplerRadarQuery = /\bdoppler\b/i.test(normalized) ||
+                                /\bradar\s+(map|weather|storm|rain)/i.test(normalized) ||
+                                /\bweather\s+radar\b/i.test(normalized) ||
+                                (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized));
+    
+    if (isDopplerRadarQuery) {
+      return false; // Handle Doppler radar locally
     }
     
     // NEVER use Gemini for vision memory queries - handle locally

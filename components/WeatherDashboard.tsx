@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Cloud, Sun, Droplets, Wind, Gauge,
   MapPin, Search, RefreshCw, Sunrise, Sunset,
-  Loader2, Radio, X, ExternalLink
+  Loader2, Radio, X, ExternalLink, AlertTriangle, Bell
 } from 'lucide-react';
 import {
   weatherService,
@@ -10,6 +10,7 @@ import {
   WeatherLocation,
   HourlyForecast,
   DailyForecast,
+  WeatherAlert,
 } from '../services/weather';
 
 type TemperatureUnit = 'C' | 'F';
@@ -131,6 +132,9 @@ const WeatherDashboard: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('weather');
   const [radarUrl, setRadarUrl] = useState<string>('');
+  const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
+  const [showAlertDetails, setShowAlertDetails] = useState<string | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] = useState<string[]>([]);
 
   useEffect(() => {
     const unsubscribe = weatherService.subscribe(setData);
@@ -170,6 +174,32 @@ const WeatherDashboard: React.FC = () => {
       setRadarUrl(url);
     }
   }, [data?.location]);
+
+  // Check for weather alerts
+  useEffect(() => {
+    if (!data?.location) return;
+    
+    const checkAlerts = async () => {
+      // Try NWS API first (US only)
+      const alertData = await weatherService.getWeatherAlerts(
+        data.location.latitude,
+        data.location.longitude
+      );
+      
+      if (alertData) {
+        setAlerts(alertData.alerts);
+      } else {
+        // Fallback to checking current conditions
+        const { alerts: conditionAlerts } = weatherService.checkSevereWeather(data);
+        setAlerts(conditionAlerts);
+      }
+    };
+    
+    checkAlerts();
+    // Check every 5 minutes
+    const interval = setInterval(checkAlerts, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [data]);
 
   // Listen for radar event from kernel processor
   useEffect(() => {
@@ -211,6 +241,47 @@ const WeatherDashboard: React.FC = () => {
     return () => {
       clearInterval(interval);
       clearTimeout(timeout);
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Listen for new weather alerts and speak them
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    let lastSpokenAlertId = '';
+    
+    const initAlertListener = async () => {
+      const { eventBus } = await import('../services/eventBus');
+      const { voice } = await import('../services/voice');
+      
+      const unsub = eventBus.subscribe('weather:alert:new', async (event: any) => {
+        const alert = event.payload as WeatherAlert;
+        
+        // Don't speak the same alert twice
+        if (alert.id === lastSpokenAlertId) return;
+        lastSpokenAlertId = alert.id;
+        
+        // Format and speak the alert
+        const speech = weatherService.formatAlertForSpeech(alert);
+        
+        // Prepend urgency prefix for severe alerts
+        let finalSpeech = speech;
+        if (alert.severity === 'extreme') {
+          finalSpeech = `Attention: Extreme Weather Alert. ${speech}`;
+        } else if (alert.severity === 'severe') {
+          finalSpeech = `Weather Alert: ${speech}`;
+        }
+        
+        // Speak the alert
+        voice.speak(finalSpeech);
+      });
+      
+      unsubscribe = unsub;
+    };
+    
+    initAlertListener();
+    
+    return () => {
       if (unsubscribe) unsubscribe();
     };
   }, []);
@@ -503,6 +574,67 @@ const WeatherDashboard: React.FC = () => {
       {/* Weather View */}
       {viewMode === 'weather' && (
         <>
+          {/* Weather Alerts Banner */}
+          {alerts.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {alerts
+                .filter(alert => !dismissedAlerts.includes(alert.id))
+                .map(alert => (
+                <div
+                  key={alert.id}
+                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                    alert.severity === 'extreme' ? 'bg-red-900/30 border-red-500/50 hover:bg-red-900/40' :
+                    alert.severity === 'severe' ? 'bg-orange-900/30 border-orange-500/50 hover:bg-orange-900/40' :
+                    alert.severity === 'moderate' ? 'bg-yellow-900/30 border-yellow-500/50 hover:bg-yellow-900/40' :
+                    'bg-blue-900/30 border-blue-500/50 hover:bg-blue-900/40'
+                  }`}
+                  onClick={() => setShowAlertDetails(showAlertDetails === alert.id ? null : alert.id)}
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle 
+                      size={16} 
+                      className={`flex-shrink-0 mt-0.5 ${
+                        alert.severity === 'extreme' ? 'text-red-400' :
+                        alert.severity === 'severe' ? 'text-orange-400' :
+                        alert.severity === 'moderate' ? 'text-yellow-400' :
+                        'text-blue-400'
+                      }`} 
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold text-white truncate">
+                          {alert.event}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDismissedAlerts([...dismissedAlerts, alert.id]);
+                          }}
+                          className="text-gray-500 hover:text-white ml-2"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-300 mt-1 line-clamp-2">
+                        {alert.description}
+                      </p>
+                      {showAlertDetails === alert.id && alert.instruction && (
+                        <div className="mt-2 pt-2 border-t border-white/10">
+                          <p className="text-xs text-cyan-300">
+                            <span className="font-medium">Instruction:</span> {alert.instruction}
+                          </p>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        Until {alert.expires.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Location */}
           <div className="flex items-center gap-1 text-gray-400 text-xs mb-3">
             <MapPin size={12} />

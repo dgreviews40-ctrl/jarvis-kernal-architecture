@@ -96,6 +96,25 @@ export interface RadarData {
   generated: number;
 }
 
+export interface WeatherAlert {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'extreme' | 'severe' | 'moderate' | 'minor' | 'unknown';
+  urgency: 'immediate' | 'expected' | 'future' | 'past' | 'unknown';
+  event: string;
+  effective: Date;
+  expires: Date;
+  areaDesc: string;
+  instruction?: string;
+  sender: string;
+}
+
+export interface WeatherAlertsData {
+  alerts: WeatherAlert[];
+  lastChecked: number;
+}
+
 // WMO Weather interpretation codes mapping
 const WMO_CODES: Record<number, { description: string; icon: string }> = {
   0: { description: 'Clear sky', icon: '☀️' },
@@ -143,15 +162,19 @@ function getAQICategory(aqi: number): AirQuality['category'] {
 }
 
 type WeatherObserver = (data: WeatherData | null) => void;
+type WeatherAlertObserver = (alerts: WeatherAlert[]) => void;
 
 class WeatherService {
   private currentData: WeatherData | null = null;
   private observers: WeatherObserver[] = [];
+  private alertObservers: WeatherAlertObserver[] = [];
   private refreshInterval: ReturnType<typeof setInterval> | null = null;
   private currentLocation: WeatherLocation | null = null;
   private storageKey = 'jarvis_weather_config';
   private cacheKey = 'jarvis_weather_cache_v2'; // Bumped version to invalidate old cached data
   private refreshIntervalMs = 10 * 60 * 1000; // 10 minutes
+  private lastAlerts: WeatherAlert[] = [];
+  private alertCheckInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.loadSavedLocation();
@@ -233,6 +256,79 @@ class WeatherService {
 
   private notify(): void {
     this.observers.forEach(cb => cb(this.currentData));
+  }
+
+  public subscribeToAlerts(callback: WeatherAlertObserver): () => void {
+    this.alertObservers.push(callback);
+    return () => {
+      this.alertObservers = this.alertObservers.filter(cb => cb !== callback);
+    };
+  }
+
+  private notifyAlertObservers(alerts: WeatherAlert[]): void {
+    this.alertObservers.forEach(cb => cb(alerts));
+  }
+
+  public async checkAndNotifyAlerts(): Promise<void> {
+    if (!this.currentLocation || !this.currentData) return;
+    
+    try {
+      // Try NWS API first
+      const alertData = await this.getWeatherAlerts(
+        this.currentLocation.latitude,
+        this.currentLocation.longitude
+      );
+      
+      let currentAlerts: WeatherAlert[] = [];
+      
+      if (alertData) {
+        currentAlerts = alertData.alerts;
+      } else {
+        // Fallback to condition-based alerts
+        const { alerts } = this.checkSevereWeather(this.currentData);
+        currentAlerts = alerts;
+      }
+      
+      // Check for new alerts (not in lastAlerts)
+      const newAlerts = currentAlerts.filter(alert => 
+        !this.lastAlerts.some(lastAlert => lastAlert.id === alert.id)
+      );
+      
+      // Notify observers of all current alerts
+      this.notifyAlertObservers(currentAlerts);
+      
+      // If there are new severe/extreme alerts, also notify individually
+      for (const alert of newAlerts) {
+        if (alert.severity === 'extreme' || alert.severity === 'severe') {
+          // Emit event for voice notification
+          const { eventBus } = await import('./eventBus');
+          await eventBus.publish('weather:alert:new', alert);
+        }
+      }
+      
+      this.lastAlerts = currentAlerts;
+    } catch (e) {
+      console.warn('[WEATHER] Alert check failed:', e);
+    }
+  }
+
+  public startAlertChecking(): void {
+    if (this.alertCheckInterval) return;
+    
+    // Check immediately
+    this.checkAndNotifyAlerts();
+    
+    // Check every 2 minutes
+    this.alertCheckInterval = setInterval(() => {
+      this.checkAndNotifyAlerts();
+    }, 2 * 60 * 1000);
+  }
+
+  public stopAlertChecking(): void {
+    if (this.alertCheckInterval) {
+      clearInterval(this.alertCheckInterval);
+      this.alertCheckInterval = null;
+    }
   }
 
   public async searchLocations(query: string): Promise<WeatherLocation[]> {
@@ -473,6 +569,9 @@ class WeatherService {
     this.refreshInterval = setInterval(() => {
       this.refresh();
     }, this.refreshIntervalMs);
+    
+    // Also start alert checking
+    this.startAlertChecking();
   }
 
   public stopAutoRefresh(): void {
@@ -480,11 +579,14 @@ class WeatherService {
       clearInterval(this.refreshInterval);
       this.refreshInterval = null;
     }
+    this.stopAlertChecking();
   }
 
   public destroy(): void {
     this.stopAutoRefresh();
+    this.stopAlertChecking();
     this.observers = [];
+    this.alertObservers = [];
     this.currentData = null;
   }
 
@@ -569,6 +671,156 @@ class WeatherService {
    */
   public getRainViewerUrl(latitude: number, longitude: number, zoom = 7): string {
     return `https://www.rainviewer.com/weather-radar-map-live.html?lat=${latitude}&lon=${longitude}&zoom=${zoom}&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=4&o=83&lm=1&layer=radar&sm=1&sn=1&`;
+  }
+
+  /**
+   * Get weather alerts for a location using National Weather Service API (US only)
+   * Falls back to checking weather conditions for non-US locations
+   */
+  public async getWeatherAlerts(latitude: number, longitude: number): Promise<WeatherAlertsData | null> {
+    try {
+      // National Weather Service API (US only)
+      const url = `https://api.weather.gov/alerts/active?point=${latitude},${longitude}`;
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'JARVIS-Weather-App/1.0'
+        }
+      });
+      
+      if (!response.ok) {
+        // NWS API returns 404 for non-US locations
+        return null;
+      }
+      
+      const data = await response.json();
+      
+      if (!data.features || data.features.length === 0) {
+        return { alerts: [], lastChecked: Date.now() };
+      }
+      
+      const alerts: WeatherAlert[] = data.features.map((feature: any) => ({
+        id: feature.properties.id,
+        title: feature.properties.headline || feature.properties.event,
+        description: feature.properties.description,
+        severity: feature.properties.severity?.toLowerCase() || 'unknown',
+        urgency: feature.properties.urgency?.toLowerCase() || 'unknown',
+        event: feature.properties.event,
+        effective: new Date(feature.properties.effective),
+        expires: new Date(feature.properties.expires),
+        areaDesc: feature.properties.areaDesc,
+        instruction: feature.properties.instruction,
+        sender: feature.properties.senderName,
+      }));
+      
+      return {
+        alerts,
+        lastChecked: Date.now(),
+      };
+    } catch (e) {
+      console.warn('[WEATHER] Alerts fetch failed:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Check for severe weather based on current conditions
+   * Used as fallback when NWS API is not available
+   */
+  public checkSevereWeather(data: WeatherData): { hasAlerts: boolean; alerts: WeatherAlert[] } {
+    const alerts: WeatherAlert[] = [];
+    const { current, daily } = data;
+    
+    // Check for extreme temperatures
+    if (current.temperature >= 100) {
+      alerts.push({
+        id: `temp-high-${Date.now()}`,
+        title: 'Excessive Heat Warning',
+        description: `Current temperature is ${Math.round(current.temperature)}°F. Extreme heat can be dangerous.`,
+        severity: 'severe',
+        urgency: 'immediate',
+        event: 'Excessive Heat',
+        effective: new Date(),
+        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        areaDesc: data.location.name,
+        instruction: 'Stay hydrated, avoid outdoor activities during peak heat.',
+        sender: 'JARVIS Weather Monitor',
+      });
+    }
+    
+    if (current.temperature <= 32) {
+      alerts.push({
+        id: `freeze-${Date.now()}`,
+        title: 'Freeze Warning',
+        description: `Current temperature is ${Math.round(current.temperature)}°F. Frost and freeze conditions expected.`,
+        severity: 'moderate',
+        urgency: 'expected',
+        event: 'Freeze Warning',
+        effective: new Date(),
+        expires: new Date(Date.now() + 12 * 60 * 60 * 1000),
+        areaDesc: data.location.name,
+        instruction: 'Protect sensitive plants and outdoor plumbing.',
+        sender: 'JARVIS Weather Monitor',
+      });
+    }
+    
+    // Check for high wind
+    if (current.windSpeed >= 25) {
+      alerts.push({
+        id: `wind-${Date.now()}`,
+        title: 'High Wind Warning',
+        description: `Wind speeds of ${Math.round(current.windSpeed)} mph with gusts up to ${Math.round(current.windGusts)} mph.`,
+        severity: 'moderate',
+        urgency: 'immediate',
+        event: 'High Wind',
+        effective: new Date(),
+        expires: new Date(Date.now() + 6 * 60 * 60 * 1000),
+        areaDesc: data.location.name,
+        instruction: 'Secure loose outdoor objects. Use caution when driving.',
+        sender: 'JARVIS Weather Monitor',
+      });
+    }
+    
+    // Check for severe weather codes
+    const severeCodes = [95, 96, 99]; // Thunderstorm, thunderstorm with hail
+    if (severeCodes.includes(current.condition.code)) {
+      alerts.push({
+        id: `storm-${Date.now()}`,
+        title: 'Severe Thunderstorm Warning',
+        description: `Thunderstorms with ${current.condition.description.toLowerCase()} detected in your area.`,
+        severity: 'severe',
+        urgency: 'immediate',
+        event: 'Severe Thunderstorm',
+        effective: new Date(),
+        expires: new Date(Date.now() + 3 * 60 * 60 * 1000),
+        areaDesc: data.location.name,
+        instruction: 'Seek shelter indoors immediately. Avoid windows and electrical equipment.',
+        sender: 'JARVIS Weather Monitor',
+      });
+    }
+    
+    return { hasAlerts: alerts.length > 0, alerts };
+  }
+
+  /**
+   * Format alert for speech - concise version for TTS
+   */
+  public formatAlertForSpeech(alert: WeatherAlert): string {
+    const severityText = alert.severity === 'extreme' ? 'Extreme' : 
+                        alert.severity === 'severe' ? 'Severe' : 
+                        alert.severity === 'moderate' ? 'Moderate' : 'Minor';
+    
+    let speech = `${severityText} Weather Alert: ${alert.event} for ${alert.areaDesc}. `;
+    
+    // Add a brief description (first sentence only, max 100 chars)
+    const briefDesc = alert.description.split('.')[0].substring(0, 100);
+    speech += briefDesc + '. ';
+    
+    if (alert.instruction) {
+      const briefInstruction = alert.instruction.split('.')[0].substring(0, 100);
+      speech += `Instruction: ${briefInstruction}.`;
+    }
+    
+    return speech;
   }
 }
 

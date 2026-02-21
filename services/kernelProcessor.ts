@@ -2460,17 +2460,17 @@ Please synthesize this information into a clear, helpful response. Cite sources 
         return "I'll need to know your location first. Let me open the weather dashboard where you can set your location, then I can show you the Doppler radar.";
       }
 
-      // Switch to weather tab FIRST, then publish radar event
+      // Switch to weather tab FIRST
       const { useUIStore } = await import('../stores');
       const uiStore = useUIStore.getState();
       if (uiStore.activeTab !== 'WEATHER') {
         uiStore.setActiveTab('WEATHER');
       }
       
-      // Small delay to ensure WeatherDashboard is mounted before sending event
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Use localStorage as reliable cross-component communication
+      localStorage.setItem('jarvis_radar_trigger', Date.now().toString());
       
-      // Publish event to switch to radar view
+      // Also publish event for any already-mounted components
       const { eventBus } = await import('./eventBus');
       await eventBus.publish('weather:radar', { location });
 

@@ -173,20 +173,45 @@ const WeatherDashboard: React.FC = () => {
 
   // Listen for radar event from kernel processor
   useEffect(() => {
-    const handleRadarEvent = () => {
-      setViewMode('radar');
-    };
+    let unsubscribe: (() => void) | null = null;
     
     // Subscribe to event bus for radar requests
     const initEventBus = async () => {
       const { eventBus } = await import('../services/eventBus');
-      eventBus.subscribe('weather:radar', handleRadarEvent);
+      const unsub = eventBus.subscribe('weather:radar', () => {
+        setViewMode('radar');
+      });
+      unsubscribe = unsub;
     };
     
     initEventBus();
     
+    // Check localStorage for radar trigger (for when component mounts after event)
+    const checkRadarTrigger = () => {
+      const trigger = localStorage.getItem('jarvis_radar_trigger');
+      if (trigger) {
+        const timestamp = parseInt(trigger, 10);
+        const now = Date.now();
+        // Only respond to triggers from last 5 seconds
+        if (now - timestamp < 5000) {
+          setViewMode('radar');
+        }
+        // Clear the trigger
+        localStorage.removeItem('jarvis_radar_trigger');
+      }
+    };
+    
+    // Check immediately on mount
+    checkRadarTrigger();
+    
+    // Also set up an interval to check (in case event arrives while component is mounting)
+    const interval = setInterval(checkRadarTrigger, 100);
+    const timeout = setTimeout(() => clearInterval(interval), 5000);
+    
     return () => {
-      // Cleanup will be handled by event bus
+      clearInterval(interval);
+      clearTimeout(timeout);
+      if (unsubscribe) unsubscribe();
     };
   }, []);
 

@@ -31,8 +31,13 @@ const INTENT_PATTERNS: IntentPattern[] = [
       /\bview\s+(the\s+)?radar\b/i,
       /\b(check\s+)?radar\s+(for\s+)?(storms|rain|precipitation|weather)\b/i,
       /\bis\s+it\s+raining\s+(on\s+)?radar\b/i,
+      // Storm/rain approaching queries
+      /\b(storms?|rain)\s+(approaching|coming|nearby|in the area)\b/i,
+      /\bdo\s+we\s+have\s+(any\s+)?(storms?|rain)\b/i,
+      /\bis\s+(there|it)\s+(going to be|gonna be)\s+(any\s+)?(storms?|rain)\b/i,
+      /\bwill\s+it\s+(storm|rain)\b/i,
     ],
-    keywords: ['doppler', 'radar', 'weather radar', 'storm radar', 'rain radar', 'precipitation radar'],
+    keywords: ['doppler', 'radar', 'weather radar', 'storm radar', 'rain radar', 'precipitation radar', 'storm', 'rain', 'approaching', 'coming'],
   },
 
   // VISION_ANALYSIS - Physical visual commands
@@ -533,7 +538,12 @@ export class LocalIntentClassifier {
                                 /\bradar\s+(map|weather|storm|rain)/i.test(normalized) ||
                                 /\bweather\s+radar\b/i.test(normalized) ||
                                 /\bcheck\s+(the\s+)?radar\b/i.test(normalized) ||
-                                (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized));
+                                (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized)) ||
+                                // Storm/rain approaching queries
+                                /\b(storms?|rain)\s+(approaching|coming|nearby|in the area)\b/i.test(normalized) ||
+                                /\bdo\s+we\s+have\s+(any\s+)?(storms?|rain)\b/i.test(normalized) ||
+                                /\bis\s+(there|it)\s+(going to be|gonna be)\s+(any\s+)?(storms?|rain)\b/i.test(normalized) ||
+                                /\bwill\s+it\s+(storm|rain)\b/i.test(normalized);
     
     if (isDopplerRadarQuery) {
       const result: ParsedIntent = {
@@ -629,7 +639,12 @@ export class LocalIntentClassifier {
                                 /\bradar\s+(map|weather|storm|rain)/i.test(normalized) ||
                                 /\bweather\s+radar\b/i.test(normalized) ||
                                 /\bcheck\s+(the\s+)?radar\b/i.test(normalized) ||
-                                (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized));
+                                (/\b(show|view|open|bring up|display)\b/i.test(normalized) && /\bradar\b/i.test(normalized)) ||
+                                // Storm/rain approaching queries
+                                /\b(storms?|rain)\s+(approaching|coming|nearby|in the area)\b/i.test(normalized) ||
+                                /\bdo\s+we\s+have\s+(any\s+)?(storms?|rain)\b/i.test(normalized) ||
+                                /\bis\s+(there|it)\s+(going to be|gonna be)\s+(any\s+)?(storms?|rain)\b/i.test(normalized) ||
+                                /\bwill\s+it\s+(storm|rain)\b/i.test(normalized);
     
     if (isDopplerRadarQuery) {
       return false; // Handle Doppler radar locally

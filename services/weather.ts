@@ -80,6 +80,22 @@ export interface WeatherData {
   lastUpdated: number;
 }
 
+export interface RadarFrame {
+  time: number;
+  path: string;
+}
+
+export interface RadarData {
+  frames: RadarFrame[];
+  bounds: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  };
+  generated: number;
+}
+
 // WMO Weather interpretation codes mapping
 const WMO_CODES: Record<number, { description: string; icon: string }> = {
   0: { description: 'Clear sky', icon: '☀️' },
@@ -487,6 +503,72 @@ class WeatherService {
                        'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
     const index = Math.round(degrees / 22.5) % 16;
     return directions[index];
+  }
+
+  /**
+   * Get Doppler radar data for a location using RainViewer API
+   */
+  public async getRadarData(latitude: number, longitude: number): Promise<RadarData | null> {
+    try {
+      // RainViewer API for radar data
+      const url = `https://api.rainviewer.com/public/weather-maps.json`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!data.radar || !data.radar.past) {
+        return null;
+      }
+
+      // Get the latest frames (last 6 frames = 3 hours of history)
+      const frames: RadarFrame[] = data.radar.past.slice(-6).map((frame: any) => ({
+        time: frame.time,
+        path: frame.path,
+      }));
+
+      // Add nowcast frames if available (future predictions)
+      if (data.radar.nowcast) {
+        frames.push(...data.radar.nowcast.slice(0, 3).map((frame: any) => ({
+          time: frame.time,
+          path: frame.path,
+        })));
+      }
+
+      return {
+        frames,
+        bounds: {
+          north: latitude + 2,
+          south: latitude - 2,
+          east: longitude + 2,
+          west: longitude - 2,
+        },
+        generated: data.generated,
+      };
+    } catch (e) {
+      console.error('[WEATHER] Radar data fetch failed:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Get radar tile URL for a specific frame
+   */
+  public getRadarTileUrl(path: string, z: number, x: number, y: number, colorScheme = 4): string {
+    return `https://tilecache.rainviewer.com${path}/${z}/${x}/${y}/${colorScheme}/1_1.png`;
+  }
+
+  /**
+   * Get static radar map URL for embedding
+   */
+  public getRadarEmbedUrl(latitude: number, longitude: number, zoom = 7): string {
+    // Use Windy.com embed as a reliable radar display
+    return `https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=default&metricTemp=default&metricWind=default&zoom=${zoom}&overlay=radar&marker=${latitude},${longitude}&lat=${latitude}&lon=${longitude}`;
+  }
+
+  /**
+   * Get alternate radar map URL (RainViewer)
+   */
+  public getRainViewerUrl(latitude: number, longitude: number, zoom = 7): string {
+    return `https://www.rainviewer.com/weather-radar-map-live.html?lat=${latitude}&lon=${longitude}&zoom=${zoom}&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=4&o=83&lm=1&layer=radar&sm=1&sn=1&`;
   }
 }
 

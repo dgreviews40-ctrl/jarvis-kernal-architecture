@@ -389,6 +389,23 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ]
   },
   
+  // DOPPLER_RADAR - Weather radar requests
+  {
+    type: IntentType.DOPPLER_RADAR,
+    confidence: 0.95,
+    complexity: 0.3,
+    patterns: [
+      /\b(show\s+(me\s+)?)?doppler\s+(radar|weather)\b/i,
+      /\b(radar\s+(map|view|image)|weather\s+radar)\b/i,
+      /\bshow\s+(me\s+)?(the\s+)?radar\b/i,
+      /\b(bring\s+up|open|display)\s+(the\s+)?doppler\b/i,
+      /\bview\s+(the\s+)?radar\b/i,
+      /\b(check\s+)?radar\s+(for\s+)?(storms|rain|precipitation|weather)\b/i,
+      /\bis\s+it\s+raining\s+(on\s+)?radar\b/i,
+    ],
+    keywords: ['doppler', 'radar', 'weather radar', 'storm radar', 'rain radar', 'precipitation radar'],
+  },
+  
   // SIMPLE_QUERY - Common informational questions
   {
     type: IntentType.QUERY,
@@ -410,12 +427,17 @@ const INTENT_PATTERNS: IntentPattern[] = [
       // Weather (simple forms)
       /\bwhat('s|s| is)\s+(the\s+)?weather\b/i,
       /\bhow('s| is)\s+(the\s+)?weather\b/i,
+      // Doppler radar
+      /\b(show\s+(me\s+)?)?doppler\s+(radar|weather)\b/i,
+      /\b(radar\s+(map|view|image)|weather\s+radar)\b/i,
+      /\bshow\s+(me\s+)?(the\s+)?radar\b/i,
+      /\b(bring\s+up|open|display)\s+(the\s+)?doppler\b/i,
       // Simple recommendations
       /\b(do you have|what are)\s+(any\s+)?recommendations\b/i,
       /\bwhat\s+(do you|should i)\s+(suggest|recommend)\b/i,
       /\bwhat\s+(can|should)\s+i\s+do\b/i
     ],
-    keywords: ['your name', 'my name', 'who am i', 'what time', 'what day', 'weather', 'recommendations', 'suggest']
+    keywords: ['your name', 'my name', 'who am i', 'what time', 'what day', 'weather', 'recommendations', 'suggest', 'radar', 'doppler']
   },
   
   // SEARCH - Web search queries (explicit search requests)

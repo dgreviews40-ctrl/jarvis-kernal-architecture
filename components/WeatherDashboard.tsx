@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Cloud, Sun, Droplets, Wind, Gauge,
   MapPin, Search, RefreshCw, Sunrise, Sunset,
-  Loader2
+  Loader2, Radio, X, ExternalLink
 } from 'lucide-react';
 import {
   weatherService,
@@ -118,6 +118,8 @@ const POPULAR_CITIES: WeatherLocation[] = [
   { name: 'Tokyo', latitude: 35.6762, longitude: 139.6503, timezone: 'Asia/Tokyo', country: 'Japan' },
 ];
 
+type ViewMode = 'weather' | 'radar';
+
 const WeatherDashboard: React.FC = () => {
   const [data, setData] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -127,6 +129,8 @@ const WeatherDashboard: React.FC = () => {
   const [unit, setUnit] = useState<TemperatureUnit>('F');
   const [error, setError] = useState<string | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('weather');
+  const [radarUrl, setRadarUrl] = useState<string>('');
 
   useEffect(() => {
     const unsubscribe = weatherService.subscribe(setData);
@@ -152,6 +156,37 @@ const WeatherDashboard: React.FC = () => {
 
     return () => {
       unsubscribe();
+    };
+  }, []);
+
+  // Update radar URL when location changes
+  useEffect(() => {
+    if (data?.location) {
+      const url = weatherService.getRadarEmbedUrl(
+        data.location.latitude,
+        data.location.longitude,
+        8
+      );
+      setRadarUrl(url);
+    }
+  }, [data?.location]);
+
+  // Listen for radar event from kernel processor
+  useEffect(() => {
+    const handleRadarEvent = () => {
+      setViewMode('radar');
+    };
+    
+    // Subscribe to event bus for radar requests
+    const initEventBus = async () => {
+      const { eventBus } = await import('../services/eventBus');
+      eventBus.subscribe('weather:radar', handleRadarEvent);
+    };
+    
+    initEventBus();
+    
+    return () => {
+      // Cleanup will be handled by event bus
     };
   }, []);
 
@@ -321,6 +356,14 @@ const WeatherDashboard: React.FC = () => {
           >
             <Search size={16} />
           </button>
+          {/* Radar Toggle */}
+          <button
+            onClick={() => setViewMode(viewMode === 'weather' ? 'radar' : 'weather')}
+            className={`p-1.5 transition-colors ${viewMode === 'radar' ? 'text-cyan-400' : 'text-gray-400 hover:text-cyan-400'}`}
+            title="Doppler Radar"
+          >
+            <Radio size={16} />
+          </button>
           {/* Refresh */}
           <button
             onClick={handleRefresh}
@@ -376,14 +419,73 @@ const WeatherDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Location */}
-      <div className="flex items-center gap-1 text-gray-400 text-xs mb-3">
-        <MapPin size={12} />
-        <span>{location.name}</span>
-        {location.admin1 && <span>, {location.admin1}</span>}
-      </div>
+      {/* Radar View */}
+      {viewMode === 'radar' && (
+        <div className="flex-1 flex flex-col min-h-0 bg-[#0a0a0a] border border-[#333] rounded-lg overflow-hidden">
+          {/* Radar Header */}
+          <div className="flex items-center justify-between px-3 py-2 bg-[#111] border-b border-[#333]">
+            <div className="flex items-center gap-2">
+              <Radio className="text-red-500" size={16} />
+              <span className="text-sm font-bold text-white">DOPPLER RADAR</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('weather')}
+                className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                title="Back to Weather"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+          
+          {/* Radar Iframe */}
+          <div className="flex-1 relative min-h-0">
+            {radarUrl ? (
+              <iframe
+                src={radarUrl}
+                className="w-full h-full border-0"
+                allow="fullscreen"
+                sandbox="allow-scripts allow-same-origin allow-popups"
+                title="Doppler Radar"
+              />
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500">
+                <Radio size={32} className="mb-2 opacity-50" />
+                <p className="text-sm">Radar unavailable</p>
+              </div>
+            )}
+          </div>
 
-      {/* Current Weather */}
+          {/* Radar Footer */}
+          <div className="px-3 py-2 bg-[#111] border-t border-[#333] flex items-center justify-between">
+            <span className="text-[10px] text-gray-500">
+              Live Doppler Radar • {location.name}
+            </span>
+            <a
+              href={weatherService.getRainViewerUrl(location.latitude, location.longitude, 8)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+            >
+              Open in RainViewer
+              <ExternalLink size={10} />
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Weather View */}
+      {viewMode === 'weather' && (
+        <>
+          {/* Location */}
+          <div className="flex items-center gap-1 text-gray-400 text-xs mb-3">
+            <MapPin size={12} />
+            <span>{location.name}</span>
+            {location.admin1 && <span>, {location.admin1}</span>}
+          </div>
+
+          {/* Current Weather */}
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -471,9 +573,11 @@ const WeatherDashboard: React.FC = () => {
       )}
 
       {/* Last Updated */}
-      <div className="text-[10px] text-gray-600 text-center mt-2">
-        Updated {new Date(data.lastUpdated).toLocaleTimeString()}
-      </div>
+          <div className="text-[10px] text-gray-600 text-center mt-2">
+            Updated {new Date(data.lastUpdated).toLocaleTimeString()}
+          </div>
+        </>
+      )}
     </div>
   );
 };

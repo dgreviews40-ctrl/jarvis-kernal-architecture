@@ -670,6 +670,11 @@ export class KernelProcessor {
               outputText = await this.handleSearch(input, context, correctionContext, selectedProvider, intelligenceResult);
               break;
               
+            case IntentType.DOPPLER_RADAR:
+              // Doppler radar display
+              outputText = await this.handleDopplerRadar(input, context);
+              break;
+              
             case IntentType.QUERY:
             default:
               outputText = await this.handleQuery(input, context, correctionContext, selectedProvider, intelligenceResult, analysis);
@@ -2439,6 +2444,48 @@ Please synthesize this information into a clear, helpful response. Cite sources 
         reasoning: 'Search error fallback'
       };
       return this.handleQuery(input, context, correctionContext, selectedProvider, intelligenceResult, defaultParsedIntent);
+    }
+  }
+
+  private async handleDopplerRadar(input: string, context: ProcessorContext): Promise<string> {
+    context.setActiveModule('WEATHER');
+    logger.log('KERNEL', 'Opening Doppler Radar...', 'info');
+
+    try {
+      // Import weather service
+      const { weatherService } = await import('./weather');
+      const location = weatherService.getLocation();
+      
+      if (!location) {
+        return "I'll need to know your location first. Let me open the weather dashboard where you can set your location, then I can show you the Doppler radar.";
+      }
+
+      // The radar view will be opened via the UI store
+      // Publish an event to switch to radar view
+      const { eventBus } = await import('./eventBus');
+      await eventBus.publish('weather:radar', { location });
+      
+      // Also switch to weather tab if not already there
+      const { useUIStore } = await import('../stores');
+      const uiStore = useUIStore.getState();
+      if (uiStore.activeTab !== 'WEATHER') {
+        uiStore.setActiveTab('WEATHER');
+      }
+
+      // Provide a natural response
+      const responses = [
+        `Opening Doppler radar for ${location.name}. You should see the live precipitation map now.`,
+        `Here's the Doppler radar for ${location.name}. The live radar shows current precipitation patterns.`,
+        `Bringing up the Doppler radar now for ${location.name}. You can see any storms or precipitation in real-time.`,
+        `Displaying the weather radar for ${location.name}. The map shows live Doppler data.`,
+      ];
+      
+      return responses[Math.floor(Math.random() * responses.length)];
+      
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.log('KERNEL', 'Error opening Doppler radar:', 'error', { error: errorMsg });
+      return "I'm having trouble opening the Doppler radar right now. You can manually access it by going to the Weather dashboard and clicking the radar icon.";
     }
   }
 

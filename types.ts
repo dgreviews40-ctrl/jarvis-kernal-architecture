@@ -32,6 +32,7 @@ export enum IntentType {
   SEARCH = 'SEARCH',         // Web search queries
   ENVISION = 'ENVISION',     // Generate redesign/layout images based on current view
   IMAGE_GENERATION = 'IMAGE_GENERATION', // General image creation (not based on current view)
+  DOPPLER_RADAR = 'DOPPLER_RADAR', // Weather radar view
   UNKNOWN = 'UNKNOWN'
 }
 
